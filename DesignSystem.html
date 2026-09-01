@@ -1,0 +1,1931 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" style="font-size: 16px;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retail Supermarket & POS - Ultra-Premium Design System</title>
+    
+    <!-- 1. Bootstrap 5.3 & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- 2. Animation & Pickers -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_blue.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    
+    <!-- 3. Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --shop-primary: #2563eb;
+            --shop-primary-hover: #1d4ed8;
+            --shop-primary-light: #eff6ff;
+            --shop-primary-glow: rgba(37, 99, 235, 0.2);
+            --shop-success: #059669;
+            --shop-success-light: #ecfdf5;
+            --shop-danger: #dc2626;
+            --shop-danger-light: #fef2f2;
+            --shop-warning: #d97706;
+            --shop-warning-light: #fffbeb;
+            --shop-info: #0891b2;
+            --shop-info-light: #ecfeff;
+            
+            --shop-surface: #ffffff;
+            --shop-surface-card: #ffffff;
+            --shop-surface-subtle: #f8fafc;
+            --shop-bg: #f1f5f9;
+            --shop-text: #0f172a;
+            --shop-text-muted: #64748b;
+            --shop-border: #e2e8f0;
+            --shop-border-subtle: #f1f5f9;
+            --shop-radius: 12px;
+            --shop-radius-lg: 16px;
+            --shop-radius-sm: 8px;
+            
+            --shop-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shop-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shop-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+            --shop-shadow-glow: 0 0 25px rgba(37, 99, 235, 0.15);
+            
+            --bs-primary: var(--shop-primary);
+            --bs-success: var(--shop-success);
+            --bs-danger: var(--shop-danger);
+            --bs-warning: var(--shop-warning);
+            --bs-info: var(--shop-info);
+            --bs-body-font-family: 'Inter', sans-serif;
+            --bs-body-bg: var(--shop-bg);
+            --bs-body-color: var(--shop-text);
+            --bs-body-font-size: 1rem;
+        }
+
+        [data-theme='dark'] {
+            --shop-primary-light: rgba(56, 189, 248, 0.12);
+            --shop-primary-glow: rgba(56, 189, 248, 0.25);
+            --shop-success-light: rgba(52, 211, 153, 0.12);
+            --shop-danger-light: rgba(248, 113, 113, 0.12);
+            --shop-warning-light: rgba(251, 191, 36, 0.12);
+            --shop-info-light: rgba(56, 189, 248, 0.12);
+            
+            --shop-surface: #1e293b;
+            --shop-surface-card: #0f172a;
+            --shop-surface-subtle: #1e293b;
+            --shop-bg: #0b0f19;
+            --shop-text: #f8fafc;
+            --shop-text-muted: #94a3b8;
+            --shop-border: #334155;
+            --shop-border-subtle: #1e293b;
+            
+            --shop-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+            --shop-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+            --shop-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+            --shop-shadow-glow: 0 0 25px rgba(56, 189, 248, 0.2);
+            
+            --bs-body-bg: var(--shop-bg);
+            --bs-body-color: var(--shop-text);
+        }
+
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--shop-bg);
+            color: var(--shop-text);
+            transition: background-color 0.25s ease, color 0.25s ease;
+            -webkit-font-smoothing: antialiased;
+            font-size: 0.9375rem;
+            line-height: 1.5;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace !important;
+            letter-spacing: -0.02em;
+        }
+
+        /* Glassmorphism & Elevation */
+        .glass-panel {
+            background: var(--shop-surface);
+            border: 1px solid var(--shop-border);
+            border-radius: var(--shop-radius);
+            box-shadow: var(--shop-shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .glass-panel:hover {
+            border-color: var(--shop-primary);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-radius: var(--shop-radius);
+            box-shadow: var(--shop-shadow);
+        }
+        [data-theme='dark'] .glass-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+        }
+
+        .hover-lift {
+            transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shop-shadow-lg);
+        }
+
+        /* Top Bar */
+        .top-navbar {
+            background: var(--shop-surface);
+            border-bottom: 1px solid var(--shop-border);
+            padding: 12px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+            box-shadow: var(--shop-shadow-sm);
+        }
+
+        /* Sticky Sidebar */
+        .ds-sidebar {
+            position: sticky;
+            top: 85px;
+            height: calc(100vh - 105px);
+            overflow-y: auto;
+            background: var(--shop-surface);
+            padding: 20px;
+            border-radius: var(--shop-radius);
+            box-shadow: var(--shop-shadow-sm);
+            border: 1px solid var(--shop-border);
+        }
+
+        .ds-sidebar::-webkit-scrollbar { width: 5px; }
+        .ds-sidebar::-webkit-scrollbar-thumb { background: var(--shop-border); border-radius: 4px; }
+
+        .ds-sidebar .nav-link {
+            color: var(--shop-text-muted);
+            font-size: 0.9rem;
+            font-weight: 500;
+            padding: 8px 12px;
+            border-radius: var(--shop-radius-sm);
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.15s ease;
+        }
+
+        .ds-sidebar .nav-link:hover {
+            color: var(--shop-primary);
+            background-color: var(--shop-primary-light);
+            transform: translateX(3px);
+        }
+
+        .ds-sidebar .nav-link.active {
+            color: var(--shop-primary);
+            background-color: var(--shop-primary-light);
+            font-weight: 700;
+            border-left: 3px solid var(--shop-primary);
+        }
+
+        /* Hero Banner */
+        .hero-banner {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+            border-radius: var(--shop-radius-lg);
+            color: white;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.25);
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-banner::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+            border-radius: 50%;
+        }
+
+        /* KPI Cards */
+        .kpi-card {
+            background: var(--shop-surface);
+            border: 1px solid var(--shop-border);
+            border-radius: var(--shop-radius);
+            padding: 22px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shop-shadow-sm);
+            transition: all 0.2s ease;
+        }
+        .kpi-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shop-shadow);
+            border-color: var(--shop-primary);
+        }
+        .kpi-card .kpi-icon {
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.35rem;
+        }
+        .kpi-card .kpi-value {
+            font-size: 1.75rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-top: 10px;
+            margin-bottom: 6px;
+        }
+        .kpi-card .kpi-delta {
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 6px;
+        }
+
+        /* POS Grid & Tiles */
+        .pos-grid-card {
+            cursor: pointer;
+            border: 1px solid var(--shop-border);
+            border-radius: var(--shop-radius);
+            padding: 12px;
+            transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+            background: var(--shop-surface);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+            position: relative;
+        }
+        .pos-grid-card:hover {
+            border-color: var(--shop-primary);
+            box-shadow: var(--shop-shadow-lg);
+            transform: translateY(-3px);
+        }
+        .pos-grid-card:active {
+            transform: scale(0.98);
+        }
+        .pos-grid-card .pos-img-container {
+            height: 110px;
+            width: 100%;
+            border-radius: var(--shop-radius-sm);
+            overflow: hidden;
+            background: var(--shop-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .pos-grid-card .pos-img-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.25s ease;
+        }
+        .pos-grid-card:hover .pos-img-container img {
+            transform: scale(1.08);
+        }
+
+        /* Receipt Simulator */
+        .receipt-container {
+            width: 340px;
+            margin: auto;
+            background: #ffffff;
+            color: #111827;
+            padding: 24px 20px;
+            border: 1px dashed #94a3b8;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+
+        /* Color Swatches */
+        .color-swatch-card {
+            border-radius: var(--shop-radius);
+            overflow: hidden;
+            border: 1px solid var(--shop-border);
+            background: var(--shop-surface);
+        }
+        .color-swatch-box {
+            height: 70px;
+            display: flex;
+            align-items: flex-end;
+            padding: 10px 12px;
+            color: white;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+
+        /* Form Controls Dark/Light */
+        .form-control, .form-select {
+            background-color: var(--shop-surface);
+            border-color: var(--shop-border);
+            color: var(--shop-text);
+            border-radius: var(--shop-radius-sm);
+            font-size: 0.9375rem;
+            padding: 10px 14px;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: var(--shop-surface);
+            border-color: var(--shop-primary);
+            color: var(--shop-text);
+            box-shadow: 0 0 0 3px var(--shop-primary-glow);
+        }
+        .input-group-text {
+            background-color: var(--shop-bg);
+            border-color: var(--shop-border);
+            color: var(--shop-text-muted);
+            font-size: 0.9375rem;
+        }
+
+        /* Table custom */
+        .table {
+            --bs-table-bg: transparent;
+            --bs-table-color: var(--shop-text);
+            --bs-table-border-color: var(--shop-border);
+            color: var(--shop-text);
+            font-size: 0.9375rem;
+        }
+        .table-custom thead th {
+            background-color: var(--shop-bg);
+            color: var(--shop-text-muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid var(--shop-border);
+            padding: 12px 16px;
+        }
+        .table-custom tbody td {
+            padding: 14px 16px;
+            vertical-align: middle;
+            border-bottom: 1px solid var(--shop-border);
+        }
+
+        /* Notifications Dropdown */
+        .notification-dropdown {
+            width: 360px;
+            padding: 0;
+            border-radius: var(--shop-radius);
+            box-shadow: var(--shop-shadow-lg);
+            border: 1px solid var(--shop-border);
+            background: var(--shop-surface);
+        }
+        .notification-item {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--shop-border);
+            display: flex;
+            gap: 12px;
+            color: var(--shop-text);
+            text-decoration: none;
+            transition: background-color 0.15s ease;
+        }
+        .notification-item:hover {
+            background: var(--shop-bg);
+        }
+
+        /* Live Accent Swatches in Header */
+        .accent-circle {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 0 0 1px var(--shop-border);
+            transition: transform 0.15s ease;
+        }
+        .accent-circle:hover {
+            transform: scale(1.25);
+        }
+
+        /* Scale Zoom Buttons */
+        .zoom-pill {
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--shop-border);
+            background: var(--shop-surface);
+            color: var(--shop-text);
+            font-size: 0.8rem;
+            font-weight: 700;
+            transition: all 0.15s ease;
+        }
+        .zoom-pill:hover, .zoom-pill.active {
+            background: var(--shop-primary);
+            color: white;
+            border-color: var(--shop-primary);
+        }
+
+        /* Animations */
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        .skeleton-shimmer {
+            background: linear-gradient(to right, var(--shop-bg) 8%, var(--shop-border) 18%, var(--shop-bg) 33%);
+            background-size: 1000px 100%;
+            animation: shimmer 1.8s infinite linear forwards;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Top Navigation Bar -->
+<header class="top-navbar">
+    <div class="container-fluid d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-3 bg-primary text-white p-2 d-flex align-items-center justify-content-center shadow-sm" style="width: 42px; height: 42px;">
+                <i class="bi bi-shop fs-4"></i>
+            </div>
+            <div>
+                <h5 class="fw-black mb-0 text-uppercase tracking-wide" style="letter-spacing: 0.03em;">AL-NOOR SUPERMARKET & HYPERMARKET</h5>
+                <div class="d-flex align-items-center gap-2 small text-muted" style="font-size: 0.8rem;">
+                    <span class="badge bg-success-subtle text-success border border-success-subtle py-0.5 px-2"><i class="bi bi-circle-fill" style="font-size: 0.45rem;"></i> Station #01 (Online)</span>
+                    <span>•</span>
+                    <span class="font-mono" id="live-clock"><i class="bi bi-clock me-1"></i>--:--:--</span>
+                    <span>•</span>
+                    <span class="text-muted"><i class="bi bi-geo-alt"></i> Riyadh, KSA (UTC+3)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <!-- Global UI Zoom & Font Scale Controller -->
+            <div class="d-flex align-items-center gap-1 p-1 rounded-pill border" style="background: var(--shop-surface); border-color: var(--shop-border) !important;">
+                <span class="text-muted small px-2 font-bold" style="font-size: 0.75rem;"><i class="bi bi-zoom-in me-1"></i>Scale:</span>
+                <span class="zoom-pill" onclick="setGlobalFontScale('90%')">90%</span>
+                <span class="zoom-pill active" id="zoom-100" onclick="setGlobalFontScale('100%')">100%</span>
+                <span class="zoom-pill" onclick="setGlobalFontScale('110%')">110%</span>
+                <span class="zoom-pill" onclick="setGlobalFontScale('120%')">120%</span>
+                <span class="zoom-pill" onclick="setGlobalFontScale('130%')">130%</span>
+            </div>
+
+            <!-- Dynamic Currency Selector Demo -->
+            <div class="d-none d-xl-flex align-items-center gap-1 p-1 rounded-pill border" style="background: var(--shop-surface); border-color: var(--shop-border) !important;">
+                <span class="text-muted small px-2 font-bold" style="font-size: 0.75rem;"><i class="bi bi-currency-exchange me-1"></i>Currency:</span>
+                <select id="currency-switcher" class="form-select form-select-sm border-0 py-0 font-mono fw-bold" style="width: 90px; background: transparent; font-size: 0.8rem;" onchange="changeCurrency(this.value)">
+                    <option value="SAR" selected>SAR</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="BDT">BDT (৳)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="AED">AED</option>
+                    <option value="QAR">QAR</option>
+                    <option value="GBP">GBP (£)</option>
+                </select>
+            </div>
+
+            <!-- Theme Accent Customizer -->
+            <div class="d-none d-md-flex align-items-center gap-1.5 p-1 rounded-pill border" style="background: var(--shop-surface); border-color: var(--shop-border) !important;">
+                <span class="text-muted small px-2 font-bold" style="font-size: 0.75rem;">Accent:</span>
+                <span class="accent-circle" style="background: #2563eb;" title="Brand Blue" onclick="changeThemeAccent('#2563eb')"></span>
+                <span class="accent-circle" style="background: #059669;" title="Emerald Green" onclick="changeThemeAccent('#059669')"></span>
+                <span class="accent-circle" style="background: #4f46e5;" title="Royal Indigo" onclick="changeThemeAccent('#4f46e5')"></span>
+                <span class="accent-circle" style="background: #7c3aed;" title="Purple Violet" onclick="changeThemeAccent('#7c3aed')"></span>
+                <span class="accent-circle" style="background: #d97706;" title="Amber Gold" onclick="changeThemeAccent('#d97706')"></span>
+            </div>
+
+            <!-- Notifications Dropdown -->
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary rounded-circle position-relative p-2 border" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="width: 42px; height: 42px;">
+                    <i class="bi bi-bell fs-5"></i>
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-light" style="font-size: 0.7rem;">
+                        3
+                    </span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end notification-dropdown p-0">
+                    <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background: var(--shop-bg);">
+                        <h6 class="fw-bold mb-0">System Notifications</h6>
+                        <span class="badge bg-primary rounded-pill">3 New</span>
+                    </div>
+                    <div style="max-height: 280px; overflow-y: auto;">
+                        <a class="notification-item" href="#pos-counter">
+                            <div class="text-warning fs-5"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                            <div>
+                                <div class="fw-bold small">Low Stock Alert</div>
+                                <div class="text-muted small">Product 'Basmati Rice 5kg' is low in stock (4 units left).</div>
+                            </div>
+                        </a>
+                        <a class="notification-item" href="#network-sync">
+                            <div class="text-success fs-5"><i class="bi bi-cloud-check-fill"></i></div>
+                            <div>
+                                <div class="fw-bold small">Cloud Sync Completed</div>
+                                <div class="text-muted small">Hourly ZATCA e-invoice batch synchronized to cloud vault.</div>
+                            </div>
+                        </a>
+                        <a class="notification-item" href="#terminal-recon">
+                            <div class="text-primary fs-5"><i class="bi bi-credit-card-2-front-fill"></i></div>
+                            <div>
+                                <div class="fw-bold small">Card Batch Balanced</div>
+                                <div class="text-muted small">Mada terminal batch slip #042 matched POS register.</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="p-2 text-center border-top">
+                        <a href="javascript:void(0)" class="text-decoration-none small text-primary fw-bold">View All Audit Logs</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dark/Light Theme Toggle -->
+            <button id="theme-toggle" class="btn btn-outline-secondary rounded-pill d-flex align-items-center gap-2 px-3 py-1.5 shadow-sm border" style="font-size: 0.9rem;">
+                <i class="bi bi-moon-stars-fill text-primary" id="theme-icon"></i>
+                <span id="theme-text" class="fw-bold">Dark Mode</span>
+            </button>
+        </div>
+    </div>
+</header>
+
+<div class="container-fluid py-4 px-lg-5">
+    <div class="row g-4">
+        <!-- Sidebar Navigation -->
+        <div class="col-lg-3 d-none d-lg-block">
+            <div class="ds-sidebar">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="badge bg-primary px-2.5 py-1 fw-bold font-mono">v3.4</span>
+                    <h6 class="fw-bold mb-0 text-primary">Component Directory</h6>
+                </div>
+                <p class="text-muted small mb-3">Enterprise Retail POS & Supermarket Design Tokens</p>
+                <hr class="my-2 border-secondary-subtle">
+                
+                <nav class="nav flex-column mt-3" id="sidebar-nav">
+                    <a class="nav-link active" href="#hero"><i class="bi bi-speedometer2"></i> System Overview</a>
+                    <a class="nav-link" href="#tokens"><i class="bi bi-palette2"></i> 1. Design Tokens & Colors</a>
+                    <a class="nav-link" href="#buttons"><i class="bi bi-menu-button-wide"></i> 2. Buttons & Triggers</a>
+                    <a class="nav-link" href="#forms"><i class="bi bi-input-cursor-text"></i> 3. Form Inputs & Currency</a>
+                    <a class="nav-link" href="#badges"><i class="bi bi-patch-check"></i> 4. Status Badges & Glow</a>
+                    <a class="nav-link" href="#kpi-widgets"><i class="bi bi-grid-1x2"></i> 5. Dashboard KPIs (8 Metrics)</a>
+                    <a class="nav-link" href="#charts"><i class="bi bi-graph-up-arrow"></i> 6. Visual Analytics (ApexCharts)</a>
+                    <a class="nav-link" href="#pos-counter"><i class="bi bi-cart3"></i> 7. POS Counter & Cart Engine</a>
+                    <a class="nav-link" href="#receipt"><i class="bi bi-receipt"></i> 8. ZATCA 80mm Receipt</a>
+                    <a class="nav-link" href="#product-images"><i class="bi bi-images"></i> 9. Product Cards & Catalog</a>
+                    <a class="nav-link" href="#barcode-labels"><i class="bi bi-upc-scan"></i> 10. Barcode Shelf Labels</a>
+                    <a class="nav-link" href="#terminal-recon"><i class="bi bi-credit-card-2-front"></i> 11. Z-Report Shift Reconciliation</a>
+                    <a class="nav-link" href="#produce-grid"><i class="bi bi-basket3"></i> 12. Fast Produce & PLU Grid</a>
+                    <a class="nav-link" href="#network-sync"><i class="bi bi-wifi"></i> 13. Network & Hardware Health</a>
+                    <a class="nav-link" href="#report-layout"><i class="bi bi-printer"></i> 14. Report & Print Tables</a>
+                    <a class="nav-link" href="#skeletons"><i class="bi bi-hourglass-split"></i> 15. Loading & Empty States</a>
+                    <a class="nav-link" href="#system-settings"><i class="bi bi-sliders"></i> 16. Dynamic Settings Customizer</a>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-lg-9 col-12">
+            
+            <!-- Hero Banner -->
+            <section id="hero" class="mb-5">
+                <div class="hero-banner">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 position-relative z-1">
+                        <div>
+                            <span class="badge bg-white text-primary fw-bold px-3 py-1 mb-2 rounded-pill shadow-sm">Enterprise Retail Ecosystem</span>
+                            <h2 class="fw-black mb-1">Ultra-Premium POS & Management System</h2>
+                            <p class="mb-0 text-white-50">Standardized Next.js & React 19 UI tokens, high-velocity POS counters, and fintech visualizations.</p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="#pos-counter" class="btn btn-light fw-bold text-primary px-3 shadow-sm"><i class="bi bi-cart-fill me-1"></i> Test POS Terminal</a>
+                            <a href="#charts" class="btn btn-outline-light fw-bold px-3"><i class="bi bi-bar-chart-line me-1"></i> View Analytics</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 1: Tokens -->
+            <section id="tokens" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-palette2 text-primary me-2"></i>1. Design Tokens & Color Foundations</h4>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1">WCAG AAA Contrast</span>
+                </div>
+                <div class="glass-panel p-4">
+                    <h6 class="fw-bold text-muted small text-uppercase mb-3">Core Financial & Semantic Palettes</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #2563eb;">#2563eb</div>
+                                <div class="p-2 small fw-bold">Primary (Blue)</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #059669;">#059669</div>
+                                <div class="p-2 small fw-bold">Success (Green)</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #dc2626;">#dc2626</div>
+                                <div class="p-2 small fw-bold">Danger (Red)</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #d97706;">#d97706</div>
+                                <div class="p-2 small fw-bold">Warning (Amber)</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #0891b2;">#0891b2</div>
+                                <div class="p-2 small fw-bold">Info (Cyan)</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <div class="color-swatch-card">
+                                <div class="color-swatch-box" style="background: #0f172a;">#0f172a</div>
+                                <div class="p-2 small fw-bold">Slate (Neutral)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h6 class="fw-bold text-muted small text-uppercase mb-2">Typography Hierarchy Standard</h6>
+                    <div class="p-3 rounded border" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom" style="border-color: var(--shop-border) !important;">
+                            <span><strong>UI Body & Headings (Inter):</strong> Clean, high-legibility interface typography with adjustable font scale.</span>
+                            <span class="badge bg-secondary-subtle text-secondary">400, 500, 600, 700, 800, 900</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="font-mono text-primary fw-bold"><strong>Monetary Font (JetBrains Mono):</strong> <span class="curr-val">SAR 42,500.00</span> | INV-202608-0042 | SKU: ALM-MILK-2L</span>
+                            <span class="badge bg-primary-subtle text-primary font-mono">Strict Alignment</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Buttons -->
+            <section id="buttons" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-menu-button-wide text-primary me-2"></i>2. Buttons & POS Interaction States</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <p class="text-muted small mb-3">All buttons feature active keyboard shortcuts, click ripples, focus rings, and loading spinner states.</p>
+                    <div class="d-flex flex-wrap gap-2 mb-4">
+                        <button class="btn btn-primary fw-bold px-3 shadow-sm"><i class="bi bi-floppy me-1"></i> Save Product</button>
+                        <button class="btn btn-success fw-bold px-3 shadow-sm" onclick="triggerPosPayDemo()"><i class="bi bi-lightning-charge-fill me-1"></i> Complete Sale <span class="badge bg-black bg-opacity-25 ms-1 font-mono">F9</span></button>
+                        <button class="btn btn-warning text-dark fw-bold px-3 shadow-sm" onclick="showToast('warning')"><i class="bi bi-pause-circle-fill me-1"></i> Hold Sale <span class="badge bg-black bg-opacity-25 ms-1 font-mono">F4</span></button>
+                        <button class="btn btn-danger fw-bold px-3 shadow-sm" onclick="showConfirmAlert()"><i class="bi bi-slash-circle me-1"></i> Void Invoice</button>
+                        <button class="btn btn-outline-secondary fw-bold px-3"><i class="bi bi-x-circle me-1"></i> Cancel</button>
+                        <button class="btn btn-primary fw-bold px-3" disabled><span class="spinner-border spinner-border-sm me-1"></span> Processing...</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Forms -->
+            <section id="forms" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-input-cursor-text text-primary me-2"></i>3. Form Inputs & Multi-Currency Formatting</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">Monetary Input (AutoNumeric)</label>
+                            <div class="input-group">
+                                <span class="input-group-text font-mono fw-bold curr-symbol">SAR</span>
+                                <input type="text" id="demo-currency" class="form-control font-mono text-end fw-bold" value="1,250.00">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">Date Range Filter (Flatpickr)</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar3"></i></span>
+                                <input type="text" id="flatpickr-range" class="form-control" placeholder="Select dates...">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">Searchable Customer Picker</label>
+                            <select id="tom-select-demo" class="form-select">
+                                <option value="1">Walk-in Customer (General Account)</option>
+                                <option value="2">Ahmed Al-Otaibi (+966 50 123 4567)</option>
+                                <option value="3">Mohammed Khan (+966 55 987 6543)</option>
+                                <option value="4">Sultan Abdullah (+966 54 321 8765)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 4: Badges -->
+            <section id="badges" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-patch-check text-primary me-2"></i>4. Status Badges & Glow Pills</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fw-bold"><i class="bi bi-check-circle-fill me-1"></i> In Stock (42 units)</span>
+                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-3 py-2 fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i> Low Stock (3 units)</span>
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 fw-bold"><i class="bi bi-x-circle-fill me-1"></i> Out of Stock</span>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fw-bold"><i class="bi bi-shield-check me-1"></i> Branch Manager</span>
+                        <span class="badge bg-info-subtle text-info border border-info-subtle px-3 py-2 fw-bold"><i class="bi bi-qr-code me-1"></i> ZATCA Phase-2 Compliant</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 5: KPI Widgets -->
+            <section id="kpi-widgets" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-grid-1x2 text-primary me-2"></i>5. Enterprise Dashboard KPIs (8 Core Metrics)</h4>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 font-mono">Live Data Stream</span>
+                </div>
+                
+                <div class="row g-3 mb-3">
+                    <!-- 1. Gross Sales -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Today Gross Sales</span>
+                                <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-cash-stack"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-primary" id="kpi-gross-sales">42,500.00 SAR</div>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <span class="kpi-delta bg-success-subtle text-success"><i class="bi bi-arrow-up-right"></i> +14.2%</span>
+                                <span class="text-muted small font-mono">142 Invoices</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Net Profit -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Net Store Profit</span>
+                                <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-graph-up-arrow"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-success" id="kpi-net-profit">18,200.00 SAR</div>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <span class="kpi-delta bg-success-subtle text-success">42.8% Margin</span>
+                                <span class="text-muted small font-mono">After COGS</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Output VAT -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Output VAT (15%)</span>
+                                <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-receipt-cutoff"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-info" id="kpi-vat">5,543.48 SAR</div>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <span class="badge bg-secondary-subtle text-secondary">Tax Output</span>
+                                <span class="text-muted small font-mono">Taxable Base</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Stock Valuation -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Inventory Valuation</span>
+                                <div class="kpi-icon bg-warning-subtle text-warning"><i class="bi bi-boxes"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-warning" id="kpi-valuation">384,120.00 SAR</div>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <span class="badge bg-primary-subtle text-primary font-mono">142 SKUs</span>
+                                <span class="text-muted small font-mono">WAC Costing</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <!-- 5. Customer Receivables -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Customer Dues</span>
+                                <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-people-fill"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono" id="kpi-receivables">14,250.00 SAR</div>
+                            <div class="text-muted small mt-2">18 Active customer accounts</div>
+                        </div>
+                    </div>
+
+                    <!-- 6. Supplier Payables -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Vendor Payables</span>
+                                <div class="kpi-icon bg-danger-subtle text-danger"><i class="bi bi-truck"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-danger" id="kpi-payables">28,400.00 SAR</div>
+                            <div class="text-muted small mt-2">Due within 15 days</div>
+                        </div>
+                    </div>
+
+                    <!-- 7. Low / Out of Stock -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Stock Alerts</span>
+                                <div class="kpi-icon bg-danger-subtle text-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-danger">14 Low / 2 Out</div>
+                            <div class="text-muted small mt-2">Immediate PO required</div>
+                        </div>
+                    </div>
+
+                    <!-- 8. Cash Drawer Tender -->
+                    <div class="col-sm-6 col-xl-3">
+                        <div class="kpi-card">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="text-muted small fw-bold text-uppercase">Active Shift Cash</span>
+                                <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-wallet2"></i></div>
+                            </div>
+                            <div class="kpi-value font-mono text-success" id="kpi-cash-tender">7,570.00 SAR</div>
+                            <div class="text-muted small mt-2">Float: 3,450.00 SAR (Balanced)</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 6: Charts -->
+            <section id="charts" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-graph-up-arrow text-primary me-2"></i>6. High-Definition Visual Analytics</h4>
+                    <span class="badge bg-primary px-3 py-1 font-mono">Fintech Engine</span>
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="glass-panel p-4 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h6 class="fw-bold mb-0">7-Day Revenue vs Previous Week</h6>
+                                    <small class="text-muted">Interactive multi-series spline with dynamic currency tooltips</small>
+                                </div>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary active">7 Days</button>
+                                    <button class="btn btn-outline-secondary">30 Days</button>
+                                    <button class="btn btn-outline-secondary">YTD</button>
+                                </div>
+                            </div>
+                            <div id="chart-area" style="min-height: 300px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <div class="glass-panel p-4 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold mb-0">Payment Distribution</h6>
+                                <i class="bi bi-pie-chart text-muted"></i>
+                            </div>
+                            <div id="chart-donut" style="min-height: 250px;"></div>
+                            <div class="mt-3 pt-3 border-top small" style="border-color: var(--shop-border) !important;">
+                                <div class="d-flex justify-content-between text-muted mb-1">
+                                    <span>Electronic Settlement:</span>
+                                    <strong class="font-mono text-primary">45.0%</strong>
+                                </div>
+                                <div class="d-flex justify-content-between text-muted">
+                                    <span>Cash Tender Share:</span>
+                                    <strong class="font-mono text-success">55.0%</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-lg-6">
+                        <div class="glass-panel p-4">
+                            <h6 class="fw-bold mb-1">Peak Shopping Hours (Hourly Transaction Volume)</h6>
+                            <p class="text-muted small mb-3">Analysis of customer density across operating shifts</p>
+                            <div id="chart-bar" style="min-height: 230px;"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="glass-panel p-4">
+                            <h6 class="fw-bold mb-1">Department Gross Margin Performance</h6>
+                            <p class="text-muted small mb-3">Margin efficiency benchmark by inventory category</p>
+                            <div id="chart-radial" style="min-height: 230px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 7: POS Counter Layout -->
+            <section id="pos-counter" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-cart3 text-primary me-2"></i>7. Interactive POS Counter & Cart Simulator</h4>
+                    <span class="badge bg-success font-mono"><i class="bi bi-lightning-charge-fill"></i> Sub-second Speed</span>
+                </div>
+                
+                <div class="glass-panel p-3" style="background: var(--shop-bg);">
+                    <div class="row g-3">
+                        <!-- Left Catalog & Grid -->
+                        <div class="col-lg-7">
+                            <div class="glass-panel p-3 mb-3">
+                                <div class="input-group input-group-lg mb-3">
+                                    <span class="input-group-text border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                    <input type="text" id="pos-search-input" class="form-control border-start-0" placeholder="Scan barcode gun or search item (F2)..." onkeyup="filterPosCatalog()">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="simulateBarcodeScan()"><i class="bi bi-upc-scan me-1"></i> Scan Gun</button>
+                                </div>
+
+                                <!-- Category Filter Pills -->
+                                <div class="d-flex gap-2 overflow-auto pb-2 mb-3">
+                                    <button class="btn btn-sm btn-primary rounded-pill px-3 fw-bold" onclick="filterCategory('all')">All Items (142)</button>
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="filterCategory('dairy')">Dairy & Fresh</button>
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="filterCategory('beverages')">Beverages</button>
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="filterCategory('staples')">Groceries</button>
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="filterCategory('snacks')">Snacks</button>
+                                </div>
+
+                                <!-- Dynamic POS Catalog Grid -->
+                                <div class="row g-2" id="pos-catalog-grid">
+                                    <!-- Item 1 -->
+                                    <div class="col-4 pos-item" data-category="dairy" data-name="Almarai Fresh Milk 2L" data-price="11.50" data-stock="42">
+                                        <div class="pos-grid-card" onclick="addToCart('Almarai Fresh Milk 2L', 11.50)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1550583724-b2692b85b150?w=200&auto=format&fit=crop&q=80" alt="Almarai Fresh Milk 2L">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Almarai Milk 2L</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="11.50">11.50 SAR</span>
+                                                <span class="badge bg-success-subtle text-success" style="font-size: 0.65rem;">42 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Item 2 -->
+                                    <div class="col-4 pos-item" data-category="beverages" data-name="Pepsi Can 330ml" data-price="3.00" data-stock="120">
+                                        <div class="pos-grid-card" onclick="addToCart('Pepsi Can 330ml', 3.00)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1629203851122-3726ecdf080e?w=200&auto=format&fit=crop&q=80" alt="Pepsi Can 330ml">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Pepsi Can 330ml</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="3.00">3.00 SAR</span>
+                                                <span class="badge bg-success-subtle text-success" style="font-size: 0.65rem;">120 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Item 3 -->
+                                    <div class="col-4 pos-item" data-category="staples" data-name="Basmati Rice 5kg" data-price="45.00" data-stock="4">
+                                        <div class="pos-grid-card" onclick="addToCart('Basmati Rice 5kg', 45.00)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1586201375761-83865001e31c?w=200&auto=format&fit=crop&q=80" alt="Basmati Rice 5kg">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Basmati Rice 5kg</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="45.00">45.00 SAR</span>
+                                                <span class="badge bg-warning-subtle text-warning" style="font-size: 0.65rem;">4 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Item 4 -->
+                                    <div class="col-4 pos-item" data-category="beverages" data-name="Lipton Tea 100 Bags" data-price="18.50" data-stock="28">
+                                        <div class="pos-grid-card" onclick="addToCart('Lipton Tea 100 Bags', 18.50)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=200&auto=format&fit=crop&q=80" alt="Lipton Tea 100 Bags">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Lipton Tea 100B</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="18.50">18.50 SAR</span>
+                                                <span class="badge bg-success-subtle text-success" style="font-size: 0.65rem;">28 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Item 5 -->
+                                    <div class="col-4 pos-item" data-category="staples" data-name="Sunflower Cooking Oil 1.5L" data-price="34.00" data-stock="9">
+                                        <div class="pos-grid-card" onclick="addToCart('Sunflower Oil 1.5L', 34.00)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200&auto=format&fit=crop&q=80" alt="Sunflower Oil 1.5L">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Sunflower Oil 1.5L</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="34.00">34.00 SAR</span>
+                                                <span class="badge bg-warning-subtle text-warning" style="font-size: 0.65rem;">9 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Item 6 -->
+                                    <div class="col-4 pos-item" data-category="snacks" data-name="Lay's Salted Chips 170g" data-price="5.75" data-stock="85">
+                                        <div class="pos-grid-card" onclick="addToCart('Lay\'s Salted 170g', 5.75)">
+                                            <div class="pos-img-container">
+                                                <img src="https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=200&auto=format&fit=crop&q=80" alt="Lay's Salted Chips 170g">
+                                            </div>
+                                            <div class="fw-bold text-truncate small">Lay's Salted 170g</div>
+                                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                                <span class="font-mono text-primary fw-bold small pos-price" data-base-price="5.75">5.75 SAR</span>
+                                                <span class="badge bg-success-subtle text-success" style="font-size: 0.65rem;">85 in stock</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Cart & Pay -->
+                        <div class="col-lg-5">
+                            <div class="glass-panel p-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="fw-bold mb-0">Active Invoice Cart</h6>
+                                    <span class="badge bg-primary font-mono" id="cart-count-badge">2 Items</span>
+                                </div>
+
+                                <!-- Dynamic Cart Items List -->
+                                <div id="cart-items-container" style="min-height: 180px; max-height: 260px; overflow-y: auto;">
+                                    <!-- Item rows injected dynamically -->
+                                </div>
+
+                                <!-- Subtotal & Tax Calculation Breakdown -->
+                                <div class="p-3 rounded mb-3" style="background: var(--shop-bg);">
+                                    <div class="d-flex justify-content-between small text-muted mb-1">
+                                        <span>Subtotal (Taxable Base)</span>
+                                        <span class="font-mono" id="cart-subtotal">35.65 SAR</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between small text-muted mb-2">
+                                        <span>Output VAT (15% Included)</span>
+                                        <span class="font-mono" id="cart-tax">5.35 SAR</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between fs-4 fw-black text-primary pt-2 border-top" style="border-color: var(--shop-border) !important;">
+                                        <span>TOTAL DUE</span>
+                                        <span class="font-mono" id="cart-total">41.00 SAR</span>
+                                    </div>
+                                </div>
+
+                                <!-- Quick Tender Presets -->
+                                <div class="mb-3">
+                                    <div class="text-muted small fw-bold mb-1">Quick Cash Tender:</div>
+                                    <div class="d-flex gap-1.5 flex-wrap">
+                                        <button class="btn btn-sm btn-outline-secondary font-mono flex-fill" onclick="setTenderExact()">Exact</button>
+                                        <button class="btn btn-sm btn-outline-secondary font-mono flex-fill" onclick="setTender(50)">50</button>
+                                        <button class="btn btn-sm btn-outline-secondary font-mono flex-fill" onclick="setTender(100)">100</button>
+                                        <button class="btn btn-sm btn-outline-secondary font-mono flex-fill" onclick="setTender(200)">200</button>
+                                        <button class="btn btn-sm btn-outline-secondary font-mono flex-fill" onclick="setTender(500)">500</button>
+                                    </div>
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-success btn-lg fw-bold py-3 shadow-md" id="btn-pay-now" onclick="triggerPosPayDemo()">
+                                        <i class="bi bi-lightning-charge-fill me-1"></i> PAY NOW (41.00 SAR) <span class="badge bg-black bg-opacity-25 font-mono ms-1">F9</span>
+                                    </button>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-outline-warning btn-sm flex-fill fw-bold" onclick="showToast('warning')"><i class="bi bi-pause-circle me-1"></i> Hold (F4)</button>
+                                        <button class="btn btn-outline-danger btn-sm flex-fill fw-bold" onclick="clearCart()"><i class="bi bi-trash me-1"></i> Clear Cart</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 8: Thermal Receipt -->
+            <section id="receipt" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-receipt text-primary me-2"></i>8. ZATCA E-Invoice 80mm Thermal Receipt</h4>
+                    <button class="btn btn-sm btn-outline-primary" onclick="printReceipt()"><i class="bi bi-printer me-1"></i> Print Receipt Demo</button>
+                </div>
+                <div class="glass-panel p-4 text-center">
+                    <p class="text-muted small mb-3">Official Saudi ZATCA Phase 1 & 2 compliant 80mm thermal receipt layout with encrypted TLV QR code simulator.</p>
+                    <div class="receipt-container text-start">
+                        <div class="text-center">
+                            <h6 class="fw-black mb-0">AL-NOOR SUPERMARKET</h6>
+                            <div style="font-size: 0.75rem; color: #475569;">Commercial Reg: 1010123456</div>
+                            <div style="font-size: 0.75rem; color: #475569;">VAT Identification: 300123456700003</div>
+                            <div style="font-size: 0.75rem; color: #475569;">King Fahd Road, Riyadh, Saudi Arabia</div>
+                            <div class="border-top border-bottom border-dark my-2 py-1 fw-bold text-center" style="font-size: 0.8rem;">
+                                SIMPLIFIED TAX INVOICE
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size: 0.8rem;">
+                            <span>Invoice: INV-202608-0042</span>
+                            <span>2026-08-28 14:32</span>
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size: 0.8rem;">
+                            <span>Cashier: Shamim Hossen</span>
+                            <span>Station #01</span>
+                        </div>
+                        <hr class="my-2 border-dark">
+                        <div class="d-flex justify-content-between fw-bold mb-1" style="font-size: 0.8rem;">
+                            <span>Item Description</span>
+                            <span>Qty x Price</span>
+                            <span>Total</span>
+                        </div>
+                        <div id="receipt-items-list" style="font-size: 0.8rem;">
+                            <div class="d-flex justify-content-between">
+                                <span>Almarai Fresh Milk 2L</span>
+                                <span>2 x 11.50</span>
+                                <span>23.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span>Pepsi Can 330ml</span>
+                                <span>6 x 3.00</span>
+                                <span>18.00</span>
+                            </div>
+                        </div>
+                        <hr class="my-2 border-dark">
+                        <div class="d-flex justify-content-between" style="font-size: 0.8rem;">
+                            <span>Subtotal (Excl. VAT):</span>
+                            <span id="receipt-subtotal">35.65 SAR</span>
+                        </div>
+                        <div class="d-flex justify-content-between" style="font-size: 0.8rem;">
+                            <span>VAT (15% Included):</span>
+                            <span id="receipt-vat">5.35 SAR</span>
+                        </div>
+                        <div class="d-flex justify-content-between fw-bold fs-6 my-1 border-top border-dark pt-1">
+                            <span>TOTAL AMOUNT:</span>
+                            <span id="receipt-total">41.00 SAR</span>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
+                            <span>Payment Method:</span>
+                            <span>Mada Card (Auth: 893201)</span>
+                        </div>
+                        <div class="text-center my-3">
+                            <div id="receipt-qr" class="d-flex justify-content-center mb-1"></div>
+                            <div style="font-size: 0.7rem; color: #475569;">Scan with ZATCA App for Tax Compliance</div>
+                        </div>
+                        <div class="text-center" style="font-size: 0.7rem; color: #64748b;">
+                            Thank you for shopping with us!<br>
+                            Return eligible within 7 days with original tax receipt.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 9: Product Images -->
+            <section id="product-images" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-images text-primary me-2"></i>9. Product Images & Media Cards</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold text-muted small mb-3">Catalog Showcase Card</h6>
+                            <div class="glass-card overflow-hidden hover-lift">
+                                <div style="height: 170px; overflow: hidden; background: var(--shop-bg);">
+                                    <img src="https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80" alt="Almarai Fresh Milk 2L" style="width: 100%; height: 100%; object-fit: cover;">
+                                </div>
+                                <div class="p-3">
+                                    <span class="badge bg-primary-subtle text-primary mb-1">Dairy & Fresh</span>
+                                    <h6 class="fw-bold mb-1">Almarai Fresh Milk 2L</h6>
+                                    <div class="font-mono text-primary fw-bold mb-2">11.50 SAR</div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="badge bg-success-subtle text-success">Stock: 42 units</span>
+                                        <button class="btn btn-sm btn-outline-primary px-3 fw-bold">+ Add Item</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold text-muted small mb-3">No-Image Fallback Card</h6>
+                            <div class="glass-card overflow-hidden hover-lift">
+                                <div class="d-flex flex-column align-items-center justify-content-center" style="height: 170px; background: var(--shop-bg); color: var(--shop-text-muted);">
+                                    <i class="bi bi-box-seam display-4 opacity-50"></i>
+                                    <span class="small mt-1 font-semibold">Product Media Placeholder</span>
+                                </div>
+                                <div class="p-3">
+                                    <span class="badge bg-secondary-subtle text-secondary mb-1">Hardware</span>
+                                    <h6 class="fw-bold mb-1">Steel Bolt M8x50</h6>
+                                    <div class="font-mono text-primary fw-bold mb-2">2.50 SAR</div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="badge bg-success-subtle text-success">Stock: 250 units</span>
+                                        <button class="btn btn-sm btn-outline-primary px-3 fw-bold">+ Add Item</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 10: Barcode Shelf Labels -->
+            <section id="barcode-labels" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-upc-scan text-primary me-2"></i>10. Barcode Thermal Label Printing (50x25mm & 40x30mm)</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <p class="text-muted small mb-3">Vector-rendered CODE128 thermal sticker labels for supermarket shelf tags and barcode guns.</p>
+                    <div class="row g-4 align-items-center">
+                        <div class="col-md-5 text-center">
+                            <!-- 50x25mm Label Simulator -->
+                            <div class="p-3 bg-white text-dark border rounded shadow-sm d-inline-block text-start font-mono" style="width: 240px; font-size: 0.8rem; border: 1px dashed #64748b !important;">
+                                <div class="fw-bold text-center text-truncate" style="font-size: 0.8rem;">AL-NOOR SUPERMARKET</div>
+                                <div class="fw-bold text-truncate my-1" style="font-size: 0.9rem;">Almarai Milk 2L</div>
+                                <div class="text-center my-1">
+                                    <svg id="barcode-svg" style="max-width: 100%; height: 42px;"></svg>
+                                </div>
+                                <div class="d-flex justify-content-between fw-bold pt-1 border-top border-dark" style="font-size: 0.9rem;">
+                                    <span>11.50 SAR</span>
+                                    <span class="badge bg-dark text-white" style="font-size: 0.65rem;">15% VAT INCL</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-7">
+                            <h6 class="fw-bold mb-2">Label Customization & Dimensions</h6>
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">Select Label Media Size</label>
+                                <select class="form-select form-select-sm" style="max-width: 280px;">
+                                    <option>50mm x 25mm (Standard Shelf Tag)</option>
+                                    <option>40mm x 30mm (Compact Product Sticker)</option>
+                                    <option>80mm Continuous Price Strip</option>
+                                </select>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm fw-bold px-3" onclick="printBarcodeDemo()"><i class="bi bi-printer me-1"></i> Print Test Label</button>
+                                <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i> Download Vector SVG</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 11: Z-Report Shift Reconciliation -->
+            <section id="terminal-recon" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-credit-card-2-front text-primary me-2"></i>11. Shift Closing Reconciliation (Z-Report)</h4>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 font-mono">Balanced</span>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="p-3 rounded border h-100" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                                <h6 class="fw-bold text-success mb-2"><i class="bi bi-cash-stack me-1"></i> Physical Cash Drawer Count</h6>
+                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                    <span>Opening Float + Cash Sales:</span>
+                                    <span class="font-mono fw-bold">7,570.00 SAR</span>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold">Counted Physical Cash Amount</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text font-mono curr-symbol">SAR</span>
+                                        <input type="text" class="form-control font-mono text-end fw-bold" value="7,570.00" readonly>
+                                    </div>
+                                </div>
+                                <div class="badge bg-success-subtle text-success border border-success-subtle w-100 py-2">
+                                    <i class="bi bi-check-circle-fill me-1"></i> Cash Discrepancy: 0.00 SAR (Perfect Match)
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 rounded border h-100" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                                <h6 class="fw-bold text-primary mb-2"><i class="bi bi-credit-card me-1"></i> Mada / Card Terminal Batch Slip</h6>
+                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                    <span>System Recorded Card Sales:</span>
+                                    <span class="font-mono fw-bold">4,120.00 SAR</span>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold">Bank Terminal Batch Total</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text font-mono curr-symbol">SAR</span>
+                                        <input type="text" class="form-control font-mono text-end fw-bold" value="4,120.00" readonly>
+                                    </div>
+                                </div>
+                                <div class="badge bg-success-subtle text-success border border-success-subtle w-100 py-2">
+                                    <i class="bi bi-check-circle-fill me-1"></i> Card Settlement Discrepancy: 0.00 SAR (Balanced)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 12: Produce PLU Grid -->
+            <section id="produce-grid" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-basket3 text-primary me-2"></i>12. Supermarket Fast Produce & PLU Touch Grid</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <p class="text-muted small mb-3">One-touch addition for loose fruits, vegetables, and bakery items without physical barcode labels.</p>
+                    <div class="row g-3">
+                        <div class="col-6 col-md-3">
+                            <div class="glass-card p-3 text-center h-100 hover-lift" style="cursor: pointer;" onclick="addToCart('Fresh Banana (1kg)', 5.50)">
+                                <span class="badge bg-success-subtle text-success mb-2" style="font-size: 0.75rem;">PLU: 1042</span>
+                                <div class="display-6 mb-1">🍌</div>
+                                <div class="fw-bold small">Fresh Banana</div>
+                                <div class="font-mono text-primary fw-bold small mt-1">5.50 SAR / kg</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="glass-card p-3 text-center h-100 hover-lift" style="cursor: pointer;" onclick="addToCart('Fresh Tomato (1kg)', 8.00)">
+                                <span class="badge bg-danger-subtle text-danger mb-2" style="font-size: 0.75rem;">PLU: 1055</span>
+                                <div class="display-6 mb-1">🍅</div>
+                                <div class="fw-bold small">Fresh Tomato</div>
+                                <div class="font-mono text-primary fw-bold small mt-1">8.00 SAR / kg</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="glass-card p-3 text-center h-100 hover-lift" style="cursor: pointer;" onclick="addToCart('White Onion (1kg)', 3.50)">
+                                <span class="badge bg-warning-subtle text-warning mb-2" style="font-size: 0.75rem;">PLU: 1012</span>
+                                <div class="display-6 mb-1">🧅</div>
+                                <div class="fw-bold small">White Onion</div>
+                                <div class="font-mono text-primary fw-bold small mt-1">3.50 SAR / kg</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="glass-card p-3 text-center h-100 hover-lift" style="cursor: pointer;" onclick="addToCart('Fresh Pita Bread Pkt', 1.50)">
+                                <span class="badge bg-info-subtle text-info mb-2" style="font-size: 0.75rem;">PLU: 2001</span>
+                                <div class="display-6 mb-1">🍞</div>
+                                <div class="fw-bold small">Fresh Pita Bread</div>
+                                <div class="font-mono text-primary fw-bold small mt-1">1.50 SAR / pkt</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 13: Network & Sync -->
+            <section id="network-sync" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-wifi text-primary me-2"></i>13. Real-Time Network & Hardware Health</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="d-flex flex-wrap gap-3">
+                        <div class="p-3 rounded d-flex align-items-center gap-3 border flex-grow-1" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                            <span class="spinner-grow spinner-grow-sm text-success" role="status"></span>
+                            <div>
+                                <div class="fw-bold small">Local Shop Server (LAN)</div>
+                                <div class="text-muted small font-mono">Connected • 192.168.1.100 (2ms)</div>
+                            </div>
+                        </div>
+                        <div class="p-3 rounded d-flex align-items-center gap-3 border flex-grow-1" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                            <i class="bi bi-cloud-check-fill text-primary fs-4"></i>
+                            <div>
+                                <div class="fw-bold small">Encrypted Cloud Vault</div>
+                                <div class="text-muted small font-mono">Synced (Snapshot: 12m ago)</div>
+                            </div>
+                        </div>
+                        <div class="p-3 rounded d-flex align-items-center gap-3 border flex-grow-1" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                            <i class="bi bi-arrow-repeat text-success fs-4"></i>
+                            <div>
+                                <div class="fw-bold small">Multi-Terminal WebSocket</div>
+                                <div class="text-muted small font-mono">Live Stream Active (4 Terminals)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 14: Report & Print -->
+            <section id="report-layout" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-printer text-primary me-2"></i>14. Report & Print Tables</h4>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-pdf"></i> Export PDF</button>
+                        <button class="btn btn-sm btn-outline-success"><i class="bi bi-filetype-csv"></i> Export CSV</button>
+                        <button class="btn btn-sm btn-secondary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+                    </div>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="table-responsive">
+                        <table class="table table-custom mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Invoices</th>
+                                    <th>Gross Sales</th>
+                                    <th>COGS (WAC)</th>
+                                    <th>Output VAT (15%)</th>
+                                    <th>Net Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>2026-08-28</td>
+                                    <td class="font-mono">142</td>
+                                    <td class="font-mono fw-bold">42,500.00 SAR</td>
+                                    <td class="font-mono text-danger">24,300.00 SAR</td>
+                                    <td class="font-mono text-info">5,543.48 SAR</td>
+                                    <td class="font-mono text-success fw-bold">18,200.00 SAR</td>
+                                </tr>
+                                <tr>
+                                    <td>2026-08-27</td>
+                                    <td class="font-mono">125</td>
+                                    <td class="font-mono fw-bold">38,200.00 SAR</td>
+                                    <td class="font-mono text-danger">21,800.00 SAR</td>
+                                    <td class="font-mono text-info">4,982.60 SAR</td>
+                                    <td class="font-mono text-success fw-bold">16,400.00 SAR</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 15: Skeletons & Empty States -->
+            <section id="skeletons" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-hourglass-split text-primary me-2"></i>15. Loading & Empty States</h4>
+                </div>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="glass-panel p-4 h-100">
+                            <h6 class="fw-bold text-muted small mb-3">Shimmer Loading Skeleton</h6>
+                            <div class="skeleton-shimmer rounded mb-3" style="height: 120px; width: 100%;"></div>
+                            <div class="skeleton-shimmer rounded mb-2" style="height: 22px; width: 80%;"></div>
+                            <div class="skeleton-shimmer rounded mb-2" style="height: 18px; width: 60%;"></div>
+                            <div class="skeleton-shimmer rounded" style="height: 18px; width: 40%;"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="glass-panel p-4 h-100 text-center d-flex flex-column justify-content-center align-items-center">
+                            <i class="bi bi-box-seam display-4 opacity-50 text-muted mb-2"></i>
+                            <h6 class="fw-bold mb-1">No Active Records Found</h6>
+                            <p class="text-muted small mb-3">Try adjusting your filters or scan a new product.</p>
+                            <button class="btn btn-primary btn-sm fw-bold px-3"><i class="bi bi-plus-lg me-1"></i> Add Record</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 16: Dynamic Settings Customizer -->
+            <section id="system-settings" class="mb-5">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold mb-0"><i class="bi bi-sliders text-primary me-2"></i>16. Dynamic Settings & Live Customizer</h4>
+                </div>
+                <div class="glass-panel p-4">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="p-3 rounded border h-100" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                                <h6 class="fw-bold text-primary mb-3"><i class="bi bi-shop me-1"></i> Store Identity & Tax Info</h6>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold">Supermarket Primary Name</label>
+                                    <input type="text" class="form-control form-control-sm" value="AL-NOOR SUPERMARKET & HYPERMARKET">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold">POS Secondary Identifier</label>
+                                    <input type="text" class="form-control form-control-sm" value="AL-NOOR RETAIL POS">
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label class="form-label small fw-bold">Commercial Reg (CR)</label>
+                                        <input type="text" class="form-control form-control-sm font-mono" value="1010123456">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-bold">VAT Number (15 Digits)</label>
+                                        <input type="text" class="form-control form-control-sm font-mono" value="300123456700003">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 rounded border h-100" style="background: var(--shop-bg); border-color: var(--shop-border) !important;">
+                                <h6 class="fw-bold text-primary mb-3"><i class="bi bi-printer-fill me-1"></i> Hardware & POS Automation</h6>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="hw-beep" checked>
+                                    <label class="form-check-label small fw-bold" for="hw-beep">Barcode Audio Beep Feedback</label>
+                                </div>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="hw-drawer" checked>
+                                    <label class="form-check-label small fw-bold" for="hw-drawer">Auto Cash Drawer Kick on Tender</label>
+                                </div>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="hw-scale" checked>
+                                    <label class="form-check-label small fw-bold" for="hw-scale">Produce Weight Scale Decoder (Prefix 20-29)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+</div>
+
+<!-- JS Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/autonumeric@4.10.5"></script>
+
+<script>
+    // Global State for Charts, Cart & Currency
+    let areaChart, donutChart, barChart, radialChart;
+    let currentCurrency = 'SAR';
+    let cart = [
+        { name: 'Almarai Fresh Milk 2L', price: 11.50, qty: 2 },
+        { name: 'Pepsi Can 330ml', price: 3.00, qty: 6 }
+    ];
+
+    document.addEventListener("DOMContentLoaded", function() {
+        // 1. Live Clock
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('live-clock').innerHTML = `<i class="bi bi-clock me-1"></i>${now.toLocaleTimeString('en-US', { hour12: false })}`;
+        }, 1000);
+
+        // 2. Pickers Initialization
+        flatpickr("#flatpickr-range", { mode: "range", theme: "material_blue", defaultDate: [new Date(), new Date(Date.now() + 6*24*60*60*1000)] });
+        new TomSelect("#tom-select-demo", { create: false });
+        new AutoNumeric('#demo-currency', { currencySymbol: '', decimalPlaces: 2 });
+
+        // 3. Render ApexCharts
+        initCharts('light');
+
+        // 4. Barcode Rendering
+        if (typeof JsBarcode === "function") {
+            JsBarcode("#barcode-svg", "6281007041235", {
+                format: "CODE128",
+                width: 1.4,
+                height: 36,
+                displayValue: true,
+                fontSize: 11,
+                margin: 0
+            });
+        }
+
+        // 5. ZATCA QR Code Rendering
+        new QRCode(document.getElementById("receipt-qr"), {
+            text: "AQxBTExOT09SIFNVUEVSTUFSS0VUBzMwMDEyMzQ1NjcwMDAwMwMUMjAyNi0wOC0yOFQxNDozMjowNVoEBjQxLjAwBQU1LjM1",
+            width: 90,
+            height: 90,
+            colorDark : "#000000",
+            colorLight : "#ffffff"
+        });
+
+        // 6. Theme Switching Logic
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const themeText = document.getElementById('theme-text');
+        
+        const setDarkMode = (isDark) => {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeIcon.classList.replace('bi-moon-stars-fill', 'bi-sun-fill');
+                themeText.textContent = "Light Mode";
+                localStorage.setItem('theme', 'dark');
+                updateChartsTheme('dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                themeIcon.classList.replace('bi-sun-fill', 'bi-moon-stars-fill');
+                themeText.textContent = "Dark Mode";
+                localStorage.setItem('theme', 'light');
+                updateChartsTheme('light');
+            }
+        };
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') setDarkMode(true);
+
+        themeToggleBtn.addEventListener('click', () => {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            setDarkMode(!isDark);
+        });
+
+        // 7. Initial Cart Render
+        renderCart();
+    });
+
+    // Global Font Scaling Zoom Function
+    function setGlobalFontScale(scale) {
+        const pct = parseInt(scale.replace('%', ''), 10) || 100;
+        const basePx = (16 * pct) / 100;
+        document.documentElement.style.fontSize = `${basePx}px`;
+
+        // Update active UI button
+        document.querySelectorAll('.zoom-pill').forEach(el => {
+            if (el.textContent.trim() === scale) {
+                el.classList.add('active');
+            } else {
+                el.classList.remove('active');
+            }
+        });
+
+        showToast('success', `UI Font Scale set to ${scale}`);
+    }
+
+    // Dynamic Currency Switcher
+    function changeCurrency(curr) {
+        currentCurrency = curr;
+        document.querySelectorAll('.curr-symbol').forEach(el => el.textContent = curr);
+        renderCart();
+        showToast('success', `Active currency switched to ${curr}`);
+    }
+
+    // High-Definition Fintech Charts
+    function initCharts(mode) {
+        const isDark = mode === 'dark';
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--shop-primary').trim() || '#2563eb';
+
+        // 1. Area Chart (Revenue vs Target)
+        const areaOptions = {
+            series: [
+                { name: 'Current Week', data: [12400, 18900, 24500, 31200, 28900, 38500, 42500] },
+                { name: 'Previous Week', data: [10200, 14500, 21000, 26800, 24100, 32000, 37200] }
+            ],
+            chart: {
+                height: 300,
+                type: 'area',
+                toolbar: { show: false },
+                fontFamily: 'Inter, sans-serif',
+                background: 'transparent'
+            },
+            theme: { mode: isDark ? 'dark' : 'light' },
+            colors: [primaryColor, '#94a3b8'],
+            fill: {
+                type: 'gradient',
+                gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 95, 100] }
+            },
+            stroke: { curve: 'smooth', width: [3, 2], dashArray: [0, 4] },
+            xaxis: {
+                categories: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+                labels: { style: { colors: isDark ? '#94a3b8' : '#64748b', fontSize: '12px' } }
+            },
+            yaxis: {
+                labels: {
+                    formatter: (val) => `${(val/1000).toFixed(0)}k ${currentCurrency}`,
+                    style: { colors: isDark ? '#94a3b8' : '#64748b', fontSize: '12px' }
+                }
+            },
+            grid: { borderColor: isDark ? '#334155' : '#e2e8f0' }
+        };
+        areaChart = new ApexCharts(document.querySelector("#chart-area"), areaOptions);
+        areaChart.render();
+
+        // 2. Donut Chart (Payment Distribution)
+        const donutOptions = {
+            series: [55, 30, 15],
+            chart: { type: 'donut', height: 250, fontFamily: 'Inter, sans-serif', background: 'transparent' },
+            labels: ['Cash Tender', 'Mada / Card', 'Bank Transfer'],
+            colors: ['#059669', primaryColor, '#0891b2'],
+            theme: { mode: isDark ? 'dark' : 'light' },
+            legend: { position: 'bottom', labels: { colors: isDark ? '#94a3b8' : '#64748b' }, fontSize: '13px' },
+            stroke: { show: false }
+        };
+        donutChart = new ApexCharts(document.querySelector("#chart-donut"), donutOptions);
+        donutChart.render();
+
+        // 3. Hourly Bar Chart
+        const barOptions = {
+            series: [{ name: 'Invoices', data: [12, 28, 45, 62, 85, 110, 142, 95, 48] }],
+            chart: { type: 'bar', height: 230, toolbar: { show: false }, fontFamily: 'Inter, sans-serif', background: 'transparent' },
+            colors: [primaryColor],
+            theme: { mode: isDark ? 'dark' : 'light' },
+            xaxis: {
+                categories: ['10 AM', '12 PM', '2 PM', '4 PM', '6 PM', '8 PM', '10 PM', '11 PM', '12 AM'],
+                labels: { style: { colors: isDark ? '#94a3b8' : '#64748b', fontSize: '12px' } }
+            },
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '45%' } },
+            grid: { borderColor: isDark ? '#334155' : '#e2e8f0' }
+        };
+        barChart = new ApexCharts(document.querySelector("#chart-bar"), barOptions);
+        barChart.render();
+
+        // 4. Radial Margin Chart
+        const radialOptions = {
+            series: [42.8, 38.5, 25.2],
+            chart: { height: 230, type: 'radialBar', fontFamily: 'Inter, sans-serif', background: 'transparent' },
+            plotOptions: {
+                radialBar: {
+                    dataLabels: {
+                        name: { fontSize: '13px' },
+                        value: { fontSize: '15px', formatter: (val) => `${val}%` },
+                        total: { show: true, label: 'Average', formatter: () => '35.5%' }
+                    }
+                }
+            },
+            labels: ['Groceries', 'Fresh Dairy', 'Beverages'],
+            colors: ['#059669', primaryColor, '#d97706'],
+            theme: { mode: isDark ? 'dark' : 'light' }
+        };
+        radialChart = new ApexCharts(document.querySelector("#chart-radial"), radialOptions);
+        radialChart.render();
+    }
+
+    function updateChartsTheme(mode) {
+        if (areaChart) areaChart.updateOptions({ theme: { mode: mode } });
+        if (donutChart) donutChart.updateOptions({ theme: { mode: mode } });
+        if (barChart) barChart.updateOptions({ theme: { mode: mode } });
+        if (radialChart) radialChart.updateOptions({ theme: { mode: mode } });
+    }
+
+    function changeThemeAccent(color) {
+        document.documentElement.style.setProperty('--shop-primary', color);
+        if (areaChart) areaChart.updateOptions({ colors: [color, '#94a3b8'] });
+        if (donutChart) donutChart.updateOptions({ colors: ['#059669', color, '#0891b2'] });
+        if (barChart) barChart.updateOptions({ colors: [color] });
+        showToast('success', `Theme accent changed to ${color}`);
+    }
+
+    // Dynamic POS Cart Engine
+    function renderCart() {
+        const container = document.getElementById('cart-items-container');
+        if (cart.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-cart-x fs-2 opacity-50"></i>
+                    <p class="small mb-0 mt-1">Cart is empty. Click items on the left to add.</p>
+                </div>
+            `;
+            document.getElementById('cart-count-badge').textContent = '0 Items';
+            document.getElementById('cart-subtotal').textContent = `0.00 ${currentCurrency}`;
+            document.getElementById('cart-tax').textContent = `0.00 ${currentCurrency}`;
+            document.getElementById('cart-total').textContent = `0.00 ${currentCurrency}`;
+            document.getElementById('btn-pay-now').innerHTML = `<i class="bi bi-lightning-charge-fill me-1"></i> PAY NOW (0.00 ${currentCurrency})`;
+            return;
+        }
+
+        let totalGross = 0;
+        let totalCount = 0;
+        let html = '<div class="list-group list-group-flush">';
+
+        cart.forEach((item, index) => {
+            const itemTotal = item.price * item.qty;
+            totalGross += itemTotal;
+            totalCount += item.qty;
+
+            html += `
+                <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 border-bottom" style="background: transparent; border-color: var(--shop-border) !important;">
+                    <div style="max-width: 55%;">
+                        <div class="fw-bold small text-truncate">${item.name}</div>
+                        <div class="text-muted font-mono" style="font-size: 0.8rem;">${item.price.toFixed(2)} ${currentCurrency} / unit</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="btn-group btn-group-sm border rounded">
+                            <button class="btn btn-light py-0 px-2 fw-bold" onclick="updateQty(${index}, -1)">−</button>
+                            <span class="px-2 font-mono small d-flex align-items-center fw-bold">${item.qty}</span>
+                            <button class="btn btn-light py-0 px-2 fw-bold" onclick="updateQty(${index}, 1)">+</button>
+                        </div>
+                        <div class="font-mono fw-bold text-end" style="min-width: 70px; font-size: 0.9rem;">${itemTotal.toFixed(2)} ${currentCurrency}</div>
+                        <button class="btn btn-link text-danger p-0 ms-1" onclick="removeItem(${index})"><i class="bi bi-x-circle"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+
+        // VAT Extraction (15% inclusive)
+        const subtotal = totalGross / 1.15;
+        const vat = totalGross - subtotal;
+
+        document.getElementById('cart-count-badge').textContent = `${totalCount} Items`;
+        document.getElementById('cart-subtotal').textContent = `${subtotal.toFixed(2)} ${currentCurrency}`;
+        document.getElementById('cart-tax').textContent = `${vat.toFixed(2)} ${currentCurrency}`;
+        document.getElementById('cart-total').textContent = `${totalGross.toFixed(2)} ${currentCurrency}`;
+        document.getElementById('btn-pay-now').innerHTML = `<i class="bi bi-lightning-charge-fill me-1"></i> PAY NOW (${totalGross.toFixed(2)} ${currentCurrency}) <span class="badge bg-black bg-opacity-25 font-mono ms-1">F9</span>`;
+        
+        // Update Receipt
+        document.getElementById('receipt-subtotal').textContent = `${subtotal.toFixed(2)} ${currentCurrency}`;
+        document.getElementById('receipt-vat').textContent = `${vat.toFixed(2)} ${currentCurrency}`;
+        document.getElementById('receipt-total').textContent = `${totalGross.toFixed(2)} ${currentCurrency}`;
+    }
+
+    function addToCart(name, price) {
+        const existing = cart.find(i => i.name === name);
+        if (existing) {
+            existing.qty += 1;
+        } else {
+            cart.push({ name, price, qty: 1 });
+        }
+        renderCart();
+        showToast('success', `Added ${name} to cart`);
+    }
+
+    function updateQty(index, delta) {
+        if (cart[index]) {
+            cart[index].qty += delta;
+            if (cart[index].qty <= 0) {
+                cart.splice(index, 1);
+            }
+            renderCart();
+        }
+    }
+
+    function removeItem(index) {
+        cart.splice(index, 1);
+        renderCart();
+    }
+
+    function clearCart() {
+        cart = [];
+        renderCart();
+        showToast('warning', 'Cart cleared.');
+    }
+
+    function setTenderExact() {
+        const total = parseFloat(document.getElementById('cart-total').textContent) || 0;
+        showToast('success', `Exact cash tendered: ${total.toFixed(2)} ${currentCurrency} (Change: 0.00 ${currentCurrency})`);
+    }
+
+    function setTender(amount) {
+        const total = parseFloat(document.getElementById('cart-total').textContent) || 0;
+        const change = amount - total;
+        if (change < 0) {
+            showToast('error', `Insufficient tender! Amount due is ${total.toFixed(2)} ${currentCurrency}`);
+        } else {
+            showToast('success', `Tendered ${amount.toFixed(2)} ${currentCurrency} — Change Due: ${change.toFixed(2)} ${currentCurrency}`);
+        }
+    }
+
+    function simulateBarcodeScan() {
+        showToast('success', '📟 Barcode Gun Beep: Scanned [6281007041235] -> Almarai Fresh Milk 2L added');
+        addToCart('Almarai Fresh Milk 2L', 11.50);
+    }
+
+    function filterCategory(cat) {
+        const items = document.querySelectorAll('.pos-item');
+        items.forEach(item => {
+            if (cat === 'all' || item.getAttribute('data-category') === cat) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    function filterPosCatalog() {
+        const query = document.getElementById('pos-search-input').value.toLowerCase();
+        const items = document.querySelectorAll('.pos-item');
+        items.forEach(item => {
+            const name = item.getAttribute('data-name').toLowerCase();
+            if (name.includes(query)) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    function triggerPosPayDemo() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const total = document.getElementById('cart-total').textContent;
+        Swal.fire({
+            title: 'Finalize & Print Invoice?',
+            text: `Confirm sale payment of ${total} via Mada / Cash.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Confirm & Print (F9)',
+            cancelButtonText: 'Back to Cart',
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#64748b',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#0f172a'
+        }).then((res) => {
+            if (res.isConfirmed) {
+                Swal.fire({
+                    title: 'Sale Finalized!',
+                    text: 'Invoice INV-202608-0042 recorded & sent to thermal printer.',
+                    icon: 'success',
+                    confirmButtonColor: '#059669',
+                    background: isDark ? '#1e293b' : '#ffffff',
+                    color: isDark ? '#f8fafc' : '#0f172a'
+                });
+            }
+        });
+    }
+
+    function showConfirmAlert() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        Swal.fire({
+            title: 'Void Invoice INV-202608-0042?',
+            text: "This will reverse inventory, generate an unalterable audit log, and cancel tax liability.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Yes, Void Invoice',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#0f172a'
+        });
+    }
+
+    function showToast(type, customText) {
+        let bg = '#2563eb';
+        if (type === 'success') bg = '#059669';
+        if (type === 'warning') bg = '#d97706';
+        if (type === 'error') bg = '#dc2626';
+
+        let text = customText || (type === 'success' ? 'Action completed successfully!' : 'Warning notification trigger.');
+
+        Toastify({
+            text: text,
+            duration: 3200,
+            gravity: "bottom",
+            position: "right",
+            style: { background: bg, borderRadius: "10px", fontFamily: "Inter, sans-serif", fontSize: "0.9rem", fontWeight: "600" }
+        }).showToast();
+    }
+
+    function printBarcodeDemo() {
+        showToast('success', '🖨️ Thermal Sticker Print Dialog opened for 50x25mm shelf tag.');
+    }
+
+    function printReceipt() {
+        window.print();
+    }
+</script>
+
+</body>
+</html>

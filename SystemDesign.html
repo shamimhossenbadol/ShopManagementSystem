@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shop Management Application - System Design Document (Node.js + Next.js + PostgreSQL)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --text-color: #0f172a;
+            --sidebar-bg: #ffffff;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success-color: #059669;
+            --danger-color: #dc2626;
+            --warning-color: #d97706;
+            --info-color: #0891b2;
+            --code-bg: #1e293b;
+            --code-text: #f8fafc;
+            --header-bg: #ffffff;
+            --table-hover: #f1f5f9;
+            --muted-text: #64748b;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #0f172a;
+            --text-color: #f1f5f9;
+            --sidebar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary-color: #38bdf8;
+            --primary-hover: #7dd3fc;
+            --success-color: #34d399;
+            --danger-color: #f87171;
+            --warning-color: #fbbf24;
+            --info-color: #22d3ee;
+            --code-bg: #0b1120;
+            --code-text: #f8fafc;
+            --header-bg: #1e293b;
+            --table-hover: #334155;
+            --muted-text: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 320px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            height: 100vh;
+            position: sticky;
+            top: 0;
+            overflow-y: auto;
+            padding: 1.5rem 1rem;
+            transition: background-color 0.3s;
+            flex-shrink: 0;
+        }
+
+        .sidebar h2 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .sidebar .badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.5rem;
+            background: #dbeafe;
+            color: #1e40af;
+            border-radius: 9999px;
+            margin-bottom: 1.25rem;
+            font-weight: 600;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+
+        .nav-list {
+            list-style: none;
+        }
+
+        .nav-list li a {
+            display: block;
+            padding: 0.45rem 0.75rem;
+            color: var(--muted-text);
+            text-decoration: none;
+            border-radius: 0.375rem;
+            margin-bottom: 0.2rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .nav-list li a:hover, .nav-list li a.active {
+            color: var(--primary-color);
+            background-color: var(--table-hover);
+            font-weight: 600;
+        }
+
+        .content {
+            flex: 1;
+            padding: 2.5rem 3.5rem;
+            max-width: 1200px;
+            overflow-x: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .theme-toggle {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--primary-color);
+        }
+
+        h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            margin-bottom: 0.75rem;
+            color: var(--text-color);
+            letter-spacing: -0.025em;
+        }
+
+        .subtitle {
+            color: var(--muted-text);
+            font-size: 1.05rem;
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 3rem;
+            margin-bottom: 1rem;
+            color: var(--text-color);
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--primary-color);
+            display: inline-block;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 1.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        p, li {
+            color: var(--text-color);
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.625rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.25rem 0;
+            font-size: 0.9rem;
+            background: var(--card-bg);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--table-hover);
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        tr:hover {
+            background-color: var(--table-hover);
+        }
+
+        pre {
+            background-color: var(--code-bg);
+            color: var(--code-text);
+            padding: 1.25rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            margin: 1rem 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: rgba(37, 99, 235, 0.1);
+            color: var(--primary-color);
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.25rem;
+            font-size: 0.85em;
+        }
+
+        pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        .mermaid {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+        }
+
+        .alert-box {
+            padding: 1rem 1.25rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.25rem;
+            border-left: 4px solid;
+            font-size: 0.92rem;
+        }
+
+        .alert-primary { background: rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
+        .alert-success { background: rgba(5, 150, 105, 0.08); border-color: var(--success-color); }
+        .alert-warning { background: rgba(217, 119, 6, 0.08); border-color: var(--warning-color); }
+        .alert-danger { background: rgba(220, 38, 38, 0.08); border-color: var(--danger-color); }
+        
+        .badge-success { background: #d1fae5; color: #065f46; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.8em; font-weight: 600; }
+        .badge-danger { background: #fee2e2; color: #991b1b; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.8em; font-weight: 600; }
+        .badge-warning { background: #fef3c7; color: #92400e; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.8em; font-weight: 600; }
+        .badge-info { background: #e0f2fe; color: #075985; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.8em; font-weight: 600; }
+
+        @media (max-width: 1024px) {
+            .app-container { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; position: static; }
+            .content { padding: 1.5rem; }
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+        <h2>Shop Architecture</h2>
+        <span class="badge">Node.js + Next.js + PostgreSQL</span>
+        <input type="text" id="searchNav" class="search-box" placeholder="Filter sections...">
+        <ul class="nav-list" id="navList">
+            <li><a href="#overview" class="active">A. System Overview</a></li>
+            <li><a href="#rbac">B. User Roles & RBAC Matrix</a></li>
+            <li><a href="#modules">C. 15 Core Modules</a></li>
+            <li><a href="#lan-architecture">D. System LAN Architecture</a></li>
+            <li><a href="#two-database">E. Two-Database Strategy</a></li>
+            <li><a href="#user-flows">F. Detailed User Flows</a></li>
+            <li><a href="#database-schema">G. PostgreSQL Schema (DDL)</a></li>
+            <li><a href="#api-architecture">H. REST API Architecture</a></li>
+            <li><a href="#vat-zatca">I. Saudi VAT & ZATCA E-Invoicing</a></li>
+            <li><a href="#inventory-wac">J. Inventory & WAC Costing</a></li>
+            <li><a href="#docker-deployment">K. Docker & Deployment</a></li>
+            <li><a href="#roadmap">L. Implementation Roadmap</a></li>
+            <li><a href="#data-persistence">M. Data Persistence & Safety Guarantee</a></li>
+            <li><a href="#real-time">N. Multi-Terminal Real-Time Architecture</a></li>
+            <li><a href="#product-images">O. Product Images Architecture</a></li>
+            <li><a href="#notifications">P. Notification System</a></li>
+            <li><a href="#dr-playbook">Q. Disaster Recovery Playbook</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content">
+        <div class="header">
+            <div>
+                <h1>Retail Shop Management System</h1>
+                <div class="subtitle">Complete Technical System Design & Architectural Specification</div>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">🌙 Dark Mode</button>
+        </div>
+
+        <!-- Section A: Overview -->
+        <section id="overview">
+            <h2>A. Product & System Overview</h2>
+            <div class="card">
+                <p><strong>System Purpose:</strong> A modern, production-grade Inventory Management, Point of Sale (POS), Procurement, and Sales Management software application engineered specifically for a single retail shop in Saudi Arabia.</p>
+                <div class="grid-3" style="margin-top: 1rem;">
+                    <div class="card">
+                        <h3>🇸🇦 Location & VAT</h3>
+                        <p>Saudi Arabia (KSA). Strict 15% VAT calculation (inclusive/exclusive) and ZATCA Phase 1 & 2 e-invoicing readiness.</p>
+                    </div>
+                    <div class="card">
+                        <h3>👥 2 Fixed Roles</h3>
+                        <p><strong>Manager</strong> (full administrative & financial authority) and <strong>Sales Executive</strong> (cashier & counter sales).</p>
+                    </div>
+                    <div class="card">
+                        <h3>🌐 English UI for Staff</h3>
+                        <p>100% English navigation with simple terminology and intuitive icons for Bangladeshi expatriate retail staff.</p>
+                    </div>
+                </div>
+                <div class="alert-box alert-primary">
+                    <strong>Core Priority Hierarchy:</strong> Data Correctness &gt; Financial Precision (DECIMAL 15,4) &gt; Inventory Ledger Integrity &gt; Local LAN Offline Resilience &gt; Security &gt; Speed.
+                </div>
+            </div>
+        </section>
+
+        <!-- Section B: RBAC -->
+        <section id="rbac">
+            <h2>B. User Roles & Permissions Matrix</h2>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Module / Action</th>
+                            <th>Manager</th>
+                            <th>Sales Executive</th>
+                            <th>Enforcement & Security Constraint</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Dashboard Metrics</strong></td>
+                            <td>Full (Revenue, Net Profit, VAT)</td>
+                            <td>Shift sales & personal items only</td>
+                            <td>Sales Exec is blocked from viewing overall shop profits or margins.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Product Catalog</strong></td>
+                            <td>Full CRUD + Pricing control</td>
+                            <td>Search & Stock view only</td>
+                            <td>Sales Exec <strong>MUST NOT</strong> view cost price (<code>cost_price</code>).</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Inventory Adjustments</strong></td>
+                            <td>Full access with reason</td>
+                            <td>No Access</td>
+                            <td>Mandatory reason code, timestamp, and unalterable audit log entry.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Procurement (Purchases)</strong></td>
+                            <td>Full PO & Receiving</td>
+                            <td>No Access</td>
+                            <td>Supplier invoices, buying costs, and accounts payable are Manager-only.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>POS Counter Checkout</strong></td>
+                            <td>Full Access</td>
+                            <td>Full Access</td>
+                            <td>Fast barcode scanning, split tender, invoice and receipt generation.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Sales Returns</strong></td>
+                            <td>Full Access</td>
+                            <td>With Manager Approval</td>
+                            <td>Requires Manager PIN/Token to authorize refund and restocking.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Audit Logs & Backups</strong></td>
+                            <td>View / Trigger Manual</td>
+                            <td>No Access</td>
+                            <td>Audit logs are strictly read-only and immutable.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section C: Modules -->
+        <section id="modules">
+            <h2>C. 15 Complete Application Modules</h2>
+            <div class="grid-3">
+                <div class="card"><strong>1. Dashboard:</strong> KPI cards, sales trends, low stock alerts, VAT position.</div>
+                <div class="card"><strong>2. POS Terminal:</strong> Barcode scanning, fast cart modifiers, discounts, split payment.</div>
+                <div class="card"><strong>3. Invoices:</strong> Sequential numbering, ZATCA TLV QR codes, thermal 80mm printing.</div>
+                <div class="card"><strong>4. Products:</strong> Master catalog, SKU, barcode, unit, category, brand, WAC cost.</div>
+                <div class="card"><strong>5. Inventory:</strong> Immutable stock movement ledger and manual adjustments.</div>
+                <div class="card"><strong>6. Purchases:</strong> PO creation, receiving workflow, automatic WAC recalculation.</div>
+                <div class="card"><strong>7. Suppliers:</strong> Vendor directory, VAT numbers, accounts payable ledgers.</div>
+                <div class="card"><strong>8. Customers:</strong> CRM profiles, phone search, loyalty points, accounts receivable.</div>
+                <div class="card"><strong>9. Expenses:</strong> Operating costs (Rent, Electricity, Telecom, Salaries).</div>
+                <div class="card"><strong>10. Returns:</strong> Sales returns with invoice link; supplier purchase returns.</div>
+                <div class="card"><strong>11. Ledgers:</strong> Double-entry style traceable customer and supplier accounts.</div>
+                <div class="card"><strong>12. Reports:</strong> Sales by date/user, P&L Statement, Stock Valuation, VAT filing.</div>
+                <div class="card"><strong>13. Audit Logs:</strong> Immutable black box recording all sensitive operations.</div>
+                <div class="card"><strong>14. Settings:</strong> Shop metadata, CR number, VAT registration, receipt layout.</div>
+                <div class="card"><strong>15. User Management:</strong> Staff credentials, role assignment, active session control.</div>
+            </div>
+        </section>
+
+        <!-- Section D: Architecture -->
+        <section id="lan-architecture">
+            <h2>D. System LAN Topology & Technology Stack</h2>
+            <div class="card">
+                <p>The entire system runs on-premise on the shop's primary local server. All counter PCs and tablets connect over the shop's private Local Area Network (LAN), guaranteeing 100% uptime regardless of internet connectivity.</p>
+                <div class="mermaid">
+graph TB
+    subgraph Shop LAN Environment
+        Term1[Cashier Counter PC<br/>Chrome / Edge]
+        Term2[Manager Desktop<br/>Browser]
+        Term3[Floor Tablet<br/>Barcode Scanner]
+        
+        Router((Shop LAN Router / Switch<br/>192.168.1.x))
+        
+        Term1 --> Router
+        Term2 --> Router
+        Term3 --> Router
+        
+        subgraph Shop Primary Server
+            Nginx[Nginx Reverse Proxy Gateway<br/>Port 80 / 443 - Single LAN Entrypoint]
+            NextApp[Next.js App Frontend<br/>Internal:3000]
+            NodeAPI[Fastify API & WebSocket<br/>Internal:5000]
+            
+            DB1[(DATABASE 1<br/>Primary Live PostgreSQL<br/>Port 5432 - Localhost only)]
+            BackupWorker[Automated Backup Worker<br/>Node.js / Cron]
+            LocalStore[(Local Encrypted<br/>Backup Storage)]
+            DB2[(DATABASE 2<br/>Recovery Sandbox PostgreSQL<br/>Port 5433 - Isolated)]
+            
+            Router --> Nginx
+            Nginx -->|/ & UI routes| NextApp
+            Nginx -->|/api/ & /ws/ routes| NodeAPI
+            NextApp --> NodeAPI
+            NodeAPI --> DB1
+            
+            BackupWorker -.->|Periodic pg_dump| DB1
+            BackupWorker -->|Store AES-256 Dumps| LocalStore
+            BackupWorker -.->|Automated Test Restore| DB2
+        end
+    end
+    
+    subgraph External Cloud (When Internet Available)
+        CloudStore[(Encrypted Remote Cloud Storage<br/>AWS S3 / Cloudflare R2)]
+        BackupWorker -.->|Async Non-blocking Upload| CloudStore
+    end
+                </div>
+            </div>
+        </section>
+
+        <!-- Section E: Two-Database -->
+        <section id="two-database">
+            <h2>E. Two-Database & Disaster Recovery Strategy</h2>
+            <div class="card">
+                <div class="alert-box alert-success">
+                    <strong>Guiding Principle:</strong> LIVE DATA &ne; BACKUP DATA. The live database must never block sales due to a backup operation or internet outage.
+                </div>
+                <div class="grid-2">
+                    <div class="card">
+                        <h3>Database 1: Primary Live DB</h3>
+                        <ul>
+                            <li>Local PostgreSQL 16+ instance.</li>
+                            <li>Single source of truth for real-time transactions.</li>
+                            <li>Row-level locking (<code>SELECT ... FOR UPDATE</code>) for atomic stock consumption.</li>
+                            <li>Write-Ahead Logging (WAL) for instant power outage crash recovery.</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h3>Database 2: Secondary Recovery DB</h3>
+                        <ul>
+                            <li>Standby PostgreSQL instance in sandbox container.</li>
+                            <li>Used for periodic automated restore testing of dumps.</li>
+                            <li>Ensures backups are physically restorable before a disaster occurs.</li>
+                            <li>Warm failover target if primary disk experiences partial sector loss.</li>
+                        </ul>
+                    </div>
+                </div>
+                <h3>Automated Backup Lifecycle & Cloud Sync</h3>
+                <ul>
+                    <li><strong>Daily Snapshots:</strong> Automated at 01:00 AM AST; retained for 14 days.</li>
+                    <li><strong>Weekly Archives:</strong> Automated on Friday nights; retained for 8 weeks.</li>
+                    <li><strong>Monthly Archives:</strong> Automated on the 1st of each month; retained for 12 months.</li>
+                    <li><strong>AES-256-GCM Encryption:</strong> Dumps are encrypted locally before archival and accompanied by a SHA-256 checksum.</li>
+                    <li><strong>Non-blocking Cloud Upload:</strong> Transmits encrypted snapshots to Cloudflare R2 / AWS S3 when internet is online; queues safely when offline.</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Section F: User Flows -->
+        <section id="user-flows">
+            <h2>F. Detailed User Flows</h2>
+            
+            <div class="card">
+                <h3>1. POS Counter Sale & Split Payment</h3>
+                <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Cashier as Sales Executive
+    participant POS as Next.js POS UI
+    participant API as Fastify Backend
+    participant DB as PostgreSQL (DB 1)
+    
+    Cashier->>POS: Scan Barcode (Hardware Scanner)
+    POS->>API: GET /api/v1/products/scan/:barcode
+    API->>DB: Query Product & Available Stock
+    DB-->>API: Item details + Stock
+    API-->>POS: Product Payload
+    POS->>POS: Add to Cart & Calculate Saudi VAT
+    
+    Cashier->>POS: Tender Payment (e.g. SAR 100 Cash + SAR 150 Card)
+    POS->>API: POST /api/v1/sales (with Idempotency Key)
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: Lock stock row (SELECT FOR UPDATE)
+    API->>DB: Insert sales & sale_items
+    API->>DB: Insert sale_payments
+    API->>DB: Insert stock_movements (type='sale', qty = -qty)
+    API->>DB: Insert invoices (UUID, ZATCA Hash, TLV QR)
+    API->>DB: COMMIT TRANSACTION
+    API-->>POS: 201 Created (Invoice & QR Payload)
+    POS->>Cashier: Print 80mm Receipt & Open Drawer
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>2. Procurement & WAC Cost Recalculation</h3>
+                <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Mgr as Manager
+    participant UI as Next.js Purchases UI
+    participant API as Fastify Backend
+    participant DB as PostgreSQL (DB 1)
+    
+    Mgr->>UI: Create Purchase Order (Supplier, Items, Cost, Qty)
+    UI->>API: POST /api/v1/purchases
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: Insert purchases & purchase_items
+    API->>DB: Insert stock_movements (type='purchase', qty = +qty)
+    API->>API: Recalculate New WAC Cost
+    API->>DB: UPDATE products SET cost_price = New_WAC
+    API->>DB: Insert supplier_ledger (type='bill', credit=total)
+    API->>DB: COMMIT
+    API-->>UI: 201 Created (Stock & WAC Updated)
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Sales Return & Restock Flow</h3>
+                <div class="mermaid">
+sequenceDiagram
+    participant M as Manager
+    participant UI as Return Modal
+    participant API as API Server
+    participant DB as Database
+    
+    M->>UI: Enter original Invoice No.
+    UI->>API: GET /api/v1/sales/:id
+    API-->>UI: Return sale with line items
+    M->>UI: Select items to return, enter reason
+    M->>UI: Confirm with Manager PIN
+    UI->>API: POST /api/v1/returns/sales
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: Insert sales_returns record
+    API->>DB: Insert sales_return_items
+    API->>DB: Insert stock_movements (type='return_in', qty=+returned)
+    API->>DB: UPDATE products SET current_stock = current_stock + qty
+    API->>DB: Insert customer_ledger (credit = refund amount)
+    API->>DB: Insert audit_logs
+    API->>DB: COMMIT
+    API-->>UI: 201 Created (Return Processed)
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Cash Register Shift Closing & Blind Count</h3>
+                <div class="mermaid">
+sequenceDiagram
+    participant C as Cashier
+    participant UI as Shift Close Modal
+    participant API as API Server
+    participant DB as Database
+    
+    C->>UI: Click Close Shift
+    C->>UI: Enter physical cash count
+    C->>UI: Enter card terminal settlement total
+    UI->>API: POST /api/v1/cash/close
+    API->>DB: Calculate expected cash from cash_movements
+    API->>DB: Calculate expected card from sale_payments
+    API->>DB: Compute cash difference and card discrepancy
+    API->>DB: UPDATE cash_sessions SET status='closed'
+    API->>DB: Insert audit_logs
+    API-->>UI: 200 OK (Z-Report Generated)
+    UI-->>C: Display Z-Report with all totals and discrepancies
+                </div>
+            </div>
+        </section>
+
+        <!-- Section G: Database Schema -->
+        <section id="database-schema">
+            <h2>G. PostgreSQL 16+ Database Schema (Selected Core Tables)</h2>
+            <div class="card">
+                <p>All monetary fields use <code>DECIMAL(15,4)</code> for exact precision. Relational integrity is enforced natively. The complete 30+ table schema is defined in <code>docker/init.sql</code>.</p>
+                <pre><code>-- Core Products Table
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    sku VARCHAR(50) UNIQUE NOT NULL,
+    barcode VARCHAR(100) UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category_id INT REFERENCES categories(id) ON DELETE SET NULL,
+    brand_id INT REFERENCES brands(id) ON DELETE SET NULL,
+    unit_id INT NOT NULL REFERENCES units(id),
+    packaging_multiplier DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+    tax_rate_id INT NOT NULL REFERENCES tax_rates(id),
+    tax_type tax_type_enum NOT NULL DEFAULT 'exclusive',
+    cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000, -- Weighted Average Cost
+    wholesale_price DECIMAL(15,4),
+    selling_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    current_stock DECIMAL(10,2) NOT NULL DEFAULT 0.00, -- Denormalized atomic cache
+    min_stock_level DECIMAL(10,2) NOT NULL DEFAULT 5.00,
+    has_expiry BOOLEAN NOT NULL DEFAULT FALSE, -- Perishable flag
+    is_weighable BOOLEAN NOT NULL DEFAULT FALSE, -- Scale barcode item
+    is_quick_plu BOOLEAN NOT NULL DEFAULT FALSE, -- POS quick produce grid
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Product Images
+CREATE TABLE product_images (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    file_path VARCHAR(500) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_size_bytes BIGINT NOT NULL,
+    mime_type VARCHAR(50) NOT NULL,
+    width INT,
+    height INT,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INT NOT NULL DEFAULT 0,
+    uploaded_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_product_images_product ON product_images(product_id);
+
+-- Product Batches & Expiry (Perishables)
+CREATE TABLE product_batches (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    batch_number VARCHAR(100) NOT NULL,
+    expiry_date DATE NOT NULL,
+    purchase_item_id INT REFERENCES purchase_items(id),
+    cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    initial_quantity DECIMAL(10,2) NOT NULL,
+    current_quantity DECIMAL(10,2) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Promotions & Deals Engine
+CREATE TYPE promotion_type_enum AS ENUM ('buy_x_get_y', 'bundle_price', 'percentage_discount', 'fixed_discount');
+CREATE TABLE promotions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    type promotion_type_enum NOT NULL,
+    start_date TIMESTAMPTZ NOT NULL,
+    end_date TIMESTAMPTZ NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Dynamic System Settings (Editable via UI)
+CREATE TABLE settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_group VARCHAR(50) NOT NULL DEFAULT 'general',
+    setting_value TEXT NOT NULL,
+    description VARCHAR(255),
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Cash Register Sessions & Mada Terminal Reconciliation
+CREATE TABLE cash_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id),
+    status cash_session_status_enum NOT NULL DEFAULT 'open',
+    opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    closed_at TIMESTAMPTZ,
+    opening_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    closing_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    expected_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    difference DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    terminal_card_total DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    closing_note TEXT
+);
+
+-- Immutable Stock Movements Ledger
+CREATE TABLE stock_movements (
+    id BIGSERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id),
+    quantity DECIMAL(10,2) NOT NULL, -- Positive for IN, Negative for OUT
+    type stock_movement_type_enum NOT NULL, -- opening, purchase, sale, return_in, etc.
+    reference_id INT, -- sale_id, purchase_id, etc.
+    unit_cost DECIMAL(15,4) NOT NULL,
+    user_id INT NOT NULL REFERENCES users(id),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ZATCA E-Invoicing Compliant Invoices Table
+CREATE TABLE invoices (
+    id SERIAL PRIMARY KEY,
+    sale_id INT UNIQUE NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+    invoice_no VARCHAR(50) UNIQUE NOT NULL,
+    uuid UUID NOT NULL DEFAULT uuid_generate_v4(),
+    previous_invoice_hash VARCHAR(255) NOT NULL,
+    invoice_hash VARCHAR(255) NOT NULL,
+    qr_data TEXT NOT NULL, -- Base64 encoded TLV format
+    ubl_xml TEXT,
+    einvoice_status einvoice_status_enum NOT NULL DEFAULT 'generated',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Backup Metadata & Sandbox Verification Log
+CREATE TABLE backup_logs (
+    id SERIAL PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    file_size_bytes BIGINT NOT NULL,
+    checksum_sha256 VARCHAR(64) NOT NULL,
+    backup_type VARCHAR(20) NOT NULL,
+    local_status VARCHAR(20) NOT NULL DEFAULT 'completed',
+    verification_status VARCHAR(20) NOT NULL DEFAULT 'unverified',
+    verified_at TIMESTAMPTZ,
+    restored_row_count INT,
+    remote_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    remote_url VARCHAR(255),
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- Section H: API Architecture -->
+        <section id="api-architecture">
+            <h2>H. REST API Architecture</h2>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>Endpoint</th>
+                            <th>Description</th>
+                            <th>Role Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate & issue secure HTTP-only JWT</td><td>Public</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/products/scan/:barcode</code></td><td>Barcode & scale variable-weight scan lookup</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/products/quick-plu</code></td><td>Fast PLU produce grid list</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/products/barcode-label/:id</code></td><td>Generate CODE128 thermal sticker label</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/products/:id/images</code></td><td>Upload product image</td><td>Manager</td></tr>
+                        <tr><td><code>DELETE</code></td><td><code>/api/v1/products/:id/images/:imageId</code></td><td>Delete product image</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/uploads/products/:productId/:filename</code></td><td>Serve product image</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/tax-rates</code></td><td>List & manage dynamic tax rates</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/batches/expiring</code></td><td>Alerts for perishable items expiring soon</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/promotions</code></td><td>Active supermarket promotions & deals</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/inventory/stock-snapshot</code></td><td>Delta sync for reconnected POS terminals</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/sales</code></td><td>Atomic POS checkout & invoice creation</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/hardware/print-receipt</code></td><td>Direct ESC/POS raw thermal print payload</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/purchases</code></td><td>Receive goods, update stock & recalculate WAC</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/returns/sales</code></td><td>Process customer return & refund</td><td>Manager / Exec (PIN)</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/cash/close</code></td><td>Submit blind count, card terminal slip & close shift</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/reports/vat</code></td><td>ZATCA Input vs Output VAT summary</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/reports/export/:type</code></td><td>Export report (PDF/CSV/Excel)</td><td>Manager</td></tr>
+                        <tr><td><code>PUT</code></td><td><code>/api/v1/settings/group/:group</code></td><td>Batch update settings (shop, tax, currency, theme, hardware)</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/backup/trigger</code></td><td>Trigger immediate AES-256 snapshot & sync</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/backup/verify</code></td><td>Trigger automated sandbox test restore against DB2</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/notifications</code></td><td>Get user notifications</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/ws/events</code></td><td>WebSocket/SSE real-time events</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/health</code></td><td>System health check (DB, disk, uptime)</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/auth/logout</code></td><td>Invalidate session and clear JWT cookie</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/auth/me</code></td><td>Get current authenticated user profile</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/products</code></td><td>List all products with pagination and filters</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/products</code></td><td>Create new product</td><td>Manager</td></tr>
+                        <tr><td><code>PUT</code></td><td><code>/api/v1/products/:id</code></td><td>Update product details</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/categories</code></td><td>List product categories</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/categories</code></td><td>Create category</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/brands</code></td><td>List brands</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/customers</code></td><td>List customers</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/customers</code></td><td>Create customer</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/customers/:id/ledger</code></td><td>Customer account ledger</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/suppliers</code></td><td>List suppliers</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/suppliers</code></td><td>Create supplier</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/suppliers/:id/ledger</code></td><td>Supplier account ledger</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/sales</code></td><td>List sales with pagination</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/sales/:id</code></td><td>Get sale details with line items</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/sales/:id/void</code></td><td>Void a completed sale</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/sales/hold</code></td><td>Hold current POS cart</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/sales/hold</code></td><td>List held sales</td><td>All</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/purchases/:id/void</code></td><td>Void a purchase entry</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/returns/purchases</code></td><td>List purchase returns</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/cash/open</code></td><td>Open new cash register shift</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/cash/status</code></td><td>Current shift status and running totals</td><td>All</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/expenses</code></td><td>List expenses with filters</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/expenses</code></td><td>Record new expense</td><td>Manager</td></tr>
+                        <tr><td><code>POST</code></td><td><code>/api/v1/inventory/adjust</code></td><td>Manual stock adjustment with reason</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/reports/dashboard</code></td><td>Dashboard KPI metrics</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/reports/profit</code></td><td>Profit & Loss statement</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/reports/inventory</code></td><td>Stock valuation report</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/audit-logs</code></td><td>View audit trail</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/settings</code></td><td>Get system settings</td><td>Manager</td></tr>
+                        <tr><td><code>PUT</code></td><td><code>/api/v1/settings</code></td><td>Update system settings</td><td>Manager</td></tr>
+                        <tr><td><code>GET</code></td><td><code>/api/v1/backup/status</code></td><td>Backup history and verification status</td><td>Manager</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section I: VAT & ZATCA -->
+        <section id="vat-zatca">
+            <h2>I. Saudi VAT & ZATCA E-Invoicing</h2>
+            <div class="card">
+                <div class="grid-2">
+                    <div class="card">
+                        <h3>Tax Exclusive (Standard)</h3>
+                        <p><code>Tax = Quantity * (Unit_Price * 0.15)</code></p>
+                        <p><code>Total = (Quantity * Unit_Price) + Tax</code></p>
+                    </div>
+                    <div class="card">
+                        <h3>Tax Inclusive</h3>
+                        <p><code>Base_Price = Unit_Price / 1.15</code></p>
+                        <p><code>Tax = Quantity * (Unit_Price - Base_Price)</code></p>
+                    </div>
+                </div>
+                <h3>ZATCA TLV Base64 Generator (TypeScript)</h3>
+                <pre><code>export function generateZatcaTLVQR(
+  sellerName: string,
+  vatNumber: string,
+  timestampIso: string,
+  invoiceTotal: string,
+  vatTotal: string
+): string {
+  const getTLVBuffer = (tag: number, value: string): Buffer => {
+    const valueBuffer = Buffer.from(value, 'utf8');
+    return Buffer.concat([Buffer.from([tag]), Buffer.from([valueBuffer.length]), valueBuffer]);
+  };
+
+  const tlvParts = [
+    getTLVBuffer(1, sellerName),
+    getTLVBuffer(2, vatNumber),
+    getTLVBuffer(3, timestampIso),
+    getTLVBuffer(4, invoiceTotal),
+    getTLVBuffer(5, vatTotal),
+  ];
+
+  return Buffer.concat(tlvParts).toString('base64');
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Section J: Inventory & WAC -->
+        <section id="inventory-wac">
+            <h2>J. Inventory Stock Ledger & Weighted Average Costing</h2>
+            <div class="card">
+                <p>Stock levels are dynamically computed or cached directly from immutable stock ledger entries:</p>
+                <pre><code>SELECT SUM(quantity) as current_stock 
+FROM stock_movements 
+WHERE product_id = ?;</code></pre>
+                <h3>WAC Formula (Executed upon receiving PO):</h3>
+                <pre><code>New_WAC = ((Current_Stock * Current_WAC) + (Received_Qty * Received_Unit_Cost)) / (Current_Stock + Received_Qty)</code></pre>
+            </div>
+        </section>
+
+        <!-- Section K: Docker -->
+        <section id="docker-deployment">
+            <h2>K. Docker & Deployment Configuration</h2>
+            <div class="card">
+                <pre><code>version: '3.8'
+
+networks:
+  shop_network:
+    driver: bridge
+
+services:
+  postgres_live:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: shop_live_db
+      POSTGRES_USER: shop_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./data/postgres_live:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - shop_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_admin -d shop_live_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_recovery:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: shop_recovery_db
+      POSTGRES_USER: recovery_admin
+      POSTGRES_PASSWORD: ${RECOVERY_DB_PASSWORD}
+    volumes:
+      - ./data/postgres_recovery:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    networks:
+      - shop_network
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    restart: always
+    depends_on:
+      postgres_live:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://shop_admin:${DB_PASSWORD}@postgres_live:5432/shop_live_db
+    volumes:
+      - ./backups:/backups
+      - ./data/uploads:/app/uploads
+    networks:
+      - shop_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - shop_network
+
+  nginx:
+    image: nginx:1.25-alpine
+    restart: always
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data/logs/nginx:/var/log/nginx
+    ports:
+      - "80:80"    # Single LAN entrypoint for all devices (http://192.168.x.x)
+    networks:
+      - shop_network</code></pre>
+            </div>
+        </section>
+
+        <!-- Section L: Roadmap -->
+        <section id="roadmap">
+            <h2>L. 8-Phase Implementation Roadmap</h2>
+            <div class="card">
+                <ol>
+                    <li><strong>Phase 1: Environment & Foundation:</strong> Docker, PostgreSQL DDL, Fastify API & Next.js scaffolding, Auth & RBAC.</li>
+                    <li><strong>Phase 2: Master Data & Catalog:</strong> Products, Categories, Units, Tax Rates, Barcode scanner listener.</li>
+                    <li><strong>Phase 3: Inventory Movement Ledger:</strong> Stock movements engine, PO receiving, WAC costing, Stock adjustments.</li>
+                    <li><strong>Phase 4: POS Counter & Invoicing:</strong> Rapid POS UI, split tender, atomic checkout, ZATCA TLV QR, 80mm thermal receipt.</li>
+                    <li><strong>Phase 5: Returns, Ledgers & Shifts:</strong> Sales returns, customer/supplier ledgers, cash shift closing with Z-Report.</li>
+                    <li><strong>Phase 6: Reports & Manager Dashboard:</strong> P&L, Inventory valuation, Saudi VAT filing report, KPI cards.</li>
+                    <li><strong>Phase 7: Two-Database Backup Subsystem:</strong> Automated AES-256 snapshots, DB2 sandbox test restore, S3/R2 sync.</li>
+                    <li><strong>Phase 8: Hardening & Local Deployment:</strong> Barcode stress testing, power failure resilience drills, shop LAN deployment.</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- Section M: Data Persistence -->
+        <section id="data-persistence">
+            <h2>M. Data Persistence & Safety Guarantee</h2>
+            <div class="card">
+                <p>The system utilizes robust host bind mounts to guarantee data persistence. Data resides safely on the host machine, independent of container lifecycles.</p>
+                <div class="mermaid">
+graph TD
+    subgraph Host Machine FS
+        DB_L[./data/postgres_live/]
+        DB_R[./data/postgres_recovery/]
+        UPL[./data/uploads/products/]
+        BAK[./backups/]
+    end
+    
+    subgraph Docker Containers
+        C_API[API Container]
+        C_DBL[Primary DB Container]
+        C_DBR[Recovery DB Container]
+    end
+    
+    DB_L <--> C_DBL
+    DB_R <--> C_DBR
+    UPL <--> C_API
+    BAK <--> C_API
+                </div>
+                
+                <h3>Data Safety Operations Table</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>Data Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>docker compose down</code></td><td><span class="badge-success">✅ SAFE</span></td></tr>
+                        <tr><td><code>docker compose up --build</code></td><td><span class="badge-success">✅ SAFE</span></td></tr>
+                        <tr><td><code>docker system prune</code></td><td><span class="badge-success">✅ SAFE</span></td></tr>
+                        <tr><td>Container rebuild/update</td><td><span class="badge-success">✅ SAFE</span></td></tr>
+                        <tr><td>Deleting <code>./data/</code> folder</td><td><span class="badge-danger">❌ DATA LOST</span></td></tr>
+                        <tr><td>Formatting host drive</td><td><span class="badge-danger">❌ DATA LOST</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section N: Real-Time Architecture -->
+        <section id="real-time">
+            <h2>N. Multi-Terminal Real-Time Architecture</h2>
+            <div class="card">
+                <p>The POS system requires instant synchronization across all terminals for stock accuracy. A robust WebSocket/SSE server is utilized with auto-reconnect features utilizing exponential backoff logic.</p>
+                
+                <div class="mermaid">
+graph LR
+    T1[POS Terminal 1] <-->|STOCK_UPDATE, SALE_COMPLETED, LOW_STOCK_ALERT| WS[WebSocket Server]
+    T2[POS Terminal 2] <-->|STOCK_UPDATE, SALE_COMPLETED, LOW_STOCK_ALERT| WS
+                </div>
+
+                <h3>Real-Time Sale Synchronization</h3>
+                <div class="mermaid">
+sequenceDiagram
+    participant TA as Terminal A
+    participant API as API Server
+    participant TB as Terminal B
+    
+    TA->>API: Process Sale
+    API->>API: Broadcast STOCK_UPDATE
+    API->>TB: Send updated stock count
+    TB->>TB: UI refreshes stock count seamlessly
+                </div>
+            </div>
+        </section>
+
+        <!-- Section O: Product Images Architecture -->
+        <section id="product-images">
+            <h2>O. Product Images Architecture & POS Serving Strategy</h2>
+            <div class="card">
+                <p>High-quality product images are efficiently processed via Sharp, stored on the host filesystem (`./data/uploads/products/`), and served with long-term HTTP caching to ensure the POS catalog grid renders instantaneously across LAN terminals.</p>
+                
+                <h3>Image Upload & Processing Pipeline</h3>
+                <div class="mermaid">
+graph TD
+    Upload[Upload via Multi-part POST] --> Validate[Validate: <= 5MB, JPG/PNG/WebP]
+    Validate --> Resize[Sharp Main: 800x800 Max]
+    Validate --> Thumb[Sharp Thumb: 200x200 Square]
+    Resize --> Save[Save to ./data/uploads/products/id/]
+    Thumb --> Save
+    Save --> DB[Insert record in product_images]
+    DB --> Serve[Served via Nginx /uploads/ with 30-Day Cache]
+                </div>
+
+                <h3>POS Fast Image Query & Fallback Mechanism</h3>
+                <ul>
+                    <li><strong>Atomic Fetch:</strong> POS catalog query executes a fast LEFT JOIN to retrieve the primary thumbnail:
+                        <code>SELECT p.id, p.name, p.selling_price, p.current_stock, img.file_path FROM products p LEFT JOIN product_images img ON img.product_id = p.id AND img.is_primary = TRUE WHERE p.is_active = TRUE;</code>
+                    </li>
+                    <li><strong>Offline LAN Caching:</strong> All product image assets are served with <code>Cache-Control: public, max-age=2592000, immutable</code>. Browser caches images locally on counter PCs, eliminating network load during busy cashier shifts.</li>
+                    <li><strong>Graceful Fallback:</strong> If a product has no image uploaded or a network glitch occurs, the POS UI renders a stylized vector icon (Lucide Package/Cart) with high-contrast text.</li>
+                </ul>
+
+                <h3>Product Images DDL</h3>
+                <pre><code>CREATE TABLE product_images (
+    id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    file_path VARCHAR(500) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_size_bytes BIGINT NOT NULL,
+    mime_type VARCHAR(50) NOT NULL,
+    width INT,
+    height INT,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INT NOT NULL DEFAULT 0,
+    uploaded_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_product_images_product ON product_images(product_id);</code></pre>
+            </div>
+        </section>
+
+        <!-- Section P: Notification System -->
+        <section id="notifications">
+            <h2>P. Notification System</h2>
+            <div class="card">
+                <h3>Notifications DDL</h3>
+                <pre><code>CREATE TABLE notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    severity VARCHAR(20) NOT NULL DEFAULT 'info',
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    reference_type VARCHAR(50),
+    reference_id INT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);</code></pre>
+
+                <h3>Trigger Events Matrix</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Event</th>
+                            <th>Severity</th>
+                            <th>Example Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>LOW_STOCK</td><td><span class="badge-warning">Warning</span></td><td>"Product X has only 3 units remaining"</td></tr>
+                        <tr><td>BACKUP_FAILED</td><td><span class="badge-danger">Critical</span></td><td>"Daily backup failed at 01:15 AM"</td></tr>
+                        <tr><td>LARGE_SALE</td><td><span class="badge-info">Info</span></td><td>"Sale SAR 5,000+ completed (INV-...)"</td></tr>
+                        <tr><td>CASH_DISCREPANCY</td><td><span class="badge-warning">Warning</span></td><td>"Cash session closed with SAR 250 difference"</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section Q: Disaster Recovery Playbook -->
+        <section id="dr-playbook">
+            <h2>Q. Disaster Recovery Playbook (Enhanced)</h2>
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Failure Type</th>
+                            <th>Severity</th>
+                            <th>Automated Safeguard</th>
+                            <th>Manual Recovery Procedure</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Power Outage</td>
+                            <td><span class="badge-warning">Medium</span></td>
+                            <td>PostgreSQL WAL records state</td>
+                            <td>Restart server, Docker starts, WAL auto-replays</td>
+                        </tr>
+                        <tr>
+                            <td>DB Corruption</td>
+                            <td><span class="badge-danger">High</span></td>
+                            <td>Daily AES-256 local snapshots</td>
+                            <td>Restore from latest clean snapshot via Settings UI</td>
+                        </tr>
+                        <tr>
+                            <td>SSD Failure</td>
+                            <td><span class="badge-danger">Critical</span></td>
+                            <td>Encrypted Cloud Sync (S3/R2)</td>
+                            <td>Provision new host, pull latest cloud backup, run pg_restore</td>
+                        </tr>
+                        <tr>
+                            <td>Accidental Deletion</td>
+                            <td><span class="badge-warning">Medium</span></td>
+                            <td>Immutable ledger & Audit Logs</td>
+                            <td>Reference audit log, reverse action or apply manual adjustment</td>
+                        </tr>
+                        <tr>
+                            <td>Network Outage</td>
+                            <td><span class="badge-info">Low</span></td>
+                            <td>Local-First LAN Operation</td>
+                            <td>Continue local POS sales; cloud sync automatically resumes later</td>
+                        </tr>
+                        <tr>
+                            <td>Backup Upload Failure</td>
+                            <td><span class="badge-warning">Medium</span></td>
+                            <td>Local queue with exponential backoff</td>
+                            <td>Verify internet/credentials; trigger manual sync retry</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+</div>
+<script>
+    function toggleTheme() {
+        const body = document.body;
+        const btn = document.getElementById('themeBtn');
+        if (body.getAttribute('data-theme') === 'dark') {
+            body.removeAttribute('data-theme');
+            btn.innerHTML = '🌙 Dark Mode';
+        } else {
+            body.setAttribute('data-theme', 'dark');
+            btn.innerHTML = '☀️ Light Mode';
+        }
+    }
+</script>
+</body>
+</html>

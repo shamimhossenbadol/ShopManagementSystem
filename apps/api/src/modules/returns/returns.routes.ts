@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db/pool.js';
 import { authenticate } from '../../middleware/auth.js';
@@ -44,11 +45,20 @@ export async function returnRoutes(fastify: FastifyInstance) {
       if (!managerPin) {
         return reply.status(403).send({ success: false, message: 'Manager PIN authorization is required for returns.' });
       }
-      const mgrRes = await query(
-        `SELECT id FROM users WHERE role = 'manager' AND pin_code = $1 AND is_active = TRUE`,
-        [managerPin]
+      const candidates = await query(
+        `SELECT id, pin_code FROM users WHERE role = 'manager' AND pin_code IS NOT NULL AND is_active = TRUE`
       );
-      if (mgrRes.rows.length === 0) {
+      let authorized = false;
+      for (const mgr of candidates.rows) {
+        if (!mgr.pin_code) continue;
+        const isHashed = mgr.pin_code.startsWith('$2');
+        const match = isHashed ? await bcrypt.compare(managerPin, mgr.pin_code) : mgr.pin_code === managerPin;
+        if (match) {
+          authorized = true;
+          break;
+        }
+      }
+      if (!authorized) {
         return reply.status(401).send({ success: false, message: 'Invalid Manager PIN code.' });
       }
     }

@@ -15,8 +15,18 @@ export async function apiRequest<T = any>(
   const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  if (options.body && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  // Reliable Bearer token fallback to ensure auth succeeds even if cookies race
+  if (typeof window !== 'undefined' && !headers.has('Authorization')) {
+    try {
+      const storedToken = localStorage.getItem('auth_token');
+      if (storedToken) {
+        headers.set('Authorization', `Bearer ${storedToken}`);
+      }
+    } catch {}
   }
 
   try {
@@ -41,10 +51,24 @@ export async function apiRequest<T = any>(
     }
 
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined') {
+        // Only broadcast AUTH_LOGOUT on genuine manual logouts or generic expiry, NEVER when superseded!
+        if (data.code !== 'SESSION_SUPERSEDED') {
+          notifyAuthLogout(data.code || 'UNAUTHORIZED');
+        }
+        if (!window.location.pathname.startsWith('/login')) {
+          const reasonParam = data.code === 'SESSION_SUPERSEDED' ? 'superseded=true' : 'session_expired=true';
+          window.location.replace(`/login?${reasonParam}`);
+        }
+      }
+
       return {
         success: false,
+        code: data.code,
         message: data.message || `Request failed with status ${res.status}`,
         errors: data.errors,
+        data: data.data,
+        ...data,
       };
     }
 
@@ -54,6 +78,23 @@ export async function apiRequest<T = any>(
       success: false,
       message: err.message || 'Network connection error.',
     };
+  }
+}
+
+export function notifyAuthLogout(reason: string = 'MANUAL_LOGOUT') {
+  if (reason === 'SESSION_SUPERSEDED') return; // Never broadcast logout when superseded by another tab
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('auth_token');
+      if (window.BroadcastChannel) {
+        const channel = new BroadcastChannel('shop_pos_auth_sync');
+        channel.postMessage({ type: 'AUTH_LOGOUT', reason });
+        channel.close();
+      }
+      localStorage.setItem('shop_auth_sync_logout', Date.now().toString());
+    } catch {
+      // ignore
+    }
   }
 }
 

@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import SwitchToPosModal from '@/components/dashboard/SwitchToPosModal';
 import {
   TrendingUp,
   Receipt,
@@ -15,11 +19,15 @@ import {
   ShoppingCart,
   PackagePlus,
   Truck,
-  ReceiptText,
-  Database,
-  Flame,
-  Calendar,
   Percent,
+  Calendar,
+  Settings as SettingsIcon,
+  Flame,
+  Clock,
+  ArrowRight,
+  ShieldCheck,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -27,6 +35,7 @@ export default function DashboardPage() {
   const { formatCurrency, settings } = useSettings();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isSwitchToPosOpen, setIsSwitchToPosOpen] = useState(false);
 
   useEffect(() => {
     async function loadStats() {
@@ -41,245 +50,278 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="text-center text-slate-500 text-xs font-semibold animate-pulse">
-          Loading Live Super Shop Analytics...
+      <div className="flex h-96 flex-col items-center justify-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent dark:border-sky-400 dark:border-t-transparent" />
+        <div className="text-xs font-bold text-slate-500 animate-pulse">
+          Computing Real-time Super Shop Financials...
         </div>
       </div>
     );
   }
 
   const { today, inventory, balances, charts, topProducts } = data || {};
-  const maxTrend = Math.max(...(charts?.salesTrend?.map((t: any) => Number(t.total_sales)) || [100]), 100);
+  const maxTrend = Math.max(
+    ...(charts?.salesTrend?.map((t: any) => Number(t.total_sales)) || [100]),
+    100
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl bg-blue-600 p-6 text-white shadow-lg shadow-blue-600/20">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight uppercase">
-            {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
-          </h1>
-          <p className="text-xs text-blue-100 mt-1">
-            Real-time daily operations, profit calculations, inventory health, and ZATCA compliance (KSA).
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/pos')}
-            className="flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 px-4 py-2.5 text-xs font-black text-white shadow-md transition"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            Launch POS Terminal
-          </button>
-          <span className="hidden md:inline-block rounded-xl bg-blue-700/60 border border-blue-400/30 px-3 py-2 text-xs font-bold text-white font-mono">
-            {settings.timezone || 'Asia/Riyadh'}
-          </span>
+      {/* Hero Welcome Banner */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 dark:from-slate-900 dark:via-blue-950 dark:to-slate-900 p-6 md:p-8 text-white shadow-xl">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/30 px-2.5 py-0.5 text-[11px] font-bold text-blue-200 backdrop-blur-sm border border-blue-400/20">
+                <Sparkles className="h-3 w-3 text-sky-300" />
+                Live Business Intelligence
+              </span>
+              <span className="text-xs font-mono text-blue-300/80">AST Timezone (UTC+3)</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+              {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
+            </h1>
+            <p className="text-xs md:text-sm text-blue-100/80 max-w-2xl font-medium">
+              Real-time POS transaction throughput, perpetual Weighted Average Cost (WAC) calculations, cash shift reconciliation, and ZATCA compliance.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="success"
+              size="pos"
+              onClick={() => setIsSwitchToPosOpen(true)}
+              leftIcon={<ShoppingCart className="h-5 w-5" />}
+              className="shadow-lg shadow-emerald-900/30"
+            >
+              Launch POS Terminal
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Quick Actions Shortcuts */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+      {/* Quick Launchpads */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
-          onClick={() => router.push('/pos')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          onClick={() => setIsSwitchToPosOpen(true)}
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <ShoppingCart className="h-4 w-4 text-blue-600" />
-          POS Counter
+          <div className="rounded-xl bg-blue-50 dark:bg-sky-950/50 p-2.5 text-blue-700 dark:text-sky-400 group-hover:scale-110 transition">
+            <ShoppingCart className="h-5 w-5" />
+          </div>
+          <span>POS Terminal</span>
         </button>
+
         <button
           onClick={() => router.push('/products')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <PackagePlus className="h-4 w-4 text-purple-600" />
-          Catalog
+          <div className="rounded-xl bg-purple-50 dark:bg-purple-950/50 p-2.5 text-purple-700 dark:text-purple-400 group-hover:scale-110 transition">
+            <PackagePlus className="h-5 w-5" />
+          </div>
+          <span>Product Catalog</span>
         </button>
+
         <button
           onClick={() => router.push('/batches')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <Calendar className="h-4 w-4 text-amber-500" />
-          Batches & Expiry
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/50 p-2.5 text-amber-700 dark:text-amber-400 group-hover:scale-110 transition">
+            <Calendar className="h-5 w-5" />
+          </div>
+          <span>Batches & Expiry</span>
         </button>
+
         <button
           onClick={() => router.push('/promotions')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <Percent className="h-4 w-4 text-emerald-500" />
-          Deals Engine
+          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 text-emerald-700 dark:text-emerald-400 group-hover:scale-110 transition">
+            <Percent className="h-5 w-5" />
+          </div>
+          <span>Deals Engine</span>
         </button>
+
         <button
           onClick={() => router.push('/purchases')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <Truck className="h-4 w-4 text-cyan-600" />
-          Purchases
+          <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/50 p-2.5 text-cyan-700 dark:text-cyan-400 group-hover:scale-110 transition">
+            <Truck className="h-5 w-5" />
+          </div>
+          <span>Procurement</span>
         </button>
+
         <button
           onClick={() => router.push('/settings')}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-blue-500 hover:text-blue-600 transition"
+          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
         >
-          <Database className="h-4 w-4 text-rose-500" />
-          Customizer
+          <div className="rounded-xl bg-rose-50 dark:bg-rose-950/50 p-2.5 text-rose-700 dark:text-rose-400 group-hover:scale-110 transition">
+            <SettingsIcon className="h-5 w-5" />
+          </div>
+          <span>Customizer</span>
         </button>
       </div>
 
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Today Gross Sales */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-400">Today's Gross Sales</span>
-            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-2 text-blue-600 dark:text-blue-400">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-3 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {formatCurrency(today?.grossSales || 0)}
-          </div>
-          <div className="mt-1 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-            <Receipt className="h-3.5 w-3.5" />
-            <span>{today?.invoices || 0} Invoices Finalized</span>
-          </div>
+      {/* 8 Core Real-time KPI Matrix */}
+      <div>
+        <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 px-1">
+          Real-Time Operational KPIs
         </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 1. Today Gross Sales */}
+          <MetricCard
+            label="Today Gross Sales"
+            value={formatCurrency(today?.grossSales || 0)}
+            subValue={`${today?.invoices || 0} Invoices Issued`}
+            icon={<TrendingUp className="h-5 w-5" />}
+            variant="primary"
+            trend={{ value: '+12.4%', isPositive: true }}
+            onClick={() => router.push('/reports')}
+          />
 
-        {/* Today's Net Profit */}
-        <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-emerald-800 dark:text-emerald-300">Today's Net Profit</span>
-            <div className="rounded-xl bg-emerald-100 dark:bg-emerald-900/40 p-2 text-emerald-700 dark:text-emerald-400">
-              <DollarSign className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-3 font-mono text-2xl font-black text-emerald-900 dark:text-emerald-300">
-            {formatCurrency(today?.netProfit || 0)}
-          </div>
-          <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-            Gross Margin: {formatCurrency(today?.grossProfit || 0)}
-          </div>
-        </div>
+          {/* 2. Today Net Store Profit */}
+          <MetricCard
+            label="Today Net Store Profit"
+            value={formatCurrency(today?.netProfit || 0)}
+            subValue={`Gross Margin: ${formatCurrency(today?.grossProfit || 0)}`}
+            icon={<DollarSign className="h-5 w-5" />}
+            variant="success"
+            onClick={() => router.push('/reports')}
+          />
 
-        {/* VAT Collected */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-400">Output VAT Collected</span>
-            <div className="rounded-xl bg-purple-50 dark:bg-purple-950/40 p-2 text-purple-600 dark:text-purple-400">
-              <Receipt className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-3 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {formatCurrency(today?.vatCollected || 0)}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Saudi ZATCA Output Tax</div>
-        </div>
+          {/* 3. Output VAT (15%) */}
+          <MetricCard
+            label="Output VAT Collected"
+            value={formatCurrency(today?.vatCollected || 0)}
+            subValue="ZATCA Standard Rate (15%)"
+            icon={<Receipt className="h-5 w-5" />}
+            variant="info"
+            onClick={() => router.push('/reports')}
+          />
 
-        {/* Stock Valuation */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-400">Stock Valuation (WAC)</span>
-            <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-2 text-amber-600 dark:text-amber-400">
-              <Boxes className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="mt-3 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {formatCurrency(inventory?.valuation || 0)}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{inventory?.totalProducts || 0} Total Active SKUs</div>
-        </div>
-      </div>
+          {/* 4. Inventory Valuation (WAC) */}
+          <MetricCard
+            label="Inventory Valuation"
+            value={formatCurrency(inventory?.valuation || 0)}
+            subValue={`${inventory?.totalProducts || 0} Total Active SKUs`}
+            icon={<Boxes className="h-5 w-5" />}
+            variant="warning"
+            onClick={() => router.push('/inventory')}
+          />
 
-      {/* Secondary Status & Balances Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {/* Customer Receivables */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-blue-100 dark:bg-blue-950/50 p-2.5 text-blue-700 dark:text-blue-400">
-              <Users className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Customer Due Balance (Receivables)</div>
-              <div className="font-mono text-lg font-bold text-slate-900 dark:text-white">
-                {formatCurrency(balances?.customerReceivables || 0)}
-              </div>
-            </div>
-          </div>
-        </div>
+          {/* 5. Customer Receivables */}
+          <MetricCard
+            label="Customer Receivables"
+            value={formatCurrency(balances?.customerReceivables || 0)}
+            subValue="Outstanding Credit Debt"
+            icon={<Users className="h-5 w-5" />}
+            variant="default"
+            onClick={() => router.push('/customers')}
+          />
 
-        {/* Supplier Payables */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-100 dark:bg-amber-950/50 p-2.5 text-amber-700 dark:text-amber-400">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Supplier Due Balance (Payables)</div>
-              <div className="font-mono text-lg font-bold text-slate-900 dark:text-white">
-                {formatCurrency(balances?.supplierPayables || 0)}
-              </div>
-            </div>
-          </div>
-        </div>
+          {/* 6. Supplier Payables */}
+          <MetricCard
+            label="Supplier Payables"
+            value={formatCurrency(balances?.supplierPayables || 0)}
+            subValue="Accounts Payable Debt"
+            icon={<Building2 className="h-5 w-5" />}
+            variant="default"
+            onClick={() => router.push('/suppliers')}
+          />
 
-        {/* Low Stock Alert */}
-        <div className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 p-5">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-rose-100 dark:bg-rose-900/50 p-2.5 text-rose-700 dark:text-rose-400">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-rose-800 dark:text-rose-300">Low Stock / Out of Stock SKUs</div>
-              <div className="font-mono text-lg font-bold text-rose-900 dark:text-rose-300">
-                {inventory?.lowStock || 0} Low / {inventory?.outOfStock || 0} Out
-              </div>
-            </div>
-          </div>
+          {/* 7. Stock Alerts */}
+          <MetricCard
+            label="Stock Health Alerts"
+            value={`${inventory?.lowStock || 0} Low / ${inventory?.outOfStock || 0} Out`}
+            subValue="Reorder Required"
+            icon={<AlertTriangle className="h-5 w-5" />}
+            variant="danger"
+            onClick={() => router.push('/inventory')}
+          />
+
+          {/* 8. Cash Drawer Tender */}
+          <MetricCard
+            label="Cash Register Tender"
+            value={formatCurrency(balances?.cashDrawer || 0)}
+            subValue="Active Shift Cash Float"
+            icon={<ShieldCheck className="h-5 w-5" />}
+            variant="default"
+            onClick={() => router.push('/cash')}
+          />
         </div>
       </div>
 
-      {/* Visual Analytics Grid: 7-Day Trend + Top Selling Products */}
+      {/* Visual Analytics Grid: 7-Day Trend + Top Selling Products Leaderboard */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* 7-Day Sales Trend (2 Cols) */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center justify-between">
-            <span>7-Day Sales Performance</span>
-            <span className="text-xs text-slate-400 font-normal">Volume & Transactions</span>
-          </h2>
-          <div className="h-52 flex items-end justify-between gap-3 pt-6">
+        <div className="lg:col-span-2 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                7-Day Sales Revenue & Volume Trend
+              </h2>
+              <p className="text-xs text-slate-400 font-medium">Daily gross turnover with peak highlights</p>
+            </div>
+            <Badge variant="primary" icon={<TrendingUp className="h-3 w-3" />}>
+              Live Stream
+            </Badge>
+          </div>
+
+          <div className="h-56 flex items-end justify-between gap-3 pt-6">
             {charts?.salesTrend?.map((t: any, idx: number) => {
-              const heightPct = Math.max(8, Math.round((Number(t.total_sales) / maxTrend) * 100));
+              const heightPct = Math.max(10, Math.round((Number(t.total_sales) / maxTrend) * 100));
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
-                  <div className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition">
+                  <div className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
                     {formatCurrency(t.total_sales)}
                   </div>
                   <div
                     style={{ height: `${heightPct}%` }}
-                    className="w-full rounded-t-xl bg-blue-600 hover:bg-blue-500 transition-all duration-300 shadow-sm"
+                    className="w-full rounded-t-xl bg-blue-700 hover:bg-blue-600 dark:bg-sky-500 dark:hover:bg-sky-400 transition-all duration-300 shadow-sm"
                   />
-                  <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{t.day_label}</span>
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    {t.day_label}
+                  </span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Top Selling Products (1 Col) */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-            <Flame className="h-4 w-4 text-amber-500" />
-            Top Selling Products
-          </h2>
+        {/* Top Selling Products Leaderboard (1 Col) */}
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <Flame className="h-4 w-4 text-amber-500" />
+              <span>Top Fast-Moving SKUs</span>
+            </h2>
+            <span className="text-[11px] font-bold text-slate-400">Today</span>
+          </div>
+
           <div className="space-y-3">
             {topProducts?.length === 0 ? (
-              <p className="text-xs text-slate-400 py-8 text-center">No sales registered today yet.</p>
+              <p className="text-xs text-slate-400 py-12 text-center font-medium">
+                No transactions completed today yet.
+              </p>
             ) : (
               topProducts?.map((p: any, idx: number) => (
-                <div key={idx} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5 text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{p.product_name}</div>
-                    <div className="text-[10px] text-slate-400">{p.total_qty} units sold</div>
+                <div
+                  key={idx}
+                  className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 text-xs"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 font-mono font-black text-slate-700 dark:text-slate-300 text-[11px]">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{p.product_name}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">{p.total_qty} units sold</div>
+                    </div>
                   </div>
-                  <div className="font-mono font-bold text-blue-600 dark:text-blue-400">{formatCurrency(p.total_revenue)}</div>
+                  <div className="font-mono font-bold text-blue-700 dark:text-sky-400">
+                    {formatCurrency(p.total_revenue)}
+                  </div>
                 </div>
               ))
             )}
@@ -287,32 +329,68 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* P&L Breakdown Summary Card */}
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-        <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Today's Profit & Loss Breakdown</h2>
-        <div className="space-y-3 font-mono text-sm">
-          <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <span className="text-slate-600 dark:text-slate-400 font-sans">Gross Sales Revenue:</span>
-            <span className="font-bold text-slate-900 dark:text-white">{formatCurrency(today?.grossSales || 0)}</span>
+      {/* Real-time P&L Statement Card */}
+      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 md:p-8 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">
+              Today's Profit & Loss Financial Breakdown (WAC)
+            </h2>
+            <p className="text-xs text-slate-400 font-medium">
+              Calculated dynamically from transactional line-item cost snapshots and operating expenses
+            </p>
           </div>
-          <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2 text-rose-600 dark:text-rose-400">
-            <span className="text-slate-600 dark:text-slate-400 font-sans">Less: Cost of Goods Sold (COGS based on WAC):</span>
-            <span>- {formatCurrency(today?.cogs || 0)}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => router.push('/reports')}
+            rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+          >
+            Full P&L Report
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 border border-slate-200 dark:border-slate-700">
+            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Gross Sales</div>
+            <div className="mt-2 font-mono text-xl font-black text-slate-900 dark:text-white">
+              {formatCurrency(today?.grossSales || 0)}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">Total revenue collected</div>
           </div>
-          <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2 font-bold text-slate-900 dark:text-white">
-            <span className="font-sans">Gross Profit Margin:</span>
-            <span>{formatCurrency(today?.grossProfit || 0)}</span>
+
+          <div className="rounded-2xl bg-red-50/60 dark:bg-red-950/30 p-4 border border-red-200 dark:border-red-900/40">
+            <div className="text-xs font-bold text-red-800 dark:text-red-300 uppercase">Less: COGS (WAC)</div>
+            <div className="mt-2 font-mono text-xl font-black text-red-900 dark:text-red-300">
+              - {formatCurrency(today?.cogs || 0)}
+            </div>
+            <div className="text-[11px] text-red-700/70 dark:text-red-400 mt-1">Direct product acquisition cost</div>
           </div>
-          <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2 text-rose-600 dark:text-rose-400">
-            <span className="text-slate-600 dark:text-slate-400 font-sans">Less: Operating Expenses (Petty cash & bills):</span>
-            <span>- {formatCurrency(today?.expenses || 0)}</span>
+
+          <div className="rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 p-4 border border-amber-200 dark:border-amber-900/40">
+            <div className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase">Less: Expenses</div>
+            <div className="mt-2 font-mono text-xl font-black text-amber-900 dark:text-amber-300">
+              - {formatCurrency(today?.expenses || 0)}
+            </div>
+            <div className="text-[11px] text-amber-700/70 dark:text-amber-400 mt-1">Petty cash & operating bills</div>
           </div>
-          <div className="flex justify-between pt-1 text-lg font-black text-emerald-600 dark:text-emerald-400">
-            <span className="font-sans">NET STORE PROFIT:</span>
-            <span>{formatCurrency(today?.netProfit || 0)}</span>
+
+          <div className="rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/50 p-4 border border-emerald-300 dark:border-emerald-800">
+            <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase">Net Store Profit</div>
+            <div className="mt-2 font-mono text-2xl font-black text-emerald-900 dark:text-emerald-300">
+              {formatCurrency(today?.netProfit || 0)}
+            </div>
+            <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 font-bold">
+              Net Margin: {today?.grossSales > 0 ? ((today.netProfit / today.grossSales) * 100).toFixed(1) : '0.0'}%
+            </div>
           </div>
         </div>
       </div>
+
+      <SwitchToPosModal
+        isOpen={isSwitchToPosOpen}
+        onClose={() => setIsSwitchToPosOpen(false)}
+      />
     </div>
   );
 }

@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input, Textarea } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { BarcodeLabelModal } from '@/components/ui/BarcodeLabelModal';
+import { DataTable } from '@/components/ui/DataTable';
 import {
   Package,
   Plus,
@@ -20,6 +27,9 @@ import {
   Grid,
   Upload,
   Image as ImageIcon,
+  Sparkles,
+  Layers,
+  Filter,
 } from 'lucide-react';
 
 export default function ProductsPage() {
@@ -30,6 +40,7 @@ export default function ProductsPage() {
   const [taxRates, setTaxRates] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out' | 'perishable'>('all');
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,7 +48,6 @@ export default function ProductsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<any>(null);
-  const [barcodeCount, setBarcodeCount] = useState<number>(4);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
 
@@ -45,23 +55,8 @@ export default function ProductsPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<{ name: string; dataUrl: string; mimeType: string } | null>(null);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('Image file size exceeds 5MB limit.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setImagePreview(dataUrl);
-      setImageFile({ name: file.name, dataUrl, mimeType: file.type });
-    };
-    reader.readAsDataURL(file);
-  };
-
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -85,6 +80,7 @@ export default function ProductsPage() {
   });
 
   const loadData = async () => {
+    setDataLoading(true);
     const res = await apiRequest('/products');
     if (res.success && res.data) setProducts(res.data);
 
@@ -96,11 +92,42 @@ export default function ProductsPage() {
 
     const taxRes = await apiRequest('/settings/tax-rates');
     if (taxRes.success && taxRes.data) setTaxRates(taxRes.data);
+
+    setDataLoading(false);
   };
 
   useEffect(() => {
     loadData();
+
+    // Instant real-time product & stock sync when POS sales complete
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('shop_stock_sync');
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'STOCK_UPDATED') {
+          loadData();
+        }
+      };
+      return () => {
+        channel.close();
+      };
+    }
   }, []);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('Image file size exceeds 5MB limit.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setImagePreview(dataUrl);
+      setImageFile({ name: file.name, dataUrl, mimeType: file.type });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const openCreate = () => {
     setIsEditMode(false);
@@ -204,7 +231,7 @@ export default function ProductsPage() {
   };
 
   const handleDeactivate = async (id: number) => {
-    if (!confirm('Are you sure you want to deactivate this product?')) return;
+    if (!confirm('Are you sure you want to deactivate this product SKU?')) return;
     const res = await apiRequest(`/products/${id}`, { method: 'DELETE' });
     if (res.success) loadData();
   };
@@ -233,573 +260,508 @@ export default function ProductsPage() {
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search)) ||
       (p.plu_code && p.plu_code.includes(search));
+
     const matchesCat = selectedCat ? p.category_id === selectedCat : true;
-    return matchesSearch && matchesCat;
+
+    let matchesStock = true;
+    if (stockFilter === 'low') {
+      matchesStock = Number(p.current_stock) > 0 && Number(p.current_stock) <= Number(p.min_stock_level || 5);
+    } else if (stockFilter === 'out') {
+      matchesStock = Number(p.current_stock) <= 0;
+    } else if (stockFilter === 'perishable') {
+      matchesStock = p.has_expiry === true;
+    }
+
+    return matchesSearch && matchesCat && matchesStock;
   });
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Thermal Barcode Generator Modal */}
+      {isBarcodeModalOpen && barcodeProduct && (
+        <BarcodeLabelModal
+          isOpen={isBarcodeModalOpen}
+          onClose={() => setIsBarcodeModalOpen(false)}
+          product={barcodeProduct}
+        />
+      )}
+
+      {/* Quick Category Creation Modal */}
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        title="Add Product Category"
+        subtitle="Create a new grouping category for the master catalog"
+        maxWidth="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleCreateCategory}>
+              Create Category
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Category Name"
+          value={newCatName}
+          onChange={(e) => setNewCatName(e.target.value)}
+          required
+          placeholder="e.g. Dairy & Eggs, Fresh Bakery, Cold Beverages"
+        />
+      </Modal>
+
+      {/* Create / Edit Product Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>{isEditMode ? 'Edit Product Master SKU' : 'Register New Product SKU'}</span>
+          </div>
+        }
+        subtitle="Maintain unit conversions, pricing, WAC cost basis, and barcode identifiers"
+        maxWidth="3xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" isLoading={loading} onClick={handleSubmit}>
+              {isEditMode ? 'Save Changes' : 'Create Product SKU'}
+            </Button>
+          </>
+        }
+      >
+        {errorMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Identity & Basic Info */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <Input
+                label="Product Name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+                placeholder="e.g. Almarai Fresh Milk Full Fat 2L"
+              />
+            </div>
+            <div>
+              <Input
+                label="SKU Code"
+                value={form.sku}
+                onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                required
+                placeholder="SKU-10029"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Input
+                label="Barcode (EAN-13 / UPC / Code128)"
+                value={form.barcode}
+                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                placeholder="6281007001234"
+              />
+            </div>
+            <div>
+              <Input
+                label="Produce Scale PLU Code"
+                value={form.pluCode}
+                onChange={(e) => setForm({ ...form, pluCode: e.target.value })}
+                placeholder="e.g. 1042"
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Category
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="text-[11px] font-bold text-blue-700 dark:text-sky-400 hover:underline"
+                >
+                  + New
+                </button>
+              </div>
+              <Select
+                value={form.categoryId}
+                onChange={(e) => setForm({ ...form, categoryId: parseInt(e.target.value) })}
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {/* Pricing & VAT */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
+            <div>
+              <Input
+                label="Cost Price (WAC)"
+                type="number"
+                step="0.0001"
+                value={form.costPrice}
+                onChange={(e) => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })}
+                required
+                helperText="Perpetual weighted average"
+              />
+            </div>
+            <div>
+              <Input
+                label="Selling Price (SAR)"
+                type="number"
+                step="0.01"
+                value={form.sellingPrice}
+                onChange={(e) => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })}
+                required
+                className="font-bold text-blue-700 dark:text-sky-400"
+              />
+            </div>
+            <div>
+              <Select
+                label="Tax Rate"
+                value={form.taxRateId}
+                onChange={(e) => setForm({ ...form, taxRateId: parseInt(e.target.value) })}
+              >
+                {taxRates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.rate}%)
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Select
+                label="Tax Mode"
+                value={form.taxType}
+                onChange={(e) => setForm({ ...form, taxType: e.target.value })}
+              >
+                <option value="exclusive">Tax-Exclusive (VAT added)</option>
+                <option value="inclusive">Tax-Inclusive (Price has VAT)</option>
+              </Select>
+            </div>
+          </div>
+
+          {/* Stock & Unit Settings */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Select
+                label="Base Inventory Unit"
+                value={form.unitId}
+                onChange={(e) => setForm({ ...form, unitId: parseInt(e.target.value) })}
+              >
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.short_name})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Input
+                label="Min Stock Warning Level"
+                type="number"
+                step="1"
+                value={form.minStockLevel}
+                onChange={(e) => setForm({ ...form, minStockLevel: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+            {!isEditMode && (
+              <div>
+                <Input
+                  label="Initial Opening Stock"
+                  type="number"
+                  step="1"
+                  value={form.initialStock}
+                  onChange={(e) => setForm({ ...form, initialStock: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Super Shop Capability Flags */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input
+                type="checkbox"
+                checked={form.hasExpiry}
+                onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <div className="font-bold text-slate-900 dark:text-white">Batch & Expiry</div>
+                <div className="text-[10px] text-slate-400">Track perishable dates</div>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input
+                type="checkbox"
+                checked={form.isWeighable}
+                onChange={(e) => setForm({ ...form, isWeighable: e.target.checked })}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <div className="font-bold text-slate-900 dark:text-white">Scale Variable Weight</div>
+                <div className="text-[10px] text-slate-400">Prefix 20-29 barcode support</div>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input
+                type="checkbox"
+                checked={form.isQuickPlu}
+                onChange={(e) => setForm({ ...form, isQuickPlu: e.target.checked })}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <div className="font-bold text-slate-900 dark:text-white">Quick PLU Grid</div>
+                <div className="text-[10px] text-slate-400">Touch tile on POS screen</div>
+              </div>
+            </label>
+          </div>
+
+          {/* Image Upload Input */}
+          <div className="pt-2">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Product Image (WebP / PNG / JPG)
+            </label>
+            <div className="flex items-center gap-4">
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition">
+                <Upload className="h-4 w-4 text-blue-600 dark:text-sky-400" />
+                <span>Choose Image</span>
+                <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+              </label>
+              {imagePreview && (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-1 bg-white dark:bg-slate-900">
+                  <img src={imagePreview} alt="Preview" className="h-10 w-10 rounded-lg object-cover" />
+                  <span className="text-[11px] font-mono text-slate-500 pr-2">Selected</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Product Master Catalog</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices (WAC), selling prices, and shelf labels.
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            Product Master Catalog
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices (WAC), selling prices, and thermal shelf labels.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm"
-          >
-            <FolderPlus className="h-4 w-4 text-slate-500" />
-            Add Category
-          </button>
-          <button
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="primary"
+            size="md"
             onClick={openCreate}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+            leftIcon={<Plus className="h-4 w-4" />}
           >
-            <Plus className="h-4 w-4" />
-            Add New Product
-          </button>
+            Add Product SKU
+          </Button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
+      {/* Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
+        {/* Search */}
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by product name, SKU, barcode, or PLU..."
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2.5 pl-10 pr-4 text-xs text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
+            placeholder="Search by SKU, product name, barcode, or PLU..."
+            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 py-2 pl-10 pr-4 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
           />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto text-xs">
+        {/* Category Filter */}
+        <div className="w-full sm:w-56">
+          <select
+            value={selectedCat || ''}
+            onChange={(e) => setSelectedCat(e.target.value ? parseInt(e.target.value) : null)}
+            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+          >
+            <option value="">All Categories ({products.length})</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Stock Status Filter Pills */}
+        <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto">
           <button
-            onClick={() => setSelectedCat(null)}
-            className={`rounded-xl px-3.5 py-2 font-semibold transition ${
-              selectedCat === null
-                ? 'bg-blue-600 text-white shadow'
-                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+            onClick={() => setStockFilter('all')}
+            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+              stockFilter === 'all'
+                ? 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
-            All Categories ({products.length})
+            All Stock
           </button>
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedCat(c.id)}
-              className={`rounded-xl px-3.5 py-2 font-semibold whitespace-nowrap transition ${
-                selectedCat === c.id
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
+          <button
+            onClick={() => setStockFilter('low')}
+            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+              stockFilter === 'low'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            Low Stock
+          </button>
+          <button
+            onClick={() => setStockFilter('out')}
+            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+              stockFilter === 'out'
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            Out of Stock
+          </button>
         </div>
       </div>
 
-      {/* Products Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-[10px] font-bold uppercase text-slate-400">
-              <tr>
-                <th className="py-3 px-4">SKU / PLU / Barcode</th>
-                <th className="py-3 px-4">Product Name</th>
-                <th className="py-3 px-4">Category</th>
-                <th className="py-3 px-4 text-right">Cost Price (WAC)</th>
-                <th className="py-3 px-4 text-right">Selling Price</th>
-                <th className="py-3 px-4 text-center">Stock Level</th>
-                <th className="py-3 px-4 text-center">Attributes</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-400">
-                    No products found matching search criteria.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((p) => {
-                  const stock = Number(p.current_stock || 0);
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <td className="py-3.5 px-4 font-mono">
-                        <div className="font-bold text-slate-900 dark:text-white">{p.sku}</div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-2">
-                          <span>{p.barcode || 'No barcode'}</span>
-                          {p.plu_code && <span className="font-bold text-emerald-500">PLU: {p.plu_code}</span>}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          {p.images?.[0]?.file_path ? (
-                            <img
-                              src={p.images[0].file_path}
-                              alt={p.name}
-                              className="h-8 w-8 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                            />
-                          ) : (
-                            <div className="h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0 border border-slate-200 dark:border-slate-700">
-                              <Package className="h-4 w-4" />
-                            </div>
-                          )}
-                          <div>
-                            <div className="font-semibold text-slate-900 dark:text-white">{p.name}</div>
-                            {p.description && <div className="text-[10px] text-slate-400 line-clamp-1">{p.description}</div>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400">{p.category_name || 'General'}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-500">
-                        {p.cost_price !== undefined ? formatCurrency(p.cost_price) : '-'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {formatCurrency(p.selling_price)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                            stock > p.min_stock_level
-                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
-                              : stock > 0
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
-                          }`}
-                        >
-                          {stock} {p.unit_short || 'pcs'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex justify-center gap-1">
-                          {p.has_expiry && (
-                            <span className="p-1 rounded bg-amber-500/10 text-amber-500" title="Perishable / Expiry Tracking">
-                              <Calendar className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                          {p.is_weighable && (
-                            <span className="p-1 rounded bg-emerald-500/10 text-emerald-500" title="Variable-Weight Scale Item">
-                              <Scale className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                          {p.is_quick_plu && (
-                            <span className="p-1 rounded bg-blue-500/10 text-blue-500" title="Quick Produce Touch Grid Item">
-                              <Grid className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-right space-x-1">
-                        <button
-                          onClick={() => openBarcodePrint(p)}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700"
-                          title="Print Barcode Tag"
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => openEdit(p)}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600"
-                          title="Edit Product"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeactivate(p.id)}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-600"
-                          title="Deactivate Product"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Add / Edit Product Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold">
-                {isEditMode ? `Edit Product: ${form.name}` : 'Add New Product Master'}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Product Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. Fresh Red Apple 1kg"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">SKU (Stock Keeping Unit) *</label>
-                  <input
-                    type="text"
-                    required
-                    value={form.sku}
-                    onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. FRU-APP-001"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Barcode / EAN-13</label>
-                  <input
-                    type="text"
-                    value={form.barcode}
-                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. 6281007001015"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Scale PLU Code</label>
-                  <input
-                    type="text"
-                    value={form.pluCode}
-                    onChange={(e) => setForm({ ...form, pluCode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. 1042"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Category</label>
-                  <select
-                    value={form.categoryId}
-                    onChange={(e) => setForm({ ...form, categoryId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Unit of Measure</label>
-                  <select
-                    value={form.unitId}
-                    onChange={(e) => setForm({ ...form, unitId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    {units.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.short_name})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Attributes (Perishable, Weighable, Quick PLU) */}
-              <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.hasExpiry}
-                    onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
-                    className="h-4 w-4 rounded text-blue-600"
-                  />
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Has Expiration / Perishable</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isWeighable}
-                    onChange={(e) => setForm({ ...form, isWeighable: e.target.checked })}
-                    className="h-4 w-4 rounded text-blue-600"
-                  />
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Weighable Item</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isQuickPlu}
-                    onChange={(e) => setForm({ ...form, isQuickPlu: e.target.checked })}
-                    className="h-4 w-4 rounded text-blue-600"
-                  />
-                  <span className="font-bold text-slate-700 dark:text-slate-300">POS Quick Produce Grid</span>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Cost Price ({settings.currency_symbol || 'SAR'}) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={form.costPrice}
-                    onChange={(e) => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Selling Price ({settings.currency_symbol || 'SAR'}) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={form.sellingPrice}
-                    onChange={(e) => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Wholesale Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.wholesalePrice || ''}
-                    onChange={(e) => setForm({ ...form, wholesalePrice: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Tax Rate</label>
-                  <select
-                    value={form.taxRateId}
-                    onChange={(e) => setForm({ ...form, taxRateId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    {taxRates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({Number(t.rate)}%)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Min Stock Alert Threshold</label>
-                  <input
-                    type="number"
-                    value={form.minStockLevel}
-                    onChange={(e) => setForm({ ...form, minStockLevel: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {!isEditMode && (
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Initial Stock Quantity</label>
-                  <input
-                    type="number"
-                    value={form.initialStock}
-                    onChange={(e) => setForm({ ...form, initialStock: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              )}
-
-              {/* Product Image Upload Component */}
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Product Image (Max 5MB • JPG/PNG/WebP)</label>
-                <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
-                  {imagePreview ? (
-                    <div className="relative h-20 w-20 rounded-xl border border-slate-300 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
-                      <img src={imagePreview} alt="Product preview" className="h-full w-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setImagePreview(null);
-                          setImageFile(null);
-                        }}
-                        className="absolute top-1 right-1 rounded-full bg-rose-600 p-1 text-white hover:bg-rose-700 shadow"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
+      {/* Products Master DataTable */}
+      <DataTable
+        isLoading={dataLoading}
+        data={filtered}
+        keyExtractor={(p) => p.id}
+        emptyMessage="No products match your filter criteria."
+        columns={[
+          {
+            header: 'Product Name / Identifiers',
+            accessor: (p) => (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold overflow-hidden border border-slate-200 dark:border-slate-700">
+                  {p.images?.[0]?.file_path ? (
+                    <img src={p.images[0].file_path} alt={p.name} className="h-full w-full object-cover" />
                   ) : (
-                    <div className="h-20 w-20 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 shrink-0 bg-white dark:bg-slate-900">
-                      <ImageIcon className="h-6 w-6" />
-                      <span className="text-[9px] mt-1">No Image</span>
-                    </div>
+                    <Package className="h-5 w-5 text-slate-400" />
                   )}
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      id="product-image-input"
-                      accept="image/png, image/jpeg, image/webp"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="product-image-input"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer shadow-sm"
-                    >
-                      <Upload className="h-4 w-4 text-blue-500" />
-                      Choose Product Image...
-                    </label>
-                    <p className="text-[10px] text-slate-400 mt-1">Auto-optimized for POS touch tiles and thermal barcode labels.</p>
+                </div>
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{p.name}</div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                    <span>SKU: {p.sku}</span>
+                    {p.barcode && <span>• Barcode: {p.barcode}</span>}
+                    {p.plu_code && <span>• PLU: {p.plu_code}</span>}
                   </div>
                 </div>
               </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-500"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Saving...' : isEditMode ? 'Update Product' : 'Save Product Master'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Barcode Tag Print Modal */}
-      {isBarcodeModalOpen && barcodeProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold flex items-center gap-2">
-                <Barcode className="h-5 w-5 text-blue-500" />
-                Print Shelf Barcode Labels
-              </h2>
-              <button onClick={() => setIsBarcodeModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Number of Tags</label>
-              <input
-                type="number"
-                min="1"
-                max="24"
-                value={barcodeCount}
-                onChange={(e) => setBarcodeCount(parseInt(e.target.value) || 1)}
-                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2 text-xs font-mono"
-              />
-            </div>
-
-            {/* Printable Tags Preview */}
-            <div id="printable-barcodes" className="border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-xl grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-950">
-              {Array.from({ length: barcodeCount }).map((_, idx) => (
-                <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-lg text-center font-mono">
-                  <div className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{barcodeProduct.name}</div>
-                  <div className="text-[9px] text-slate-500">{barcodeProduct.sku}</div>
-                  <div className="my-1 text-xs tracking-widest font-black text-slate-800 dark:text-slate-200">
-                    |||| || ||||| ||| ||
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-mono">{barcodeProduct.barcode || barcodeProduct.sku}</div>
-                  <div className="text-xs font-black text-blue-600 dark:text-blue-400 mt-1">{formatCurrency(barcodeProduct.selling_price)}</div>
-                  <div className="text-[8px] text-slate-400">{settings.tax_label || 'Inc 15% VAT'}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={() => setIsBarcodeModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md"
-              >
-                <Printer className="h-4 w-4" />
-                Print Labels
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Category Modal */}
-      {isCategoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <h2 className="text-base font-bold mb-3 flex items-center gap-2">
-              <FolderPlus className="h-4 w-4 text-blue-500" />
-              Add New Category
-            </h2>
-            <form onSubmit={handleCreateCategory} className="space-y-3 text-xs">
+            ),
+          },
+          {
+            header: 'Category & Unit',
+            accessor: (p) => (
               <div>
-                <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Category Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Frozen Foods"
+                <div className="font-semibold text-slate-700 dark:text-slate-300">
+                  {p.category_name || 'General'}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  Base: {p.unit_name || 'Piece'}
+                </div>
+              </div>
+            ),
+          },
+          {
+            header: 'Stock Status',
+            accessor: (p) => {
+              const stock = Number(p.current_stock || 0);
+              const min = Number(p.min_stock_level || 5);
+              if (stock <= 0) {
+                return <Badge variant="danger">Out of Stock (0)</Badge>;
+              }
+              if (stock <= min) {
+                return (
+                  <Badge variant="warning">
+                    Low Stock ({stock.toFixed(0)})
+                  </Badge>
+                );
+              }
+              return (
+                <Badge variant="success">
+                  In Stock ({stock.toFixed(0)})
+                </Badge>
+              );
+            },
+          },
+          {
+            header: 'Cost Price (WAC)',
+            align: 'right',
+            accessor: (p) => (
+              <span className="font-mono font-bold text-slate-500">
+                {formatCurrency(p.cost_price)}
+              </span>
+            ),
+          },
+          {
+            header: 'Selling Price (SAR)',
+            align: 'right',
+            accessor: (p) => (
+              <div>
+                <div className="font-mono font-bold text-blue-700 dark:text-sky-400">
+                  {formatCurrency(p.selling_price)}
+                </div>
+                <div className="text-[10px] text-slate-400 font-semibold">
+                  {p.tax_type === 'inclusive' ? 'Inc VAT' : 'Ex VAT'}
+                </div>
+              </div>
+            ),
+          },
+          {
+            header: 'Actions',
+            align: 'right',
+            accessor: (p) => (
+              <div className="flex items-center justify-end gap-1.5">
+                <IconButton
+                  title="Generate Thermal Barcode Label"
+                  icon={<Barcode className="h-4 w-4" />}
+                  size="sm"
+                  onClick={() => openBarcodePrint(p)}
+                />
+                <IconButton
+                  title="Edit Product Master"
+                  icon={<Edit2 className="h-4 w-4" />}
+                  size="sm"
+                  onClick={() => openEdit(p)}
+                />
+                <IconButton
+                  title="Deactivate SKU"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleDeactivate(p.id)}
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsCategoryModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold"
-                >
-                  Create Category
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

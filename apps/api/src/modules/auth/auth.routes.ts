@@ -1,12 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { query } from '../../db/pool.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
 
 const loginSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1),
+  username: z.string().optional(),
+  password: z.string().optional(),
+  pin: z.string().optional(),
+  sessionType: z.enum(['dashboard', 'pos']).optional(),
+  forceLogin: z.boolean().optional().default(false),
+  forceTakeover: z.boolean().optional().default(false),
 });
 
 const createUserSchema = z.object({
@@ -16,7 +21,7 @@ const createUserSchema = z.object({
   password: z.string().min(6),
   fullName: z.string().min(2),
   phone: z.string().optional().nullable(),
-  pinCode: z.string().min(4).max(10).optional().nullable(),
+  pinCode: z.string().min(5).max(10).optional().nullable(),
 });
 
 const updateUserSchema = z.object({
@@ -24,7 +29,7 @@ const updateUserSchema = z.object({
   email: z.string().email().optional().nullable(),
   fullName: z.string().min(2).optional(),
   phone: z.string().optional().nullable(),
-  pinCode: z.string().min(4).max(10).optional().nullable(),
+  pinCode: z.string().min(5).max(10).optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -32,8 +37,48 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(6),
 });
 
+interface SseClient {
+  sessionId: string;
+  sessionType?: 'dashboard' | 'pos';
+  reply: any;
+}
+
+const activeSseClients = new Map<number, Set<SseClient>>();
+
+export function broadcastSessionEvent(
+  userId: number,
+  event: 'SESSION_SUPERSEDED' | 'SESSION_TERMINATED',
+  keepSessionId?: string,
+  targetSessionType?: 'dashboard' | 'pos'
+) {
+  const userSockets = activeSseClients.get(userId);
+  if (!userSockets) return;
+
+  for (const client of Array.from(userSockets)) {
+    // If a specific session type is targeted, never interfere with other session types
+    if (targetSessionType && client.sessionType && client.sessionType !== targetSessionType) {
+      continue;
+    }
+    if (!keepSessionId || client.sessionId !== keepSessionId) {
+      try {
+        client.reply.raw.write(
+          `event: ${event}\ndata: ${JSON.stringify({ event, timestamp: new Date().toISOString() })}\n\n`
+        );
+        client.reply.raw.end();
+      } catch {
+        // Socket already closed
+      }
+      userSockets.delete(client);
+    }
+  }
+
+  if (userSockets.size === 0) {
+    activeSseClients.delete(userId);
+  }
+}
+
 export async function authRoutes(fastify: FastifyInstance) {
-  // POST /api/v1/auth/login - Staff Login
+  // POST /api/v1/auth/login - Staff Login (Password or Quick PIN)
   fastify.post('/login', async (request, reply) => {
     const parseResult = loginSchema.safeParse(request.body);
     if (!parseResult.success) {
@@ -44,20 +89,77 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const { username, password } = parseResult.data;
+    const { username, password, pin, forceLogin } = parseResult.data;
 
-    const userRes = await query(
-      `SELECT id, role, username, password_hash, full_name, is_active, pin_code 
-       FROM users 
-       WHERE username = $1`,
-      [username]
-    );
+    let userRes;
+    if (pin && !password) {
+      // Secure PIN login: fetch all active users with a PIN and compare using bcrypt
+      const candidateQuery = username
+        ? await query(
+            `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+             FROM users 
+             WHERE username = $1 AND pin_code IS NOT NULL AND is_active = TRUE`,
+            [username]
+          )
+        : await query(
+            `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+             FROM users 
+             WHERE pin_code IS NOT NULL AND is_active = TRUE`
+          );
 
-    if (userRes.rows.length === 0) {
-      return reply.status(401).send({
-        success: false,
-        message: 'Invalid username or password.',
-      });
+      // Iterate candidates and compare PIN hash (supports both hashed and legacy plaintext PINs)
+      let matchedUser = null;
+      for (const candidate of candidateQuery.rows) {
+        if (!candidate.pin_code) continue;
+        // Check if PIN is stored as bcrypt hash (starts with $2) or plaintext legacy
+        const isHashed = candidate.pin_code.startsWith('$2');
+        const pinMatch = isHashed
+          ? await bcrypt.compare(pin, candidate.pin_code)
+          : candidate.pin_code === pin;
+        if (pinMatch) {
+          matchedUser = candidate;
+          break;
+        }
+      }
+
+      userRes = { rows: matchedUser ? [matchedUser] : [] };
+
+      if (userRes.rows.length === 0) {
+        return reply.status(401).send({
+          success: false,
+          message: 'Invalid 5-digit PIN code.',
+        });
+      }
+    } else {
+      if (!username || !password) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Username and password are required.',
+        });
+      }
+
+      userRes = await query(
+        `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+         FROM users 
+         WHERE username = $1`,
+        [username]
+      );
+
+      if (userRes.rows.length === 0) {
+        return reply.status(401).send({
+          success: false,
+          message: 'Invalid username or password.',
+        });
+      }
+
+      const userCheck = userRes.rows[0];
+      const passwordMatch = await bcrypt.compare(password, userCheck.password_hash);
+      if (!passwordMatch) {
+        return reply.status(401).send({
+          success: false,
+          message: 'Invalid username or password.',
+        });
+      }
     }
 
     const user = userRes.rows[0];
@@ -69,33 +171,201 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
-    if (!passwordMatch) {
-      return reply.status(401).send({
-        success: false,
-        message: 'Invalid username or password.',
+    // Determine session type & effective role:
+    const isPinLogin = Boolean(pin && !password);
+    const requestedSessionType = parseResult.data.sessionType;
+    const sessionType: 'dashboard' | 'pos' = requestedSessionType
+      ? requestedSessionType
+      : (isPinLogin || user.role === 'sales_executive' ? 'pos' : 'dashboard');
+
+    const effectiveRole = sessionType === 'pos' && user.role === 'manager' ? 'sales_executive' : user.role;
+
+    // POS Exclusive Session Check: For cashier/PIN logins, enforce single active operator on POS
+    if (sessionType === 'pos') {
+      const { forceTakeover } = parseResult.data;
+      const openSessionRes = await query(
+        `SELECT cs.id, cs.user_id, cs.opened_at, cs.opening_balance,
+                u.full_name as user_name, u.username as user_username, u.role as user_role
+         FROM cash_sessions cs
+         JOIN users u ON u.id = cs.user_id
+         WHERE cs.status = 'open'
+         LIMIT 1`
+      );
+
+      if (openSessionRes.rows.length > 0) {
+        const activeSession = openSessionRes.rows[0];
+        // If the open session belongs to a DIFFERENT user, POS is occupied
+        if (activeSession.user_id !== user.id) {
+          // Calculate cash movements & drawer balance
+          const movRes = await query(
+            `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow
+             FROM cash_movements WHERE session_id = $1`,
+            [activeSession.id]
+          );
+          const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+          const expectedBalance = Number(activeSession.opening_balance) + netFlow;
+
+          if (!forceTakeover) {
+            // Get sales stats for the active session
+            const salesStatsRes = await query(
+              `SELECT COUNT(id) as sales_count, COALESCE(SUM(grand_total), 0) as total_sales
+               FROM sales WHERE session_id = $1 AND sale_status = 'completed'`,
+              [activeSession.id]
+            );
+
+            return reply.status(409).send({
+              success: false,
+              code: 'POS_OCCUPIED',
+              message: `POS is currently in use by ${activeSession.user_name}.`,
+              requiresTakeover: true,
+              data: {
+                activeOperator: {
+                  userId: activeSession.user_id,
+                  fullName: activeSession.user_name,
+                  username: activeSession.user_username,
+                  role: activeSession.user_role || 'sales_executive',
+                  openedAt: activeSession.opened_at,
+                  salesCount: Number(salesStatsRes.rows[0]?.sales_count || 0),
+                  totalSales: Number(salesStatsRes.rows[0]?.total_sales || 0),
+                  cashInDrawer: expectedBalance,
+                },
+              },
+            });
+          }
+
+          // Force takeover: auto-close the displaced cashier's session
+          await query(
+            `UPDATE cash_sessions 
+             SET status = 'closed', closed_at = NOW(),
+                 closing_balance = $1, expected_balance = $1, difference = 0,
+                 close_type = 'takeover', force_closed_by = $2,
+                 force_close_reason = $3,
+                 closing_note = $4
+             WHERE id = $5`,
+            [
+              expectedBalance,
+              user.id,
+              'Login takeover',
+              `Force-closed: Takeover by ${user.full_name} (@${user.username}) during login`,
+              activeSession.id,
+            ]
+          );
+
+          // Invalidate ONLY the displaced cashier's POS session (never touch manager dashboard sessions!)
+          await query(`UPDATE users SET current_pos_session_id = NULL WHERE id = $1`, [activeSession.user_id]);
+          broadcastSessionEvent(activeSession.user_id, 'SESSION_SUPERSEDED', undefined, 'pos');
+
+          // Audit log
+          await query(
+            `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+             VALUES ($1, 'CASH_SESSION_FORCE_TAKEOVER', 'cash_sessions', $2, $3)`,
+            [
+              user.id,
+              activeSession.id,
+              JSON.stringify({
+                displacedUser: activeSession.user_name,
+                displacedUserId: activeSession.user_id,
+                takenOverBy: user.full_name,
+                expectedBalance,
+                context: 'login_takeover',
+                timestamp: new Date().toISOString(),
+              }),
+            ]
+          );
+        }
+      }
+
+
+      // Generate unique POS session identifier
+      const sessionId = crypto.randomUUID();
+
+      // Update last_login_at and current_pos_session_id (POS counter only)
+      await query(
+        `UPDATE users SET last_login_at = NOW(), current_pos_session_id = $1 WHERE id = $2`,
+        [sessionId, user.id]
+      );
+
+      // Instantly terminate any other active POS SSE connections for this cashier
+      broadcastSessionEvent(user.id, 'SESSION_SUPERSEDED', sessionId, 'pos');
+
+      // Issue JWT with embedded sessionId and sessionType: 'pos'
+      const token = fastify.jwt.sign({
+        id: user.id,
+        role: effectiveRole,
+        actualRole: user.role,
+        username: user.username,
+        fullName: user.full_name,
+        sessionId,
+        sessionType: 'pos',
+      });
+
+      // Record login audit log
+      await query(
+        `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+         VALUES ($1, 'USER_LOGIN', 'users', $1, $2)`,
+        [user.id, JSON.stringify({ username: user.username, role: effectiveRole, sessionType: 'pos', isPinLogin, timestamp: new Date().toISOString() })]
+      );
+
+      // Set HTTP-Only cookie
+      reply.setCookie('auth_token', token, {
+        path: '/',
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax',
+        maxAge: 12 * 60 * 60, // 12 hours
+      });
+
+      return reply.send({
+        success: true,
+        message: 'Login successful.',
+        data: {
+          token,
+          user: {
+            id: user.id,
+            role: effectiveRole,
+            actualRole: user.role,
+            username: user.username,
+            fullName: user.full_name,
+            pinCode: user.pin_code,
+            sessionType: 'pos',
+          },
+        },
       });
     }
 
-    // Update last_login_at
-    await query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [user.id]);
+    // Manager Dashboard Login (sessionType === 'dashboard')
 
-    // Issue JWT
+    // Generate unique session identifier for manager dashboard
+    const sessionId = crypto.randomUUID();
+
+    // Update last_login_at and current_session_id (Manager Dashboard only)
+    await query(
+      `UPDATE users SET last_login_at = NOW(), current_session_id = $1 WHERE id = $2`,
+      [sessionId, user.id]
+    );
+
+    // Instantly terminate any other active dashboard sessions for this manager (Laptop 2 supersedes Laptop 1)
+    broadcastSessionEvent(user.id, 'SESSION_SUPERSEDED', sessionId, 'dashboard');
+
+    // Issue JWT with embedded sessionId and sessionType: 'dashboard'
     const token = fastify.jwt.sign({
       id: user.id,
-      role: user.role,
+      role: 'manager',
+      actualRole: user.role,
       username: user.username,
       fullName: user.full_name,
+      sessionId,
+      sessionType: 'dashboard',
     });
 
     // Record login audit log
     await query(
       `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
        VALUES ($1, 'USER_LOGIN', 'users', $1, $2)`,
-      [user.id, JSON.stringify({ username: user.username, role: user.role, timestamp: new Date().toISOString() })]
+      [user.id, JSON.stringify({ username: user.username, role: 'manager', sessionType: 'dashboard', timestamp: new Date().toISOString() })]
     );
 
-    // Set HTTP-Only cookie (secure: false enables local shop LAN HTTP operation)
+    // Set HTTP-Only cookie
     reply.setCookie('auth_token', token, {
       path: '/',
       httpOnly: true,
@@ -111,23 +381,87 @@ export async function authRoutes(fastify: FastifyInstance) {
         token,
         user: {
           id: user.id,
-          role: user.role,
+          role: 'manager',
+          actualRole: user.role,
           username: user.username,
           fullName: user.full_name,
           pinCode: user.pin_code,
+          sessionType: 'dashboard',
         },
       },
     });
   });
 
-  // POST /api/v1/auth/logout
-  fastify.post('/logout', async (request, reply) => {
-    reply.clearCookie('auth_token', { path: '/' });
+  // GET /api/v1/auth/staff-list - Public list of active staff for PIN login selector
+  fastify.get('/staff-list', async (request, reply) => {
+    const res = await query(
+      `SELECT id, username, full_name, role 
+       FROM users 
+       WHERE is_active = TRUE 
+       ORDER BY role ASC, id ASC`
+    );
+    return reply.send({ success: true, data: res.rows });
+  });
+
+  // POST & GET /api/v1/auth/logout - Invalidate Session and Clear Cookies
+  const logoutHandler = async (request: any, reply: any) => {
+    try {
+      const authHeader = request.headers?.authorization;
+      const cookieToken = request.cookies?.auth_token;
+      let tokenToDecode = '';
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        tokenToDecode = authHeader.substring(7).trim();
+      } else if (cookieToken) {
+        tokenToDecode = cookieToken;
+      }
+
+      if (tokenToDecode) {
+        const decoded: any = fastify.jwt.decode(tokenToDecode);
+        if (decoded?.id) {
+          // If any shift is still open, close it cleanly so it does not leave open shifts lingering
+          await query(
+            `UPDATE cash_sessions 
+             SET status = 'closed', closed_at = NOW(), close_type = 'normal',
+                 closing_note = COALESCE(closing_note, 'Closed upon user session logout')
+             WHERE user_id = $1 AND status = 'open'`,
+            [decoded.id]
+          );
+
+          // Completely invalidate both POS and Dashboard sessions for this user
+          await query(
+            `UPDATE users SET current_session_id = NULL, current_pos_session_id = NULL WHERE id = $1`,
+            [decoded.id]
+          );
+          broadcastSessionEvent(decoded.id, 'SESSION_TERMINATED', undefined, 'pos');
+          broadcastSessionEvent(decoded.id, 'SESSION_TERMINATED', undefined, 'dashboard');
+        }
+      }
+    } catch (e) {
+      // Non-critical if token is already expired or malformed
+    }
+
+    reply.setCookie('auth_token', '', {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+      maxAge: 0,
+      expires: new Date(0),
+    });
+    reply.clearCookie('auth_token', {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
     return reply.send({
       success: true,
       message: 'Logged out successfully.',
     });
-  });
+  };
+
+  fastify.post('/logout', logoutHandler);
+  fastify.get('/logout', logoutHandler);
 
   // GET /api/v1/auth/me - Current User & Shift Profile
   fastify.get('/me', { preHandler: [authenticate] }, async (request, reply) => {
@@ -142,7 +476,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ success: false, message: 'User not found.' });
     }
 
-    // Check active cash session
+    const rawUser = userRes.rows[0];
+
+    // Check active cash session: remains active until explicitly closed on logout
     const sessionRes = await query(
       `SELECT id, status, opened_at, opening_balance 
        FROM cash_sessions 
@@ -154,7 +490,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        user: userRes.rows[0],
+        user: {
+          ...rawUser,
+          role: request.user!.role, // Effective session role ('sales_executive' if PIN login, 'manager' if password login)
+          actualRole: rawUser.role, // Underlying database role
+          fullName: rawUser.full_name,
+        },
         activeShift: sessionRes.rows[0] || null,
       },
     });
@@ -190,12 +531,13 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const pinHash = pinCode ? await bcrypt.hash(pinCode, 10) : null;
 
     const res = await query(
       `INSERT INTO users (role, username, email, password_hash, full_name, phone, pin_code, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-       RETURNING id, role, username, email, full_name, phone, pin_code, is_active, created_at`,
-      [role, username, email || null, passwordHash, fullName, phone || null, pinCode || null]
+       RETURNING id, role, username, email, full_name, phone, is_active, created_at`,
+      [role, username, email || null, passwordHash, fullName, phone || null, pinHash]
     );
 
     // Audit log
@@ -281,6 +623,27 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, message: 'Password reset successfully.' });
   });
 
+  // PUT /api/v1/auth/users/:id/pin - Reset staff 5-digit PIN (Manager only)
+  fastify.put('/users/:id/pin', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { pinCode } = request.body as { pinCode: string };
+
+    if (!pinCode || pinCode.length < 5 || pinCode.length > 10) {
+      return reply.status(400).send({ success: false, message: 'PIN code must be 5 to 10 digits.' });
+    }
+
+    const pinHash = await bcrypt.hash(pinCode, 10);
+    await query(`UPDATE users SET pin_code = $1, updated_at = NOW() WHERE id = $2`, [pinHash, Number(id)]);
+
+    await query(
+      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+       VALUES ($1, 'PIN_RESET', 'users', $2, $3)`,
+      [request.user!.id, Number(id), JSON.stringify({ targetUserId: Number(id), timestamp: new Date().toISOString() })]
+    );
+
+    return reply.send({ success: true, message: 'Staff 5-digit PIN updated successfully.' });
+  });
+
   // POST /api/v1/auth/verify-pin - Quick Manager PIN verification
   fastify.post('/verify-pin', { preHandler: [authenticate] }, async (request, reply) => {
     const { pin } = request.body as { pin: string };
@@ -288,19 +651,166 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, message: 'PIN code required.' });
     }
 
-    const res = await query(
-      `SELECT id, full_name FROM users WHERE role = 'manager' AND pin_code = $1 AND is_active = TRUE LIMIT 1`,
-      [pin]
+    // Secure: fetch all active managers with PINs and compare using bcrypt
+    const candidates = await query(
+      `SELECT id, full_name, pin_code FROM users WHERE role = 'manager' AND pin_code IS NOT NULL AND is_active = TRUE`
     );
 
-    if (res.rows.length === 0) {
+    let authorizedManager = null;
+    for (const mgr of candidates.rows) {
+      if (!mgr.pin_code) continue;
+      const isHashed = mgr.pin_code.startsWith('$2');
+      const match = isHashed
+        ? await bcrypt.compare(pin, mgr.pin_code)
+        : mgr.pin_code === pin;
+      if (match) {
+        authorizedManager = mgr;
+        break;
+      }
+    }
+
+    if (!authorizedManager) {
       return reply.status(401).send({ success: false, message: 'Invalid Manager PIN code.' });
     }
 
     return reply.send({
       success: true,
       message: 'Manager authorized.',
-      data: { authorizedBy: res.rows[0].full_name },
+      data: { authorizedBy: authorizedManager.full_name },
+    });
+  });
+
+  // POST /api/v1/auth/switch-to-pos - Demote Manager to Sales Executive POS Session (Requires PIN Verification)
+  fastify.post('/switch-to-pos', { preHandler: [authenticate] }, async (request, reply) => {
+    const { pin } = (request.body as { pin?: string }) || {};
+    
+    if (!pin || pin.length < 5) {
+      return reply.status(400).send({
+        success: false,
+        message: 'A valid 5-digit PIN is required to activate POS terminal session.',
+      });
+    }
+
+    const userRes = await query(
+      `SELECT id, role, username, full_name, is_active, pin_code FROM users WHERE id = $1`,
+      [request.user!.id]
+    );
+
+    if (userRes.rows.length === 0 || !userRes.rows[0].is_active) {
+      return reply.status(403).send({ success: false, message: 'User not active or found.' });
+    }
+
+    const user = userRes.rows[0];
+
+    // Verify PIN matches (supports bcrypt hashed and legacy plaintext PINs)
+    const isHashed = user.pin_code?.startsWith('$2');
+    const pinMatch = user.pin_code
+      ? (isHashed ? await bcrypt.compare(pin, user.pin_code) : user.pin_code === pin)
+      : false;
+
+    if (!pinMatch) {
+      return reply.status(401).send({
+        success: false,
+        message: 'Invalid PIN code. Please enter your correct 5-digit PIN to access the POS terminal.',
+      });
+    }
+
+    // Generate new unique session identifier for POS terminal
+    const sessionId = crypto.randomUUID();
+    await query(`UPDATE users SET current_pos_session_id = $1 WHERE id = $2`, [sessionId, user.id]);
+    broadcastSessionEvent(user.id, 'SESSION_SUPERSEDED', sessionId, 'pos');
+
+    // Issue new JWT with role = 'sales_executive' and sessionType = 'pos'
+    const token = fastify.jwt.sign({
+      id: user.id,
+      role: 'sales_executive',
+      actualRole: user.role,
+      username: user.username,
+      fullName: user.full_name,
+      sessionId,
+      sessionType: 'pos',
+    });
+
+    // Record audit log
+    await query(
+      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+       VALUES ($1, 'MANAGER_SWITCHED_TO_POS_SHIFT', 'users', $1, $2)`,
+      [user.id, JSON.stringify({ username: user.username, effectiveRole: 'sales_executive', sessionType: 'pos', pinVerified: true, timestamp: new Date().toISOString() })]
+    );
+
+    // Update HTTP-Only auth_token cookie
+    reply.setCookie('auth_token', token, {
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 12 * 60 * 60,
+    });
+
+    return reply.send({
+      success: true,
+      message: 'PIN verified. Sales executive POS shift activated.',
+      data: {
+        token,
+        user: {
+          id: user.id,
+          role: 'sales_executive',
+          actualRole: user.role,
+          username: user.username,
+          fullName: user.full_name,
+          sessionType: 'pos',
+        },
+      },
+    });
+  });
+
+  // GET /api/v1/auth/session-events - Instant Real-Time SSE Stream for Multi-Device Session Invalidation
+  fastify.get('/session-events', { preHandler: [authenticate] }, (request, reply) => {
+    const userId = request.user!.id;
+    const sessionId = request.user!.sessionId || '';
+    const sessionType = request.user!.sessionType || (request.user!.role === 'manager' ? 'dashboard' : 'pos');
+
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx proxy buffering for instant push
+    reply.raw.flushHeaders?.();
+
+    const clientObj: SseClient = { sessionId, sessionType, reply };
+    if (!activeSseClients.has(userId)) {
+      activeSseClients.set(userId, new Set());
+    }
+    activeSseClients.get(userId)!.add(clientObj);
+
+    // Initial handshake
+    reply.raw.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', sessionId })}\n\n`);
+
+    // Keepalive comment ping every 25 seconds
+    const keepAliveTimer = setInterval(() => {
+      try {
+        reply.raw.write(': keep-alive\n\n');
+      } catch {
+        clearInterval(keepAliveTimer);
+      }
+    }, 25000);
+
+    request.raw.on('close', () => {
+      clearInterval(keepAliveTimer);
+      const set = activeSseClients.get(userId);
+      if (set) {
+        set.delete(clientObj);
+        if (set.size === 0) activeSseClients.delete(userId);
+      }
+    });
+  });
+
+  // GET /api/v1/auth/heartbeat - Fast Low-Latency Heartbeat Fallback
+  fastify.get('/heartbeat', { preHandler: [authenticate] }, async (request, reply) => {
+    return reply.send({
+      success: true,
+      active: true,
+      timestamp: new Date().toISOString(),
     });
   });
 }
+

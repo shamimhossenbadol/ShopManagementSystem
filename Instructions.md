@@ -8,6 +8,10 @@ The primary users are Bangladeshi shop employees working in Saudi Arabia, but AL
 
 The system must be robust, reliable, easy to use, fast, audit-friendly, VAT/tax-ready, and suitable for real daily retail business operations.
 
+### Documentation Authority
+
+This document is the **single source of truth** for product scope, business rules, financial behaviour, security, data retention, and non-functional requirements. `SystemDesign.md` is the implementation guide and must reflect these requirements without redefining or weakening them. `DesignSystem.md` is the component-library contract for visual consistency; it must follow the product and access rules defined here. Where documents conflict, this file wins and the conflicting guide must be corrected before implementation.
+
 **Core Objectives:**
 - Accurate inventory tracking
 - Fast POS processing
@@ -58,7 +62,7 @@ The Manager has complete control over the system.
 - Create, modify, and delete purchases
 - Manage inventory (view stock, perform manual adjustments)
 - View all sales and transactions
-- Cancel/void sales (with audit trail)
+- Cancel unissued sale drafts and issue post-sale credit/debit notes (with audit trail)
 - Process sales and purchase returns
 - Manage operating expenses
 - Record customer and supplier payments
@@ -164,7 +168,7 @@ The manager dashboard must calculate real-time metrics based on transactional da
 
 ## 6. Product Management & Super Shop Extensions
 
-Every product MUST support an image upload pipeline, barcode label generation, packaging conversions, batch/expiry capability, and variable-weight scale compatibility.
+Every product MUST support an image upload pipeline, barcode label generation, packaging conversions, batch/expiry capability, and variable-weight scale compatibility. Inventory is stored in a product's immutable **base unit** (for example, pieces or kilograms); purchase and sale package quantities are converted to that base unit and both quantities are retained on the source line for auditability.
 
 ### Image Pipeline Specifications:
 - **Storage:** Host filesystem at `./data/uploads/products/` (persisted via Docker bind mount).
@@ -207,13 +211,13 @@ Every product MUST support an image upload pipeline, barcode label generation, p
 - **Category ID:** Foreign key.
 - **Brand ID:** Foreign key.
 - **Unit ID:** Foreign key (e.g., Piece, Box, Kilogram, Gram, Liter).
-- **Packaging Multiplier:** Decimal(10,2) default 1.00 (e.g. 1 Box = 24 Pieces for buying in bulk and selling in singles).
+- **Packaging Conversions:** A dedicated conversion definition with purchase/sale unit, base unit, multiplier, active status, and effective date. A product-level default multiplier is insufficient when the shop buys cartons but sells pieces or uses multiple pack sizes.
 - **Cost Price (WAC):** Decimal(15,4), strict precision. Recalculated upon PO receipt.
 - **Selling Price:** Decimal(15,4), strict precision.
 - **Wholesale Price:** Decimal(15,4), optional.
 - **Tax Rate ID & Tax Type:** Standard 15%, Zero-rated, or Exempt; Inclusive or Exclusive.
 - **Min Stock Level:** Decimal(10,2) default 5.00.
-- **Current Stock:** Decimal(10,2) - Denormalized cached stock balance updated atomically within DB transactions alongside ledger inserts for instant POS queries.
+- **Current Stock:** `DECIMAL(18,3)` in the product's base unit (or canonical integer grams/millilitres for variable-weight goods). It is a denormalized cached stock balance updated atomically alongside ledger inserts for instant POS queries.
 - **Has Expiry / Perishable Flag:** Boolean.
 - **Is Weighable / Scale Item:** Boolean.
 - **Is Featured / Quick PLU Key:** Boolean.
@@ -226,7 +230,7 @@ Do not allow uncontrolled modification of historical purchase/sale prices. Curre
 
 ## 7. Inventory System (Stock Ledger & Performance)
 
-Use a strict **STOCK LEDGER / STOCK MOVEMENT** architecture. 
+Use a strict **STOCK LEDGER / STOCK MOVEMENT** architecture. The system uses **perpetual weighted-average cost (WAC)**; FIFO is not in scope. Every stock movement has a source document, an idempotency/correlation key, and—when a product is batch-managed—a batch reference.
 - The `products.current_stock` column is maintained atomically inside the same database transaction that records the movement.
 - High-speed POS operations query `products.current_stock` directly (sub-millisecond indexed response).
 - Full auditability is guaranteed by the append-only `stock_movements` ledger table.
@@ -245,7 +249,8 @@ Use a strict **STOCK LEDGER / STOCK MOVEMENT** architecture.
 ### Stock Ledger Record:
 - `id`: BIGSERIAL PRIMARY KEY
 - `product_id`: INT REFERENCES products(id)
-- `quantity`: DECIMAL(10,2) (Positive for IN, Negative for OUT)
+- `batch_id`: INT NULL REFERENCES product_batches(id). Required for batch-managed goods.
+- `quantity_base`: DECIMAL(18,3) (Positive for IN, Negative for OUT, in the product base unit)
 - `type`: Enum (movement types)
 - `reference_id`: INT (sale_id, purchase_id, return_id)
 - `reference_type`: VARCHAR(30) (sale, purchase, sales_return, purchase_return, adjustment — discriminator for tracing movements to source documents)
@@ -254,85 +259,98 @@ Use a strict **STOCK LEDGER / STOCK MOVEMENT** architecture.
 - `notes`: TEXT (Mandatory reason required for manual adjustments)
 - `created_at`: TIMESTAMPTZ
 
+For every sale of a batch-managed product, persist `sale_item_batch_allocations` (sale item, batch, base quantity, COGS unit cost). FEFO is performed while rows are locked, excluding expired and quarantined batches. A customer return either restores its original allocation to saleable stock or records a non-saleable damaged-return disposition with a separate write-off trail; it must never silently lose batch provenance.
+
 Calculations must be concurrency-safe using `SELECT ... FOR UPDATE` row-level locking during checkout to completely prevent race conditions and overselling.
 
-**Stock Reconciliation Job:** A nightly background job must compare `products.current_stock` against `SUM(quantity) FROM stock_movements WHERE product_id = ?` for every active product. Any discrepancy is flagged via a Manager notification and logged. The job does NOT auto-correct — the Manager decides whether to issue a manual stock adjustment.
+**Stock Reconciliation Job:** A nightly background job must compare `products.current_stock` against `SUM(quantity_base) FROM stock_movements WHERE product_id = ?` for every active product and repeat the check per batch. Any discrepancy is flagged via a Manager notification and logged. The job does NOT auto-correct — the Manager decides whether to issue a manual stock adjustment.
 
 ---
 
-## 8. POS / Sales (Super Shop Optimized)
+## 8. POS & Login UI Specifications (Production Final Design)
 
-The POS interface must be blazingly fast, optimized for daily high-volume retail and grocery counter use.
+> [!IMPORTANT]
+> **Production UI Finalization Contract**: The visual design, layouts, animations, and component structure of the **Login Screen (`/login`)** and **POS Terminal (`/pos`)** are **final, approved, and strictly locked**. No modifications to their visual design or styling should be made.
 
-### Features:
-- Barcode scanner input capture (`keydown` listener with 50ms buffer timeout + scan audio beep feedback)
-- Produce scale barcode parser (auto-extracts item PLU and fractional weight from prefixes 20-29)
-- Fast PLU / Favorites Produce Grid (visual touchscreen tiles for loose fruits, vegetables & bakery)
-- Rapid product search (Name, SKU, Barcode, PLU)
-- Shopping cart with fractional/integer quantity steppers (+ / -)
-- Remove item from cart with swipe/delete key
-- Multi-buy & promotional discount engine (auto-applied in cart)
-- Apply item-level discount (Fixed amount or Percentage)
-- Apply invoice-level discount (Proportionally distributed across line items)
-- Walk-in customer (default) or registered customer selection with quick add
-- Automatic real-time VAT/tax calculation (inclusive/exclusive support with dynamic rates)
-- Multiple payment methods support (Cash, Mada, Credit/Debit Card, Bank Transfer, Split Tender)
-- Quick cash tender buttons (configurable: Exact, 50, 100, 200, 500)
-- Paid amount vs Due amount calculation
-- Change amount calculation for cash payments
-- Hold/suspend multiple sales with notes and one-click resume
-- Cancel/clear cart with confirmation
-- Complete sale with atomic commit, direct ESC/POS thermal printing, and optional RJ11 cash drawer kick
+### 8.1 Finalized Login Screen Architecture
+- **Theme & Atmosphere**: Ultra-premium Slate-950 dark background with subtle ambient blue/sky radial glow blurs.
+- **Glassmorphism Card**: 420px max-width, 110% scale card with `backdrop-blur-2xl`, subtle border, shop brand header with Store icon and subtitle.
+- **Dual Mode Role Tabs**:
+  1. **Sales Executive (5-Digit Instant PIN)**:
+     - Monospace PIN digit input boxes with active glow, backspace navigation, paste handling, and shake animation on failure.
+     - **Zero-Click Auto-Authentication**: Automatically fires authentication upon entry of the 5th digit without needing a submit button.
+     - Strict numeric input with `inputMode="numeric"` and `pattern="[0-9]*"`.
+     - **Routes Directly to POS Terminal (`/pos`)** under the `sales_executive` operational role.
+  2. **Store Manager (Credential Form)**:
+     - Username and Password fields with standard spacious layout.
+     - Gradient action button: "Sign In to Manager Portal".
+     - **Routes Directly to Manager Portal & Dashboard (`/dashboard`)** with full management capabilities.
+- **Strict Route Protection**: Unauthenticated direct access to any protected route (`/pos`, `/dashboard`, `/cash`, etc.) is immediately redirected to `/login` with an authentication loading gate.
 
-### POS Keyboard Shortcuts:
+### 8.2 Zero-Privilege POS & Manager Cashier Identity Architecture
+> [!IMPORTANT]
+> **Manager Never Operates POS Under Manager Role**:
+> 1. To preserve financial audit integrity and separation of concerns, the POS counter operates under a **Zero-Privilege POS Principle**.
+> 2. A Manager cannot ring up sales or operate a till under the unrestricted `manager` role.
+> 3. To operate a POS terminal, the Manager **must log in via their 5-digit PIN as a Sales Executive**.
+> 4. The resulting POS session is issued with effective role `sales_executive` and is treated **identically to any other Sales Executive session**:
+>    - A dedicated physical cash drawer shift is registered in `cash_sessions`.
+>    - All sales, receipts, and line-item taxes commit under their cashier till context.
+>    - At shift conclusion, the Manager performs a blind physical cash count, card terminal batch settlement entry, and generates the certified shift Z-Report.
+>    - If a user logged in with manager password navigates to `/pos`, the terminal enforces PIN verification to activate the Sales Executive till session.
+
+### 8.3 Finalized POS Terminal Architecture
+- **Dense High-Volume Layout**: Designed for single-screen checkout without scrolling.
+  - **Left Header**: Shop branding, Sales Executive badge, Terminal ID, Live AST clock, and active session timer.
+  - **Left Catalog Grid**: Fast-moving items priority sort, search filter (F2), visual barcode & PLU produce badges, category chips, unit price tags, and inventory stock indicators.
+  - **Right Cart Panel**: Customer selector, cart item cards with fractional/integer quantity steppers (+ / -), item discounts, tax badges, line totals, and instant remove.
+  - **Bottom Financial Bar**: Gross Subtotal, Promo/Item Discount, 15% Included VAT, Net Grand Total, and primary action buttons (`Hold (F4)`, `Recall (F7)`, `Clear`, `PAY (F9)`).
+- **Produce Scale Barcode Parser**: Ingests prefix 20-29 barcodes to extract item PLU and fractional weight.
+- **Hardware Integration**: Instant audio beep feedback on scan, ESC/POS 80mm receipt generator with ZATCA Phase-1 TLV QR code, and optional RJ11 cash drawer pulse.
+
+### 8.4 POS Keyboard Shortcuts:
 - `F2`: Focus Barcode Search / Scanner Input
-- `F3`: Switch to Quick PLU Produce Grid
-- `F4`: Hold Current Sale
-- `F7`: Retrieve Held Sales
-- `F8`: Open Cash Drawer / Manual Kick (audited)
-- `F9` / `Space`: Open Payment Modal
-- `Enter` (in Payment Modal): Finalize Sale & Silent Print
-- `ESC`: Clear search or close modal
-- `F12`: Toggle Fullscreen POS Kiosk Mode
-
-### POS Layout Concept (ASCII):
-```text
-+-------------------------------------------------------------+
-| Header: User, Sync Status, Theme Toggle, Clock, Shift: SAR  |
-+-------------------------+-----------------------------------+
-| Product Catalog / PLU   | Current Cart                      |
-| [All] [Produce] [Dairy] | Customer: [Walk-in]      [Change] |
-|                         | --------------------------------- |
-| [Produce Grid / Items]  | 1.45kg Fresh Tomatoes     11.60   |
-| [Item 1] [Item 2]       | 2x Almarai Milk 2L        23.00   |
-| [Item 3] [Item 4]       | 1x Pepsi Can 330ml         3.00   |
-|                         | --------------------------------- |
-| Search: [_________]     | Subtotal:                 37.60   |
-|                         | Promo / Item Discount:     0.00   |
-|                         | VAT (15% Included):        4.90   |
-| [⚡ Quick Produce Grid] | --------------------------------- |
-|                         | TOTAL:                    37.60   |
-|                         | [Hold (F4)] [Clear] [ PAY (F9) ]  |
-+-------------------------+-----------------------------------+
-```
+- `F4`: Hold / Suspend Current Order
+- `F7`: Retrieve Parked / Held Sales
+- `F8`: Manual Cash Drawer Pulse Kick (Audited)
+- `F9` / `Ctrl+Space`: Open Payment / Tender Modal
+- `Enter` (in Payment Modal): Finalize Sale & Print Receipt
+- `ESC`: Close active modals / clear search
 
 ---
 
-## 9. Payment Methods & Daily Card Terminal Reconciliation
+## 9. Daily Shop Closing Hour, Multi-Terminal Cash Drawer & Reconciliation
 
-Configurable payment methods:
-- **Cash** (Integrated into Cash Register Shift drawer movements)
-- **Mada / Visa / MasterCard** (Card terminal integration)
-- **Bank Transfer** (Direct shop account)
-- **Digital Wallet** (STC Pay / Apple Pay)
+### 9.1 Daily Business Day Architecture & Shop Closing Hour
+Retail supermarkets frequently operate across midnight. The system utilizes a customizable **Daily Shop Closing Hour** (`shop_closing_hour`, default `00:00` / 12:00 AM) configured by the Manager in Settings.
 
-### Mada / Card Terminal Daily Reconciliation:
-In Saudi retail shops, card payments are processed on a physical bank terminal (e.g., Geidea / Network International). At the end of every cashier shift:
-1. The Cashier prints the **Terminal Batch Settlement Slip** from the physical POS card machine.
-2. During the "Close Cash Register Shift" screen, the Cashier enters:
-   - Counted Physical Cash: `SAR 3,450.00`
-   - Terminal Settled Card Total: `SAR 4,120.00`
-3. The system compares recorded card sales vs physical settlement slip and flags any discrepancy immediately in the **Z-Report**.
+For any business date $D$ and closing hour $H_{\text{close}}$ (HH:MM):
+$$\text{Business Day Start} = D\text{ at }H_{\text{close}}$$
+$$\text{Business Day End} = (D + 1\text{ day})\text{ at }H_{\text{close}}$$
+
+- When $H_{\text{close}} = \text{'00:00'}$, the business day corresponds to 00:00:00 to 23:59:59.999.
+- When $H_{\text{close}} = \text{'02:00'}$, transactions occurring between 00:00:00 and 01:59:59 belong to the previous calendar day's business records.
+- All Dashboard KPIs, Sales Trends, VAT reports, and Cash Drawer shift summaries cycle dynamically according to this business day window.
+
+### 9.2 Multi-Terminal Cash Drawer Calculation Model
+In a store operating multiple checkout counters (terminals) concurrently:
+
+1. **Per-Terminal Cash Drawer Formula**:
+   For each terminal $k \in \{1, \dots, N\}$:
+   $$\text{Expected Cash}_k = \text{Opening Float}_k + \text{Cash Sales}_k - \text{Cash Returns}_k - \text{Cash Deductions/Expenses}_k + \text{Cash In}_k$$
+
+2. **Electronic Card Settlement**:
+   $$\text{Terminal Card Expected}_k = \sum \text{Mada/Credit Card payments on Terminal } k$$
+
+3. **Store Consolidated Daily Matrix**:
+   $$\text{Total Expected Store Cash} = \sum_{k=1}^N \text{Expected Cash}_k$$
+   $$\text{Total Actual Store Cash} = \sum_{k=1}^N \text{Counted Cash}_k$$
+   $$\text{Total Store Discrepancy} = \text{Total Actual Store Cash} - \text{Total Expected Store Cash}$$
+
+4. **Blind Count & Z-Report Reconciliation**:
+   - Cashiers submit a blind physical cash count and card terminal batch settlement slip total at shift end.
+   - The system compares expected vs actual and generates an official Z-Report with discrepancy categorization (`BALANCED`, `OVERAGE`, or `SHORTAGE`).
+   - Managers can export the complete daily records for all terminals as **CSV** or print the consolidated **Daily Z-Report** with a single click.
 
 ---
 
@@ -353,16 +371,21 @@ In Saudi retail shops, card payments are processed on a physical bank terminal (
 - **Paid Amount:** Decimal(15,4).
 - **Due Amount:** Decimal(15,4).
 - **Payment Methods Used:** Array of { payment_method_id, amount, reference }.
+- **Legal Snapshot:** Invoice type/subtype, seller/buyer legal fields, currency snapshot, configuration version, issue sequence/counter, previous hash reference, canonical document payload, and lifecycle/audit status.
 
-### Invoice Discount Distribution Formula (ZATCA Compliant):
-When an invoice-level discount ($D_{\text{inv}}$) is applied:
-1. Proportional discount per line item $i$:
-   $$\text{Discount}_i = D_{\text{inv}} \times \left( \frac{\text{Line Gross Total}_i}{\text{Invoice Gross Subtotal}} \right)$$
-2. Net Taxable Amount per line item $i$:
-   $$\text{Taxable}_i = (\text{Quantity}_i \times \text{Unit Price}_i) - \text{Item Discount}_i - \text{Discount}_i$$
-3. Line VAT is computed on the post-discount taxable amount:
-   $$\text{VAT}_i = \text{Taxable}_i \times \left( \frac{\text{VAT Rate}_i}{100} \right)$$
-This guarantees mathematical accuracy across mixed tax categories (15% standard, 0% zero-rated, and exempt items).
+### Invoice Discount Distribution & Rounding:
+The tax engine must first determine whether each line's entered price is tax-exclusive or tax-inclusive. It distributes an invoice discount proportionally over the post-item-discount line amount, at four-decimal internal precision. Any final halalah residual is assigned deterministically (largest remainder, then stable line-ID order) and stored as `rounding_adjustment`; the sum of persisted lines must always equal the persisted invoice total.
+
+For a tax-exclusive line, after discounts:
+$$\text{Taxable}_i = \text{ExclusiveLineAmount}_i - \text{Discount}_i$$
+$$\text{VAT}_i = \text{Taxable}_i \times \left( \frac{\text{VAT Rate}_i}{100} \right)$$
+
+For a tax-inclusive line, after discounts:
+$$\text{GrossAfterDiscount}_i = \text{InclusiveLineAmount}_i - \text{Discount}_i$$
+$$\text{Taxable}_i = \frac{\text{GrossAfterDiscount}_i}{1 + \frac{\text{VAT Rate}_i}{100}}$$
+$$\text{VAT}_i = \text{GrossAfterDiscount}_i - \text{Taxable}_i$$
+
+Persist the entered price, tax mode, allocated discounts, taxable amount, VAT amount, rounded amount, and promotion source on every line. Cover mixed standard, zero-rated, and exempt baskets with golden test cases.
 
 ### Partial Return Discount Adjustment:
 When a customer returns a single item from a multi-item discounted sale, the refund is calculated on the **net allocated amount** ($\text{Taxable}_i + \text{VAT}_i$) that the customer actually paid for that specific item, preventing financial over-refunds.
@@ -423,15 +446,18 @@ Due Amount                :     0.00
 
 ## 12. E-Invoicing Readiness (ZATCA)
 
-Architect transactions to allow future ZATCA Phase 1 & 2 compliance.
-Required extensibility fields:
-- **UUID:** v4 UUID for the invoice.
-- **Invoice Hash:** Cryptographic hash of the invoice data.
-- **QR Code Data:** Base64 encoded TLV (Tag-Length-Value) structure.
-- **XML Representation:** Placeholder for UBL 2.1 XML format.
-- **Submission Status:** Enum (Draft, Reported, Cleared, Failed).
-- **External Reference ID:** For API integrations.
-- **Error Response Log:** For tracking ZATCA API rejections.
+ZATCA is a legal-compliance workstream, not a future placeholder. Before go-live, validate the shop's taxpayer obligations and current technical rules with a Saudi tax/legal specialist and the current ZATCA developer materials.
+
+The document model must support tax invoices, simplified tax invoices, and their credit/debit notes. An issued document is immutable: a draft may be cancelled, but a post-issue correction, return, or price change creates a linked credit/debit note rather than editing or deleting the invoice.
+
+Required persisted data includes:
+- **UUID and invoice counter:** Unique per issued document and sequence scope.
+- **Canonical UBL/XML payload and human-readable rendering:** Generated from the same immutable source, retained with validation results and archival filename.
+- **Cryptographic fields:** Previous invoice hash, invoice hash, signature/cryptographic-stamp artefacts where applicable, QR payload, and certificate/key reference (never the private key itself).
+- **Lifecycle:** Draft, issued, reported, cleared, rejected, credit/debit-note-issued; each transition has timestamp, correlation ID, request/response metadata, and retry policy.
+- **Legal snapshots:** Seller, buyer, VAT registrations, invoice type/subtype, currency, tax fields, and configuration version.
+
+The five-field TLV QR is only a Phase-1-sized QR encoder; it does not implement integration-phase signing, XML validation, clearance/reporting, or ZATCA acceptance. Use the official rules and SDK in release validation. English remains the application language, but legal invoice/receipt templates must support Arabic alongside English wherever the current regulation requires it.
 
 ---
 
@@ -453,7 +479,7 @@ Required extensibility fields:
 - **Payment Method:** Enum.
 - **Created By:** User ID.
 
-Purchases must trigger atomical inventory increases.
+Purchases must trigger atomic inventory increases. For WAC, each receipt line records the base quantity and an **effective net unit cost**: item cost after discounts plus its deterministic allocation of freight/other landed costs; recoverable input VAT is not added to inventory cost. Supplier returns remove the original source cost/batch where known, never an arbitrary current selling price.
 
 ---
 
@@ -481,7 +507,7 @@ Do not force creation for cash sales (use Walk-in).
 
 ## 16. Returns (Sales & Purchase)
 
-**Sales Return:** Link to original invoice, select products, set returned qty and reason. Process refunds (cash/card or adjust customer balance). Must automatically increase inventory and adjust VAT output.
+**Sales Return:** Link to original invoice, select products, set returned quantity, condition, and reason. Prevent a total return quantity greater than the original sold quantity across all prior returns. Process refunds through one or more refund allocations (cash/card/bank/customer credit), preserving the original terminal reference where a card refund is used. The return issues the linked legal credit note, reverses VAT, and restores only saleable goods to the original batch; damaged goods use a non-saleable disposition and documented write-off.
 **Purchase Return:** Link to original purchase, select items. Decrease inventory, adjust supplier balance, and adjust VAT input.
 
 ---
@@ -496,7 +522,7 @@ These deduct from Gross Profit to calculate Net Profit.
 
 ## 18. Profit Calculation & COGS
 
-Use **Weighted Average Cost** (or FIFO) for inventory valuation.
+Use **perpetual Weighted Average Cost (WAC)** consistently for inventory valuation and COGS. The COGS cost is snapshotted on each sale line and batch allocation. Customer returns reverse that original cost; stock adjustments and damage require a documented valuation policy and Manager reason.
 - Net Sales = Gross Sales - Returns - Discounts.
 - COGS = Total cost of the items sold during the period (based on purchase prices).
 - Gross Profit = Net Sales - COGS.
@@ -506,7 +532,7 @@ Use **Weighted Average Cost** (or FIFO) for inventory valuation.
 
 ## 19. Cash Management
 
-Optional daily cash register/session tracking.
+Cash register/session tracking is mandatory for every POS register that accepts cash or card. A register cannot have more than one open shift, and all tender, change, cash in/out, expense, refund, and terminal settlement entries are tied to its session. The server computes expected amounts; the blind-count screen may not reveal them before submission.
 **Example Session:**
 - `09:00 AM`: Session Open. Opening Cash: `1000 SAR`.
 - During day: Cash Sales `+5000 SAR`, Cash Expenses `-300 SAR`, Cash Refunds `-200 SAR`.
@@ -551,9 +577,9 @@ Optional daily cash register/session tracking.
 
 ## 21. Audit Logging
 
-Robust, read-only system.
+Robust, append-only system enforced at the database level—not merely by hidden UI controls. The application role cannot update or delete audit rows; privileged maintenance access is segregated, logged, and break-glass controlled.
 **Audited Actions:** Login, Logout, Product Create/Update, Price Change, Purchase Create, Sale Create, Invoice Void, Sale/Purchase Return, Stock Adjustment, Expense Create, Customer/Supplier Payment, System Setting/Permission Change.
-**Audit Fields:** Record ID, User ID, Action Type, Entity Name (e.g., 'Product'), Entity ID, Previous Value (JSON), New Value (JSON), Timestamp, Reason/Notes, IP Address/Device Info.
+**Audit Fields:** Record ID, nullable User ID (to retain failed login attempts), Action Type, Entity Name (e.g., 'Product'), Entity ID, Previous Value (JSON), New Value (JSON), Timestamp, mandatory reason for controlled actions, IP Address/Device Info, request/correlation ID, and actor/session context. Never write passwords, PINs, tokens, or plaintext card data to audit payloads.
 
 ---
 
@@ -580,17 +606,19 @@ Multiple devices connect via shop WiFi to the main Server PC (running Docker Com
 - `CASH_DRAWER_EVENT`: Manual drawer kick or float addition notification.
 - `SYSTEM_ALERT`: Broadcasts low stock warnings, backup failure alerts, or power recovery notices.
 
+Events are written to a transactional outbox in the same database transaction as the source change, then published only after commit. Each event has a monotonic sequence number, so missed events can be detected and replayed safely.
+
 **State Catchup & WiFi Reconnection Protocol:**
 If a tablet or counter PC temporarily loses WiFi connection:
 1. The WebSocket client automatically attempts reconnection with exponential backoff (1s, 2s, 5s, 10s max).
-2. Upon reconnecting, the POS client immediately calls `GET /api/v1/inventory/stock-snapshot?since=<last_event_timestamp>`.
-3. The server responds with delta changes, and the client synchronizes local cart stock validation rules before allowing checkout.
+2. Upon reconnecting, the POS client immediately calls `GET /api/v1/inventory/stock-snapshot?after=<last_event_sequence>`.
+3. The server responds with ordered deltas or a mandatory full snapshot if the cursor has expired. The client refreshes its display, but checkout always performs the authoritative server-side locked stock check.
 
 ---
 
 ## 23. Data Persistence & Docker Strategy
 
-ALL business data is strictly persisted on the HOST filesystem using Docker bind mounts. No data lives exclusively inside container volumes:
+ALL business data is persisted outside containers. The production baseline is a Linux server with an encrypted ext4 data disk; Docker Desktop/Windows bind mounts are UAT/development only because the database must not depend on desktop virtualization or NTFS file semantics in production. No data lives exclusively inside container layers:
 - Primary PostgreSQL live data: `./data/postgres_live/`
 - Recovery DB standby data: `./data/postgres_recovery/`
 - Product Images & Attachments: `./data/uploads/`
@@ -605,14 +633,16 @@ Deleting, recreating, or rebuilding Docker containers (`docker compose down && d
 
 **Architecture (LIVE DATA != BACKUP DATA):**
 - **Live DB (DB1):** Primary PostgreSQL 16+ instance executing real-time POS and inventory transactions.
-- **Recovery Sandbox DB (DB2):** Standby PostgreSQL instance used specifically for automated test restores.
+- **Recovery Sandbox DB (DB2):** Isolated PostgreSQL instance used specifically for automated test restores. It is not high availability because it shares the local server failure domain.
+
+The business defines and tests an explicit Recovery Point Objective (RPO) and Recovery Time Objective (RTO). A UPS provides graceful shutdown time; the local vault, WAL archive, and off-site object storage are separate failure domains.
 
 **Automated Backup & Test Restore Process:**
 1. **Scheduled Snapshot:** Node.js backup worker triggers `pg_dump -Fc -Z 9` at 01:00 AM AST.
 2. **Encryption:** Dump is encrypted locally with **AES-256-GCM** using the shop's master key, producing a `.enc` snapshot and `.sha256` checksum.
 3. **Automated Test Restore Verification:**
    - Worker decrypts and loads the dump into `postgres_recovery` (DB2).
-   - Runs verification query: checks table existence, schema validity, and verifies row counts match DB1.
+   - Runs schema migration validation, integrity checks, key report total checks, batch-stock reconciliation, and sampled document rendering—not only table/row counts.
    - Logs result into `backup_logs`: `verification_status = 'verified'` or `'failed'`, with `verified_at` and `restored_row_count`.
 4. **Non-blocking Cloud Upload:** Transmits verified encrypted snapshot to AWS S3 / Cloudflare R2 if internet is available; queues safely if offline.
 
@@ -620,7 +650,7 @@ Deleting, recreating, or rebuilding Docker containers (`docker compose down && d
 
 **Filesystem Backup:** In addition to database dumps, the backup worker must archive `./data/uploads/` (product images, expense attachments) into the encrypted backup artifact. Restore procedures must restore both the database and uploaded files.
 
-**Encryption Key Security:** The `BACKUP_ENCRYPTION_KEY` must be printed on paper and stored in the shop's physical safe. The encryption key must NEVER be stored in the same location as the encrypted backup files. Without this key, encrypted backups are irrecoverable.
+**Encryption Key Security:** Every AES-256-GCM artifact has a unique nonce and stored authentication tag. The runtime key is loaded through a protected deployment secret; a recovery copy is printed on paper and stored in the shop's physical safe. Never store the recovery key with backup artifacts. Without the key, encrypted backups are irrecoverable.
 
 ---
 
@@ -648,8 +678,9 @@ Deleting, recreating, or rebuilding Docker containers (`docker compose down && d
 **Security Checklist:**
 - **Nginx Reverse Proxy:** Unified entry point on port 80/443. Eliminates CORS issues across shop LAN, handles WebSocket connection upgrades (`proxy_set_header Upgrade $http_upgrade`), and proxies `/api` and `/` cleanly.
 - **Password Hashing:** Argon2 or bcrypt with high work factor (cost 12).
-- **Session Tokens:** JWT stored in `HttpOnly`, `SameSite=Strict` cookies. Enable `Secure` flag only if HTTPS is configured via a local TLS certificate. For CSRF protection, all mutating API requests must include an `X-Requested-With: XMLHttpRequest` header validated server-side.
-- **PIN Authorization:** 4-6 digit Manager PIN required for sales returns, voids, and cash drawer kicks. 5 failed PIN attempts triggers a 10-minute lockout.
+- **Sessions & CSRF:** Use short-lived, revocable server-side sessions or rotated JWTs in `HttpOnly`, `Secure`, `SameSite=Strict` cookies. Enforce HTTPS on the LAN. Protect every cookie-authenticated mutation with Origin/Referer validation plus a synchronizer or double-submit CSRF token; `X-Requested-With` is not CSRF protection.
+- **PIN Authorization:** Store Manager PINs only as Argon2 hashes. A 4-6 digit Manager PIN is used only as a short-lived, single-use step-up approval for sales returns, draft cancellation, price override, and drawer kick. Five failed attempts trigger a 10-minute lockout; PINs and approval tokens never enter logs.
+- **Hardware Gateway:** A receipt-print request contains an authorized issued-document ID, not arbitrary ESC/POS bytes. Drawer kicks require a verified Manager approval or an approved cash-sale event. USB-attached printers require a trusted local print agent; server-attached/network printers use an allow-listed register configuration.
 - **Rate Limiting:** Fastify `@fastify/rate-limit` restricting auth endpoints (max 10 req/min per IP).
 - **Parameterized SQL:** Parameterized SQL queries (ORM) to prevent SQL Injection.
 - **Server-side RBAC:** Authorization middleware checked on EVERY endpoint.
@@ -660,7 +691,9 @@ Deleting, recreating, or rebuilding Docker containers (`docker compose down && d
 
 ## 27. Offline-First Operations
 
-The core application operates primarily locally. Internet is ONLY required for remote backups, external API integrations, or remote manager access (if configured via VPN/Tunnel). Local authentication, database access, POS, inventory, and reporting must operate flawlessly with no internet connection.
+The core application operates primarily locally. Internet is ONLY required for remote backups, external API integrations, or remote manager access (if configured via VPN/Tunnel). Local authentication, database access, POS, inventory, and reporting must operate with no internet connection.
+
+The central LAN server remains authoritative. If a browser loses WiFi/server connectivity, it may retain and display a cart but must enter reconnect/read-only mode and cannot finalize, print, or queue a sale. A future terminal-offline mode requires a separately designed encrypted local queue, conflict rules, payment constraints, and reconciliation workflow; it is not implied by browser caching.
 
 ---
 
@@ -700,10 +733,11 @@ Animations must be professional, snappy (150-300ms), and never delay user workfl
 ## 31. Day/Night Theme & UI Customization
 
 Full dark and light mode support with high-contrast optimization for retail counter environments:
-- **Theme Modes:** Light, Dark, and System Default with instantaneous switching and local storage persistence.
-- **Theme Palette:** Built using Tailwind CSS dark variants (`dark:bg-slate-900`, `dark:text-white`, `dark:border-slate-700`).
-- **Accent Color Themes:** Configurable primary brand color presets in Settings (Brand Blue, Emerald Green, Indigo, Violet, Amber, Slate).
-- **POS Density Modes:** Normal Comfortable view vs Compact High-Density Grid for small counter monitors.
+- **Theme Modes:** Light and Dark only. The selected theme persists per user and applies before interactive hydration, with no layout shift. System-auto mode is not included.
+- **UI Scale:** Only `100% Standard` (default) and `110% Comfortable` are supported. All components must remain legible, keyboard-usable, and touch-safe at both scales.
+- **Theme Palette:** Uses semantic design tokens defined in `DesignSystem.md`; components never use one-off page colors or assume a light background.
+- **Visual Restraint:** Each page shows only labels that add meaning. Prefer a strong page title, clear field labels, concise helper/error text, and contextual icons/tooltips over repeated headings, duplicate legends, decorative badges, or instructional paragraphs.
+- **POS Density:** A single comfortable density is the default; compact layouts may rearrange grids for constrained screens but may not reduce touch targets or text below the design-system minimum.
 
 ---
 
@@ -728,7 +762,7 @@ Global UI notification center (bell icon) alerting the Manager to:
 
 ## 34. Complete UI-Driven Customization & Settings Management
 
-EVERY system parameter MUST be fully editable by the Manager via a clean UI Settings panel without code modifications or server restarts:
+Managers can manage settings through a clean UI without code modifications or server restarts. Appearance settings apply immediately; operational settings require confirmation and an audit reason; legal/financial/security settings require Manager step-up authentication, a reason, versioning, and an effective date. They never alter already-issued invoices, payments, ledgers, or tax reports.
 
 ### 1. Shop Profile & Branding Settings:
 - **Shop Name:** English and Arabic business names.
@@ -738,13 +772,13 @@ EVERY system parameter MUST be fully editable by the Manager via a clean UI Sett
 - **Receipt Customization:** Customizable header greeting, footer return policy text (e.g., "Goods returned within 7 days with invoice"), social handles/QR link.
 
 ### 2. Dynamic VAT / Tax Configuration:
-- **Tax Rates CRUD:** Ability to create, update, and toggle active tax rates (e.g., 15.00% Standard, 5.00%, 0.00% Zero-Rated, Exempt).
+- **Tax Rates CRUD:** Ability to create and activate effective-dated tax rates (e.g., 15.00% Standard, 5.00%, 0.00% Zero-Rated, Exempt). A rate used in historical documents is retired, not overwritten or deleted.
 - **Default Tax Rate:** Selectable fallback tax rate for new products.
 - **Tax Calculation Mode:** System-wide or per-item default for Tax Inclusive (price includes VAT) vs Tax Exclusive (VAT added at checkout).
 - **Tax Labels:** Customizable tax identification names (e.g., "VAT", "Tax", "ضريبة القيمة المضافة").
 
 ### 3. Currency, Numbers & Regional Locale:
-- **Currency Code:** Configurable (e.g., `SAR`, `USD`, `BDT`, `EUR`, `AED`, `GBP`).
+- **Currency Code:** SAR is the legal shop currency by default. A future change is a legal/financial configuration version with explicit business approval; every posted document retains its original currency snapshot.
 - **Currency Symbol:** Configurable symbol or abbreviation (e.g., `SAR`, `ر.س`, `$`, `৳`, `€`).
 - **Currency Symbol Position:** `Before Amount` ($ 100.00) or `After Amount` (100.00 SAR).
 - **Decimal Precision:** Configurable 2 or 3 decimal places for customer display (internal calculations strictly retain 4 decimals).
@@ -756,7 +790,7 @@ EVERY system parameter MUST be fully editable by the Manager via a clean UI Sett
 - **Receipt Printing Mode:** Direct ESC/POS thermal printing (raw network/USB) vs Browser Print Dialog.
 - **Cash Drawer Kick:** Auto-pulse RJ11 drawer kick on cash sale completion (Enabled/Disabled).
 - **Barcode Scanner Audio:** Beep sound effect on successful product scan (Enabled/Disabled).
-- **Negative Stock Policy:** Allow or disallow checkout when physical stock is zero.
+- **Negative Stock Policy:** Default deny. Any temporary Manager-authorized override is a per-transaction exception with a reason and audit record, never a silent global toggle during an open shift.
 - **Quick Tender Presets:** Configurable 5 quick cash amount buttons in payment modal.
 
 ---
@@ -766,10 +800,10 @@ EVERY system parameter MUST be fully editable by the Manager via a clean UI Sett
 **Core Entities (35+):**
 1. `users` (with `user_role_enum`: manager, sales_executive).
 2. `products`, `categories`, `brands`, `units`, `tax_rates`, `product_images`.
-3. `product_batches` (batch number, expiry date, purchase cost, current batch quantity).
+3. `product_batches`, `sale_item_batch_allocations`, and package/unit conversion definitions (batch provenance, FEFO, expiry, base-unit quantities, and COGS allocations).
 4. `promotions`, `promotion_rules` (Buy X Get Y, bundle discounts, date ranges).
 5. `suppliers`, `customers`.
-6. `sales`, `sale_items`, `sale_payments`.
+6. `registers`, `cash_sessions`, `sales`, `sale_items`, `sale_payments`, and refund allocations.
 7. `purchases`, `purchase_items`, `purchase_payments`.
 8. `stock_movements`, `stock_adjustments`.
 9. `sales_returns`, `sales_return_items`.
@@ -777,12 +811,12 @@ EVERY system parameter MUST be fully editable by the Manager via a clean UI Sett
 11. `expenses`, `expense_categories`.
 12. `invoices` (includes ZATCA extensibility fields: UUID, hash, QR, UBL XML).
 13. `customer_ledger`, `supplier_ledger`.
-14. `cash_sessions`, `cash_movements`.
+14. `cash_movements`, card terminal settlement records, and cash-count records.
 15. `held_sales`, `held_sale_items`.
 16. `payment_methods`.
-17. `audit_logs`, `settings`, `backup_logs`, `notifications`.
+17. `audit_logs`, versioned settings/history, transactional outbox events, `backup_logs`, and `notifications`.
 
-Relationships must enforce referential integrity. Use strict internal auto-increment IDs. Apply soft deletes (boolean flag `is_deleted`) on core business entities (products, categories, brands, suppliers, customers, sales, purchases) to preserve historical links. Use `ON DELETE RESTRICT` on all financial child tables to prevent accidental destruction of transaction history.
+Relationships must enforce referential integrity. Use strict internal auto-increment IDs. Apply soft deletes (boolean flag `is_deleted`, `deleted_at`, `deleted_by`) only to master data that may be retired. Finalized sales, purchases, invoices, returns, ledgers, payments, movements, cash sessions, and audit rows are never soft- or hard-deleted; their corrections are compensating documents. Use `ON DELETE RESTRICT` on all financial and inventory child tables to prevent accidental destruction of transaction history.
 
 ---
 
@@ -790,10 +824,10 @@ Relationships must enforce referential integrity. Use strict internal auto-incre
 
 **Idempotent & Atomic:** 
 Example: When processing a SALE:
-`BEGIN;` -> Insert Sale -> Insert Sale Items -> Calculate Tax -> Record Payment -> Insert Stock Movements -> Update Customer Ledger -> `COMMIT;`
+`BEGIN;` -> Lock register, products, and FEFO batches in a stable order -> Re-price and calculate tax server-side -> Insert Sale, immutable line snapshots, payments, and batch allocations -> Insert Stock/Cash/Ledger movements -> Generate legal document payload -> Insert audit/outbox events -> `COMMIT;`
 If *any* step fails (e.g., stock constraint violated), issue `ROLLBACK;`. The system must never be in a state where a sale exists without its corresponding stock deduction.
 
-**Idempotency:** Every sale and purchase transaction must include a client-generated `idempotency_key` (UUID). The server enforces a UNIQUE constraint on this key. If a network timeout causes a retry, the server returns the existing transaction instead of creating a duplicate. This prevents double-charges on POS terminal retries.
+**Idempotency:** Every sale and purchase transaction includes a client-generated `idempotency_key` (UUID) scoped to its endpoint and actor/register. The server stores a request fingerprint and final response under a UNIQUE constraint; a retry with the same key and different payload is rejected. This prevents duplicate documents and double charges after a POS timeout.
 
 ---
 
@@ -808,12 +842,14 @@ If *any* step fails (e.g., stock constraint violated), issue `ROLLBACK;`. The sy
 - `GET /api/v1/categories`, `POST /api/v1/categories` (Manager)
 - `POST /api/v1/sales` (All - wrapped in DB transaction)
 - `GET /api/v1/sales/:id` (All for own, Manager for all)
-- `POST /api/v1/sales/:id/void` (Manager)
+- `POST /api/v1/sales/:id/cancel-draft` (Manager; draft only)
+- `POST /api/v1/invoices/:id/credit-notes` (Manager / time-bound Manager approval)
 - `GET /api/v1/inventory/movements` (Manager)
 - `POST /api/v1/inventory/adjust` (Manager)
 - `GET /api/v1/customers`, `POST /api/v1/customers` (All)
 - `GET /api/v1/customers/:id/ledger` (Manager)
 - `POST /api/v1/purchases` (Manager)
+- `POST /api/v1/registers/:id/shifts/open`, `POST /api/v1/registers/:id/shifts/:shiftId/close` (authorized register user)
 - `GET /api/v1/reports/dashboard` (Manager)
 - `GET /api/v1/reports/sales` (Manager)
 - `GET /api/v1/system/health` (Manager)
@@ -827,6 +863,8 @@ If *any* step fails (e.g., stock constraint violated), issue `ROLLBACK;`. The sy
 - No direct SQL scattered throughout UI components.
 - Centralize error handling through middleware.
 - Do not copy-paste logic; create reusable services (e.g., `InventoryService`, `TaxService`).
+- Use a decimal library at every TypeScript money boundary; APIs serialize monetary values as strings, never JSON numbers.
+- Generate legal document XML/PDF, tax, inventory, and promotion decisions only on the server from persisted snapshots.
 - Lint with ESLint and format with Prettier.
 
 ---
@@ -836,6 +874,7 @@ If *any* step fails (e.g., stock constraint violated), issue `ROLLBACK;`. The sy
 - **Next.js App Router:** Use Server Components where appropriate for data fetching, and Client Components for interactivity (POS, Forms).
 - **State Management:** React Context or Zustand for local state (like the POS cart). Server state managed via React Query or SWR.
 - **Component Library:** Headless UI (Radix or similar) styled with Tailwind CSS.
+- **Visual Contract:** Implement only the shared primitives and patterns defined in `DesignSystem.md`. Pages compose these components instead of introducing page-specific button, field, card, chip, table, form, or product-tile styles.
 
 ---
 
@@ -852,7 +891,7 @@ If *any* step fails (e.g., stock constraint violated), issue `ROLLBACK;`. The sy
 ## 41. Configuration & Environment
 
 - Environment variables strictly managed via `.env`.
-- Variables required: `DATABASE_URL`, `JWT_SECRET`, `PORT`, `BACKUP_DIR`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_ENDPOINT`.
+- Variables required: `DATABASE_URL`, `SESSION_SECRET`, `CSRF_SECRET`, `PORT`, `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_ENDPOINT`.
 - Provide a detailed `.env.example` file. 
 
 ---
@@ -871,9 +910,9 @@ All host data persisted via bind mounts to `./data/` directories. All services s
 
 ## 43. Non-Technical User Experience
 
-The Manager should not touch the command line.
-- Provide `start-shop.bat`: Checks requirements, creates folders, runs `docker-compose up -d`, waits for API health check (`/api/system/health`), and opens the default browser to `http://localhost:3000`.
-- Provide `stop-shop.bat`: Runs `docker-compose down`.
+The Manager should not touch the command line. Production runs as a managed Linux appliance/service, not a desktop Docker installation.
+- Provide an admin-safe local launcher for UAT and a production service installer that verifies storage, Docker health, migrations, backups, and the UPS state. The user-facing address is the Nginx HTTPS endpoint, never the internal Next.js port.
+- Provide a guarded stop procedure that warns if a register is open and never deletes bind-mounted data.
 - Dashboard UI includes a System Health widget: DB Status (Green), Disk Space (e.g., "45% used"), Last Backup ("2 hours ago - Success").
 
 ---
@@ -882,45 +921,49 @@ The Manager should not touch the command line.
 
 1. Cannot sell inactive products.
 2. Cannot purchase inactive products unless overridden by Manager.
-3. Cannot sell beyond available stock unless negative stock explicitly enabled in settings.
-4. Cannot modify finalized invoices directly (must void/return).
+3. Cannot sell beyond available stock. A Manager may grant a single documented exception only where the configured policy explicitly permits it.
+4. Cannot modify or void a finalized invoice directly; a post-issue correction uses the linked credit/debit-note workflow.
 5. Cannot delete completed sales entirely from the database.
 6. Returns must reference the original transaction ID where applicable.
-7. ALL stock changes must create a stock movement record.
+7. ALL stock changes must create a non-zero stock movement record, linked to its source and batch when batch-managed.
 8. ALL financial payments must create a ledger record.
 9. Tax rates must be preserved at the transaction level.
 10. Historical invoices must remain static even if current product prices change.
 11. Only Manager can perform manual ledger/financial corrections.
 12. Every manual stock or ledger correction requires a mandatory text reason and generates an audit log.
+13. A return may not exceed the original sold quantity after prior returns, and a batch-managed return retains the original batch allocation.
+14. A cash/card sale requires an open register shift; expected till totals are server-derived.
+15. Posted financial, inventory, audit, and legal document records are corrected only by compensating records.
 
 ---
 
 ## 45. Testing Strategy
 
-- **Unit Tests:** Jest/Vitest for testing Tax calculations, discount logic, profit formulas, and stock arithmetic.
-- **Integration Tests:** Test the full Sale transaction API (ensure rollback on error).
-- **Database Tests:** Verify constraints (e.g., unique SKUs).
-- **E2E Tests:** Cypress/Playwright covering the primary POS workflow (Scan -> Cart -> Pay -> Invoice).
-- **Recovery Tests:** Manually verify that backup restoration yields a working database.
+- **Migration Tests:** Start a clean PostgreSQL 16 instance and run every migration, seed, rollback policy, and extension check in CI.
+- **Unit Tests:** Golden tax/discount fixtures for inclusive and exclusive VAT, mixed tax categories, deterministic rounding residues, promotions, WAC, returns, and scale quantities.
+- **Integration Tests:** Test the full Sale transaction API (rollback on error, idempotent retry, duplicate-payload rejection, and two-terminal oversell race).
+- **Database Tests:** Verify constraints, immutability controls, batch allocation reconciliation, open-shift uniqueness, and soft-delete restrictions.
+- **E2E Tests:** Cover scan -> cart -> payment -> legal document -> receipt; loss of LAN; manager approval; split-tender return; and blind shift close.
+- **Recovery & Compliance Tests:** Restore a fresh sandbox including uploads, reconcile key reports, and run the current ZATCA SDK/specification validation before release and after any relevant upgrade.
 
 ---
 
 ## 46. Implementation Phases
 
 **Phase 1: Foundation**
-- Project structure, Docker setup, Next.js init, DB schema design, Auth system, Base UI layout.
+- Project structure, Linux deployment baseline, clean migration CI, governed settings, Auth/session/CSRF system, and base UI layout.
 **Phase 2: Core Entities**
 - Users, Products (w/ Image upload), Categories, Brands, Suppliers, Customers.
 **Phase 3: Inventory & Purchasing**
-- Stock ledger logic, Manual adjustments, Purchase workflows (Increases inventory).
+- Base-unit conversions, batch allocations/FEFO, WAC policy, stock ledger logic, manual adjustments, and receiving workflows.
 **Phase 4: Sales & POS**
-- Fast POS UI, Cart logic, Payment processing, Invoice generation, Tax calculation.
+- Fast POS UI, register shifts, cart logic, payment processing, server tax calculation, immutable invoices, and print-agent/network-printer integration.
 **Phase 5: Financials & Ledger**
-- Returns (Sales/Purchase), Customer/Supplier ledgers, Expenses, Cash drawer management.
+- Credit/debit-note returns, customer/supplier ledgers, expenses, cash drawer controls, card settlement, and reconciliation.
 **Phase 6: Reporting & Analytics**
 - Real-time Dashboard, Profit calculations, Sales/VAT/Inventory reports with PDF/CSV export.
 **Phase 7: System & Security**
-- Audit logs, Two-Database Backup script, Background workers, S3 sync, System health UI.
+- Database-enforced audit logs, outbox/event recovery, verified backup/restore, WAL archive, off-site sync, System health UI, and ZATCA compliance validation.
 **Phase 8: Polish & Launch**
 - Framer Motion animations, Dark mode, Performance tuning, E2E testing, Packaging `.bat` scripts.
 

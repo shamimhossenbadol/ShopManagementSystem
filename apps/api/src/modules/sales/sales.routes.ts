@@ -21,7 +21,7 @@ const salePaymentSchema = z.object({
 const createSaleSchema = z.object({
   customerId: z.coerce.number().optional().nullable(),
   items: z.array(saleItemSchema).min(1, 'Cart cannot be empty.'),
-  payments: z.array(salePaymentSchema).min(1, 'At least one payment required.'),
+  payments: z.array(salePaymentSchema).default([]),
   invoiceDiscount: z.coerce.number().min(0).default(0),
   invoiceDiscountType: z.enum(['fixed', 'percentage']).default('fixed'),
   idempotencyKey: z.string().optional().nullable(),
@@ -35,7 +35,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
 
   // POST /api/v1/sales - Atomic POS Checkout
-  fastify.post('/', async (request, reply) => {
+  fastify.post('/', { preHandler: [requireRole(['sales_executive'])] }, async (request, reply) => {
     const parsed = createSaleSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -178,6 +178,15 @@ export async function salesRoutes(fastify: FastifyInstance) {
         const dueAmount = round2(Math.max(0, grandTotal - totalPaid));
         const paymentStatus = dueAmount === 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
 
+        // Strict Production Rule: Walk-in customers cannot have Customer Due / Credit
+        if (dueAmount > 0 && (!customerId || Number(customerId) === 1)) {
+          throw new Error('Customer Due / Credit is not permitted for Walk-in Customer. Full payment is required or select a registered customer profile.');
+        }
+
+        if (payments.length === 0 && (!customerId || Number(customerId) === 1)) {
+          throw new Error('At least one payment method is required for Walk-in Customer.');
+        }
+
         // 3. Generate sequential reference & invoice numbers
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 7).replace('-', '');
@@ -188,16 +197,17 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
         const saleInsert = await client.query(
           `INSERT INTO sales (
-            reference_no, user_id, customer_id, total_items, subtotal,
+            reference_no, user_id, customer_id, session_id, total_items, subtotal,
             total_discount, invoice_discount, invoice_discount_type,
             total_tax, grand_total, paid_amount, due_amount,
             payment_status, sale_status, idempotency_key
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'completed', $14)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'completed', $15)
            RETURNING *`,
           [
             saleRef,
             request.user!.id,
             customerId || 1, // Default Walk-in
+            activeSessionId,
             totalItemsCount,
             round2(subtotal),
             round2(computedInvoiceDiscount),
@@ -308,7 +318,16 @@ export async function salesRoutes(fastify: FastifyInstance) {
         }
 
         // 6. Record Customer Ledger if due applied
-        if (dueAmount > 0 && customerId && customerId !== 1) {
+        if (dueAmount > 0 && customerId && Number(customerId) !== 1) {
+          const custRes = await client.query(
+            `SELECT id, name, credit_limit, is_active FROM customers WHERE id = $1`,
+            [customerId]
+          );
+          if (custRes.rows.length === 0 || !custRes.rows[0].is_active) {
+            throw new Error('Selected customer account is inactive or not found.');
+          }
+          const cust = custRes.rows[0];
+
           const balRes = await client.query(
             `SELECT COALESCE(balance, 0) as last_bal FROM customer_ledger 
              WHERE customer_id = $1 ORDER BY id DESC LIMIT 1`,
@@ -316,11 +335,18 @@ export async function salesRoutes(fastify: FastifyInstance) {
           );
           const lastBal = Number(balRes.rows[0]?.last_bal || 0);
           const newBal = round2(lastBal + dueAmount);
+          const creditLimit = Number(cust.credit_limit || 0);
+
+          if (creditLimit > 0 && newBal > creditLimit) {
+            throw new Error(
+              `Credit limit exceeded for "${cust.name}". Limit: SAR ${creditLimit.toFixed(2)}, Current Due: SAR ${lastBal.toFixed(2)}, New Balance: SAR ${newBal.toFixed(2)}.`
+            );
+          }
 
           await client.query(
             `INSERT INTO customer_ledger (customer_id, user_id, type, reference_id, debit, credit, balance, notes)
              VALUES ($1, $2, 'invoice', $3, $4, 0, $5, $6)`,
-            [customerId, request.user!.id, sale.id, dueAmount, newBal, `Unpaid balance from ${saleRef}`]
+            [customerId, request.user!.id, sale.id, dueAmount, newBal, `Unpaid balance from POS ${saleRef}`]
           );
         }
 
@@ -550,10 +576,30 @@ export async function salesRoutes(fastify: FastifyInstance) {
   // GET /api/v1/sales/hold - List held carts
   fastify.get('/hold', async (request, reply) => {
     const res = await query(
-      `SELECT h.*, COUNT(hi.id) as item_count,
+      `SELECT h.*, 
+       COALESCE(
+         json_agg(
+           json_build_object(
+             'id', hi.id,
+             'productId', hi.product_id,
+             'quantity', hi.quantity,
+             'unitPrice', hi.unit_price,
+             'discount', hi.discount,
+             'name', p.name,
+             'sku', p.sku,
+             'barcode', p.barcode,
+             'taxRate', COALESCE(t.rate, 15),
+             'isTaxInclusive', p.tax_type = 'inclusive',
+             'stock', p.current_stock
+           )
+         ) FILTER (WHERE hi.id IS NOT NULL), '[]'
+       ) as items,
+       COUNT(hi.id) as item_count,
        u.full_name as user_name, c.name as customer_name
        FROM held_sales h
        LEFT JOIN held_sale_items hi ON hi.held_sale_id = h.id
+       LEFT JOIN products p ON p.id = hi.product_id
+       LEFT JOIN tax_rates t ON t.id = p.tax_rate_id
        LEFT JOIN users u ON h.user_id = u.id
        LEFT JOIN customers c ON c.id = h.customer_id
        GROUP BY h.id, u.full_name, c.name ORDER BY h.created_at DESC`

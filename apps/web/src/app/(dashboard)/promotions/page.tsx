@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { DataTable } from '@/components/ui/DataTable';
+import { MetricCard } from '@/components/ui/MetricCard';
 import {
   Percent,
   Plus,
@@ -12,6 +19,8 @@ import {
   Package,
   Gift,
   CheckCircle,
+  Sparkles,
+  ShoppingBag,
 } from 'lucide-react';
 
 export default function PromotionsPage() {
@@ -75,7 +84,7 @@ export default function PromotionsPage() {
   };
 
   const handleDeletePromotion = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this promotion?')) return;
+    if (!confirm('Are you sure you want to delete this promotional deal?')) return;
     await apiRequest(`/promotions/${id}`, { method: 'DELETE' });
     loadPromotions();
   };
@@ -88,41 +97,233 @@ export default function PromotionsPage() {
     loadPromotions();
   };
 
+  const activeCount = promotions.filter((p) => p.is_active).length;
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Create Promotion Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <Gift className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>Create Supermarket Promotional Deal</span>
+          </div>
+        }
+        subtitle="Configure automated promotional rules calculated in POS shopping carts"
+        maxWidth="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleCreatePromotion}>
+              Launch Promotion
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleCreatePromotion} className="space-y-4">
+          <Input
+            label="Promotion Name *"
+            required
+            value={promoForm.name}
+            onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })}
+            placeholder="e.g. Buy 2 Almarai Milk Get 1 Free"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Promotional Mechanism *"
+              value={promoForm.type}
+              onChange={(e) => setPromoForm({ ...promoForm, type: e.target.value as any })}
+            >
+              <option value="buy_x_get_y">Buy X Get Y Free</option>
+              <option value="bundle_price">Quantity Bundle Pricing (e.g. 3 for 10 SAR)</option>
+              <option value="percentage_discount">Item Percentage Discount (% OFF)</option>
+            </Select>
+
+            <Select
+              label="Target Product SKU *"
+              required
+              value={promoForm.rules[0].buy_product_id}
+              onChange={(e) => {
+                const newRules = [...promoForm.rules];
+                newRules[0].buy_product_id = e.target.value;
+                setPromoForm({ ...promoForm, rules: newRules });
+              }}
+            >
+              <option value="">-- Choose Product --</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.sku})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Dynamic Rule Form Based on Type */}
+          {promoForm.type === 'buy_x_get_y' && (
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900/40">
+              <Input
+                label="Buy Quantity *"
+                type="number"
+                min="1"
+                required
+                value={promoForm.rules[0].buy_quantity}
+                onChange={(e) => {
+                  const newRules = [...promoForm.rules];
+                  newRules[0].buy_quantity = parseFloat(e.target.value) || 1;
+                  setPromoForm({ ...promoForm, rules: newRules });
+                }}
+              />
+              <Input
+                label="Get Free Quantity *"
+                type="number"
+                min="1"
+                required
+                value={promoForm.rules[0].get_quantity}
+                onChange={(e) => {
+                  const newRules = [...promoForm.rules];
+                  newRules[0].get_quantity = parseFloat(e.target.value) || 1;
+                  setPromoForm({ ...promoForm, rules: newRules });
+                }}
+              />
+            </div>
+          )}
+
+          {promoForm.type === 'bundle_price' && (
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900/40">
+              <Input
+                label="Bundle Quantity *"
+                type="number"
+                min="2"
+                required
+                value={promoForm.rules[0].buy_quantity}
+                onChange={(e) => {
+                  const newRules = [...promoForm.rules];
+                  newRules[0].buy_quantity = parseFloat(e.target.value) || 2;
+                  setPromoForm({ ...promoForm, rules: newRules });
+                }}
+              />
+              <Input
+                label="Bundle Package Price (SAR) *"
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                value={promoForm.rules[0].bundle_price}
+                onChange={(e) => {
+                  const newRules = [...promoForm.rules];
+                  newRules[0].bundle_price = parseFloat(e.target.value) || 0;
+                  setPromoForm({ ...promoForm, rules: newRules });
+                }}
+              />
+            </div>
+          )}
+
+          {promoForm.type === 'percentage_discount' && (
+            <div className="rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-900/40">
+              <Input
+                label="Percentage Discount (% OFF) *"
+                type="number"
+                step="0.1"
+                min="1"
+                max="99"
+                required
+                value={promoForm.rules[0].discount_percentage}
+                onChange={(e) => {
+                  const newRules = [...promoForm.rules];
+                  newRules[0].discount_percentage = parseFloat(e.target.value) || 0;
+                  setPromoForm({ ...promoForm, rules: newRules });
+                }}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Campaign Start Date *"
+              type="date"
+              required
+              value={promoForm.start_date}
+              onChange={(e) => setPromoForm({ ...promoForm, start_date: e.target.value })}
+            />
+            <Input
+              label="Campaign End Date *"
+              type="date"
+              required
+              value={promoForm.end_date}
+              onChange={(e) => setPromoForm({ ...promoForm, end_date: e.target.value })}
+            />
+          </div>
+        </form>
+      </Modal>
+
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
             Promotions & Multi-Buy Deals Engine
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Supermarket promotional rules: Buy X Get Y Free, bundle price packs, and category discounts.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Supermarket promotional rules: Buy X Get Y Free, quantity bundle price packs, and percentage discounts.
           </p>
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-500 transition"
+          leftIcon={<Plus className="h-4 w-4" />}
         >
-          <Plus className="h-4 w-4" />
           Create New Promotion
-        </button>
+        </Button>
       </div>
 
-      {/* Promotions List Cards */}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <MetricCard
+          label="Active Campaigns"
+          value={activeCount}
+          subValue="Live on POS Register"
+          icon={<Sparkles className="h-5 w-5" />}
+          variant="success"
+        />
+
+        <MetricCard
+          label="Total Promotional Deals"
+          value={promotions.length}
+          subValue="Configured Campaigns"
+          icon={<Gift className="h-5 w-5" />}
+          variant="primary"
+        />
+
+        <MetricCard
+          label="Multi-Buy Rules"
+          value={promotions.reduce((sum, p) => sum + (p.rules?.length || 0), 0)}
+          subValue="Auto Cart Engine"
+          icon={<ShoppingBag className="h-5 w-5" />}
+          variant="info"
+        />
+      </div>
+
+      {/* Promotions Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
-          <div className="col-span-full py-12 text-center text-xs text-slate-400">Loading active promotions...</div>
+          <div className="col-span-full py-12 text-center text-xs text-slate-400">
+            Loading active promotional campaigns...
+          </div>
         ) : promotions.length === 0 ? (
           <div className="col-span-full py-12 text-center text-xs text-slate-400">
-            No promotions active. Create your first promotional deal above.
+            No promotional deals active. Click "Create New Promotion" above.
           </div>
         ) : (
           promotions.map((promo) => (
             <div
               key={promo.id}
-              className={`flex flex-col justify-between rounded-2xl border p-5 transition ${
+              className={`flex flex-col justify-between rounded-3xl border p-5 transition ${
                 promo.is_active
                   ? 'border-blue-200 dark:border-blue-900/50 bg-white dark:bg-slate-900 shadow-sm'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 opacity-60'
@@ -130,44 +331,54 @@ export default function PromotionsPage() {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 text-[10px] font-extrabold uppercase">
-                    {promo.type.replace(/_/g, ' ')}
-                  </span>
+                  <Badge variant="primary">{promo.type.replace(/_/g, ' ').toUpperCase()}</Badge>
+
                   <button
                     onClick={() => handleToggleActive(promo.id, promo.is_active)}
-                    className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                    className={`rounded-lg px-2 py-0.5 text-[10px] font-bold transition ${
                       promo.is_active
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-slate-500/10 text-slate-500'
+                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                     }`}
                   >
                     {promo.is_active ? 'Active' : 'Disabled'}
                   </button>
                 </div>
 
-                <h3 className="mt-2.5 text-base font-bold text-slate-900 dark:text-white">{promo.name}</h3>
+                <h3 className="mt-3 text-base font-black text-slate-900 dark:text-white line-clamp-1">
+                  {promo.name}
+                </h3>
 
                 {/* Rules Display */}
-                <div className="mt-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                <div className="mt-3 space-y-2 text-xs">
                   {promo.rules?.map((rule: any) => (
-                    <div key={rule.id} className="rounded-xl bg-slate-50 dark:bg-slate-950 p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div
+                      key={rule.id}
+                      className="rounded-2xl bg-slate-50 dark:bg-slate-850 p-3 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                    >
                       {promo.type === 'buy_x_get_y' && (
                         <p>
                           Buy <strong>{rule.buy_quantity}x</strong> {rule.buy_product_name || 'Item'}, Get{' '}
-                          <strong className="text-emerald-500">{rule.get_quantity}x</strong>{' '}
-                          {rule.get_product_name || 'Same Item'} Free
+                          <strong className="text-emerald-600 dark:text-emerald-400">
+                            {rule.get_quantity}x FREE
+                          </strong>
                         </p>
                       )}
                       {promo.type === 'bundle_price' && (
                         <p>
                           Buy <strong>{rule.buy_quantity}x</strong> {rule.buy_product_name || 'Item'} Bundle for{' '}
-                          <strong className="text-blue-500">{formatCurrency(rule.bundle_price)}</strong>
+                          <strong className="text-blue-600 dark:text-sky-400">
+                            {formatCurrency(rule.bundle_price)}
+                          </strong>
                         </p>
                       )}
                       {promo.type === 'percentage_discount' && (
                         <p>
-                          Get <strong className="text-amber-500">{rule.discount_percentage}% OFF</strong> on{' '}
-                          {rule.buy_product_name || 'Selected Items'}
+                          Get{' '}
+                          <strong className="text-amber-600 dark:text-amber-400">
+                            {rule.discount_percentage}% OFF
+                          </strong>{' '}
+                          on {rule.buy_product_name || 'Selected Item'}
                         </p>
                       )}
                     </div>
@@ -176,195 +387,25 @@ export default function PromotionsPage() {
               </div>
 
               <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5 font-mono">
                   <Calendar className="h-3.5 w-3.5" />
                   <span>
-                    {new Date(promo.start_date).toLocaleDateString()} - {new Date(promo.end_date).toLocaleDateString()}
+                    {new Date(promo.start_date).toLocaleDateString('en-GB')} -{' '}
+                    {new Date(promo.end_date).toLocaleDateString('en-GB')}
                   </span>
                 </div>
-                <button
+                <IconButton
+                  title="Delete Campaign"
+                  variant="danger"
+                  size="sm"
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
                   onClick={() => handleDeletePromotion(promo.id)}
-                  className="p-1 text-slate-400 hover:text-rose-500"
-                  title="Delete Promotion"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                />
               </div>
             </div>
           ))
         )}
       </div>
-
-      {/* New Promotion Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <h2 className="text-base font-bold mb-4 flex items-center gap-2">
-              <Gift className="h-4 w-4 text-blue-500" />
-              Create Supermarket Deal / Promotion
-            </h2>
-            <form onSubmit={handleCreatePromotion} className="space-y-4 text-xs">
-              <div>
-                <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Promotion Title *</label>
-                <input
-                  type="text"
-                  required
-                  value={promoForm.name}
-                  onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Buy 2 Almarai Milk Get 1 Free"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Deal Type *</label>
-                  <select
-                    value={promoForm.type}
-                    onChange={(e) => setPromoForm({ ...promoForm, type: e.target.value as any })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value="buy_x_get_y">Buy X Get Y Free</option>
-                    <option value="bundle_price">Quantity Bundle Pricing</option>
-                    <option value="percentage_discount">Percentage Discount</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Applies To Product *</label>
-                  <select
-                    required
-                    value={promoForm.rules[0].buy_product_id}
-                    onChange={(e) => {
-                      const newRules = [...promoForm.rules];
-                      newRules[0].buy_product_id = e.target.value;
-                      setPromoForm({ ...promoForm, rules: newRules });
-                    }}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value="">-- Choose Product --</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.sku})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {promoForm.type === 'buy_x_get_y' && (
-                <div className="grid grid-cols-2 gap-3 bg-blue-50/50 dark:bg-blue-950/30 p-3 rounded-xl border border-blue-100 dark:border-blue-900/40">
-                  <div>
-                    <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Buy Quantity *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={promoForm.rules[0].buy_quantity}
-                      onChange={(e) => {
-                        const newRules = [...promoForm.rules];
-                        newRules[0].buy_quantity = parseFloat(e.target.value) || 1;
-                        setPromoForm({ ...promoForm, rules: newRules });
-                      }}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Get Free Quantity *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={promoForm.rules[0].get_quantity}
-                      onChange={(e) => {
-                        const newRules = [...promoForm.rules];
-                        newRules[0].get_quantity = parseFloat(e.target.value) || 1;
-                        setPromoForm({ ...promoForm, rules: newRules });
-                      }}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 font-mono"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {promoForm.type === 'bundle_price' && (
-                <div className="grid grid-cols-2 gap-3 bg-blue-50/50 dark:bg-blue-950/30 p-3 rounded-xl border border-blue-100 dark:border-blue-900/40">
-                  <div>
-                    <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Bundle Quantity *</label>
-                    <input
-                      type="number"
-                      min="2"
-                      required
-                      value={promoForm.rules[0].buy_quantity}
-                      onChange={(e) => {
-                        const newRules = [...promoForm.rules];
-                        newRules[0].buy_quantity = parseFloat(e.target.value) || 2;
-                        setPromoForm({ ...promoForm, rules: newRules });
-                      }}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Bundle Total Price *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      required
-                      value={promoForm.rules[0].bundle_price}
-                      onChange={(e) => {
-                        const newRules = [...promoForm.rules];
-                        newRules[0].bundle_price = parseFloat(e.target.value) || 0;
-                        setPromoForm({ ...promoForm, rules: newRules });
-                      }}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2 font-mono"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Start Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={promoForm.start_date}
-                    onChange={(e) => setPromoForm({ ...promoForm, start_date: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">End Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={promoForm.end_date}
-                    onChange={(e) => setPromoForm({ ...promoForm, end_date: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white"
-                >
-                  Launch Promotion
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

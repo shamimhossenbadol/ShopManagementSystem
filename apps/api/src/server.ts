@@ -31,7 +31,94 @@ const server = Fastify({
   bodyLimit: 15 * 1024 * 1024, // 15MB for base64 image uploads
 });
 
+// Support empty bodies with Content-Type: application/json without throwing FST_ERR_CTP_EMPTY_JSON_BODY
+server.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+  try {
+    const text = (body as string || '').trim();
+    if (!text) {
+      done(null, {});
+      return;
+    }
+    const json = JSON.parse(text);
+    done(null, json);
+  } catch (err: any) {
+    err.statusCode = 400;
+    done(err, undefined);
+  }
+});
+
+async function runAutoMigrations() {
+  try {
+    await db.query(`
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_name VARCHAR(100) DEFAULT 'Terminal-01';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS current_session_id VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS current_pos_session_id VARCHAR(100);
+      ALTER TABLE sales ADD COLUMN IF NOT EXISTS session_id INT REFERENCES cash_sessions(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_sales_session_id ON sales(session_id);
+      INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public)
+      VALUES ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true)
+      ON CONFLICT (setting_key) DO NOTHING;
+    `);
+
+    await db.query(`
+      -- V3: Single POS Exclusive Session System with Sequential Cash Carry-Forward
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS sequence_number INT;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS previous_session_id INT REFERENCES cash_sessions(id);
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS carry_forward_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS close_type VARCHAR(20) DEFAULT 'normal';
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS force_closed_by INT REFERENCES users(id);
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS force_close_reason TEXT;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_total DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+
+      -- Enforce single open POS session globally
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_single_open_cash_session 
+          ON cash_sessions ((1)) WHERE status = 'open';
+
+      -- Session adjustments for discrepancy explanations (immutable ledger)
+      CREATE TABLE IF NOT EXISTS session_adjustments (
+          id BIGSERIAL PRIMARY KEY,
+          session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE RESTRICT,
+          adjustment_type VARCHAR(20) NOT NULL CHECK (adjustment_type IN ('opening', 'closing')),
+          amount DECIMAL(15,4) NOT NULL,
+          description TEXT NOT NULL,
+          created_by INT NOT NULL REFERENCES users(id),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_session_adjustments_session ON session_adjustments(session_id);
+    `);
+
+    await db.query(`
+      DO $$ 
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_session_adjustments_no_update_delete') THEN
+              CREATE OR REPLACE FUNCTION prevent_adjustment_mutation()
+              RETURNS TRIGGER AS $fn$
+              BEGIN
+                  RAISE EXCEPTION 'Session adjustments are immutable and cannot be modified or deleted';
+              END;
+              $fn$ LANGUAGE plpgsql;
+
+              CREATE TRIGGER trg_session_adjustments_no_update_delete
+                  BEFORE UPDATE OR DELETE ON session_adjustments
+                  FOR EACH ROW EXECUTE FUNCTION prevent_adjustment_mutation();
+          END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      UPDATE cash_sessions SET sequence_number = id WHERE sequence_number IS NULL;
+    `);
+  } catch (err) {
+    console.warn('⚠️ Auto-migration note:', err);
+  }
+}
+
 async function main() {
+  await runAutoMigrations();
+
   // 1. Plugins
   await server.register(cors, {
     origin: true,

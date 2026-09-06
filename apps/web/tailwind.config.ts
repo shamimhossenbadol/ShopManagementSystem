@@ -10,6 +10,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        slate: {
+          750: '#1e293b',
+          850: '#0f172a',
+          950: '#0b0f19',
+        },
         shop: {
           primary: '#2563eb',
           'primary-light': '#dbeafe',

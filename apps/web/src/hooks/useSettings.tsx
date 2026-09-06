@@ -55,6 +55,8 @@ interface SettingsContextType {
   fontSizeScale: string;
   setFontSizeScale: (scale: string) => void;
   formatCurrency: (amount: number | string | undefined | null) => string;
+  formatTime: (date: Date | string | number | undefined | null) => string;
+  formatDateTime: (date: Date | string | number | undefined | null) => string;
   refreshSettings: () => Promise<void>;
 }
 
@@ -98,6 +100,8 @@ const SettingsContext = createContext<SettingsContextType>({
   fontSizeScale: '100%',
   setFontSizeScale: () => {},
   formatCurrency: () => 'SAR 0.00',
+  formatTime: () => '',
+  formatDateTime: () => '',
   refreshSettings: async () => {},
 });
 
@@ -251,6 +255,55 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return position === 'before' ? `${symbol} ${formatted}` : `${formatted} ${symbol}`;
   };
 
+  const getEffectiveTimezone = (): string => {
+    if (settings.timezone && settings.timezone.trim()) {
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: settings.timezone });
+        return settings.timezone;
+      } catch {
+        // Fallback
+      }
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Riyadh';
+  };
+
+  const formatTime = (date: Date | string | number | undefined | null): string => {
+    if (!date) return '—';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '—';
+    try {
+      return d.toLocaleTimeString('en-US', {
+        timeZone: getEffectiveTimezone(),
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return d.toLocaleTimeString();
+    }
+  };
+
+  const formatDateTime = (date: Date | string | number | undefined | null): string => {
+    if (!date) return '—';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '—';
+    try {
+      return d.toLocaleString('en-US', {
+        timeZone: getEffectiveTimezone(),
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return d.toLocaleString();
+    }
+  };
+
   return (
     <SettingsContext.Provider
       value={{
@@ -264,6 +317,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         fontSizeScale,
         setFontSizeScale,
         formatCurrency,
+        formatTime,
+        formatDateTime,
         refreshSettings,
       }}
     >

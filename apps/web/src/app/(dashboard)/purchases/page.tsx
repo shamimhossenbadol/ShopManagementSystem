@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { DataTable } from '@/components/ui/DataTable';
+import { MetricCard } from '@/components/ui/MetricCard';
 import {
   Truck,
   Plus,
@@ -13,6 +20,9 @@ import {
   X,
   Building2,
   Calendar,
+  DollarSign,
+  Printer,
+  Package,
 } from 'lucide-react';
 
 interface PurchaseItemRow {
@@ -29,6 +39,7 @@ export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,6 +47,7 @@ export default function PurchasesPage() {
   const [selectedPurchaseDetail, setSelectedPurchaseDetail] = useState<any>(null);
 
   const [loading, setLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -51,6 +63,7 @@ export default function PurchasesPage() {
   ]);
 
   const loadData = async () => {
+    setTableLoading(true);
     const res = await apiRequest('/purchases');
     if (res.success && res.data) setPurchases(res.data);
 
@@ -71,6 +84,7 @@ export default function PurchasesPage() {
         ]);
       }
     }
+    setTableLoading(false);
   };
 
   useEffect(() => {
@@ -172,7 +186,7 @@ export default function PurchasesPage() {
       setIsModalOpen(false);
       loadData();
     } else {
-      setErrorMsg(res.message || 'Failed to record purchase.');
+      setErrorMsg(res.message || 'Failed to record purchase order receipt.');
     }
   };
 
@@ -184,361 +198,416 @@ export default function PurchasesPage() {
     }
   };
 
+  const totalPurchasesAmount = purchases.reduce((sum, p) => sum + Number(p.grand_total || 0), 0);
+  const totalPaidAmount = purchases.reduce((sum, p) => sum + Number(p.paid_amount || 0), 0);
+  const totalDueAmount = purchases.reduce((sum, p) => sum + Number(p.due_amount || 0), 0);
+
+  const filteredPurchases = purchases.filter((p) => {
+    return (
+      p.reference_no?.toLowerCase().includes(search.toLowerCase()) ||
+      p.supplier_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (p.supplier_invoice_no && p.supplier_invoice_no.toLowerCase().includes(search.toLowerCase()))
+    );
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Procurement & Purchases</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Receive supplier shipments, update inventory, create batch FEFO records, and recalculate WAC cost.
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            Procurement & Purchase Orders
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Receive supplier shipments, update atomic inventory, create batch FEFO records, and recalculate WAC cost.
           </p>
         </div>
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={openCreate}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+          leftIcon={<Plus className="h-4 w-4" />}
         >
-          <Plus className="h-4 w-4" />
-          Receive New Purchase Order
-        </button>
+          Receive Purchase Order
+        </Button>
       </div>
 
-      {/* Purchases List */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-[10px] font-bold uppercase text-slate-400">
-              <tr>
-                <th className="py-3 px-4">Reference / Date</th>
-                <th className="py-3 px-4">Supplier</th>
-                <th className="py-3 px-4 text-right">Grand Total</th>
-                <th className="py-3 px-4 text-right">Paid Amount</th>
-                <th className="py-3 px-4 text-right">Due Amount</th>
-                <th className="py-3 px-4 text-center">Payment Status</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {purchases.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400">No purchase records registered yet.</td>
-                </tr>
-              ) : (
-                purchases.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                    <td className="py-3.5 px-4 font-mono">
-                      <div className="font-bold text-slate-900 dark:text-white">{p.reference_no}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {new Date(p.created_at).toLocaleDateString('en-GB')} • Inv: {p.supplier_invoice_no || 'N/A'}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">{p.supplier_name}</td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(p.grand_total)}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400">{formatCurrency(p.paid_amount)}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400">{formatCurrency(p.due_amount)}</td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                          p.payment_status === 'paid'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
-                            : p.payment_status === 'partial'
-                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
-                        }`}
-                      >
-                        {p.payment_status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => openDetail(p)}
-                        className="rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                      >
-                        <Eye className="h-3 w-3 inline mr-1" />
-                        Voucher
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Total Procurement Spend"
+          value={formatCurrency(totalPurchasesAmount)}
+          subValue={`${purchases.length} Purchase Invoices`}
+          icon={<Truck className="h-5 w-5" />}
+          variant="primary"
+        />
+
+        <MetricCard
+          label="Supplier Paid Amount"
+          value={formatCurrency(totalPaidAmount)}
+          subValue="Settled Vendor Cash"
+          icon={<DollarSign className="h-5 w-5" />}
+          variant="success"
+        />
+
+        <MetricCard
+          label="Supplier Due (Accounts Payable)"
+          value={formatCurrency(totalDueAmount)}
+          subValue="Outstanding Vendor Debt"
+          icon={<Building2 className="h-5 w-5" />}
+          variant="warning"
+        />
+      </div>
+
+      {/* Search Toolbar */}
+      <div className="flex items-center rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="relative flex-1 max-w-md">
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by purchase reference, supplier, or invoice #..."
+            className="text-xs"
+          />
         </div>
       </div>
 
-      {/* Receive Purchase Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+      {/* Purchases Master DataTable */}
+      <DataTable
+        isLoading={tableLoading}
+        data={filteredPurchases}
+        keyExtractor={(p) => p.id}
+        emptyMessage="No procurement purchase orders found."
+        columns={[
+          {
+            header: 'Reference & Date',
+            accessor: (p) => (
               <div>
-                <h2 className="text-base font-bold">Receive Supplier Goods & Restock</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Atomic stock increment and WAC cost recalculation</p>
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreate} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Supplier *</label>
-                  <select
-                    value={form.supplierId}
-                    onChange={(e) => setForm({ ...form, supplierId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.company_name || 'Vendor'})
-                      </option>
-                    ))}
-                  </select>
+                <div className="font-mono font-bold text-blue-700 dark:text-sky-400">
+                  {p.reference_no}
                 </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Supplier Invoice No</label>
-                  <input
-                    type="text"
-                    value={form.supplierInvoiceNo}
-                    onChange={(e) => setForm({ ...form, supplierInvoiceNo: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. SUP-INV-9942"
-                  />
+                <div className="text-[11px] text-slate-400 font-mono">
+                  {new Date(p.created_at).toLocaleDateString('en-GB')} • Inv: {p.supplier_invoice_no || 'N/A'}
                 </div>
               </div>
+            ),
+          },
+          {
+            header: 'Supplier',
+            accessor: (p) => (
+              <span className="font-bold text-slate-900 dark:text-white">
+                {p.supplier_name}
+              </span>
+            ),
+          },
+          {
+            header: 'Grand Total',
+            align: 'right',
+            accessor: (p) => (
+              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                {formatCurrency(p.grand_total)}
+              </span>
+            ),
+          },
+          {
+            header: 'Paid Amount',
+            align: 'right',
+            accessor: (p) => (
+              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                {formatCurrency(p.paid_amount)}
+              </span>
+            ),
+          },
+          {
+            header: 'Due Amount',
+            align: 'right',
+            accessor: (p) => (
+              <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                {formatCurrency(p.due_amount)}
+              </span>
+            ),
+          },
+          {
+            header: 'Payment Status',
+            align: 'center',
+            accessor: (p) => (
+              <Badge
+                variant={
+                  p.payment_status === 'paid'
+                    ? 'success'
+                    : p.payment_status === 'partial'
+                    ? 'warning'
+                    : 'danger'
+                }
+              >
+                {p.payment_status?.toUpperCase()}
+              </Badge>
+            ),
+          },
+          {
+            header: 'Action',
+            align: 'right',
+            accessor: (p) => (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => openDetail(p)}
+                leftIcon={<Eye className="h-3.5 w-3.5" />}
+              >
+                Inspect
+              </Button>
+            ),
+          },
+        ]}
+      />
 
-              {/* Items Line Grid */}
-              <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50 dark:bg-slate-950/60 space-y-2">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Shipment Items ({itemRows.length})</span>
-                  <button
-                    type="button"
-                    onClick={addItemRow}
-                    className="flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Another Item
-                  </button>
-                </div>
-
-                {itemRows.map((row, idx) => {
-                  const currentProd = products.find((p) => p.id === Number(row.productId));
-                  return (
-                    <div key={idx} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-6">
-                          <label className="block text-[10px] text-slate-400 mb-0.5">Product SKU</label>
-                          <select
-                            value={row.productId}
-                            onChange={(e) => updateRow(idx, 'productId', Number(e.target.value))}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-1.5 text-xs focus:border-blue-500 focus:outline-none font-semibold"
-                          >
-                            {products.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} ({p.sku})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="col-span-3">
-                          <label className="block text-[10px] text-slate-400 mb-0.5">Net Cost ({settings.currency_symbol || 'SAR'})</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={row.netUnitCost}
-                            onChange={(e) => updateRow(idx, 'netUnitCost', parseFloat(e.target.value) || 0)}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-1.5 text-xs font-mono focus:border-blue-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-[10px] text-slate-400 mb-0.5">Quantity</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={row.quantity}
-                            onChange={(e) => updateRow(idx, 'quantity', parseFloat(e.target.value) || 1)}
-                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-1.5 text-xs font-mono focus:border-blue-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="col-span-1 text-center pt-3">
-                          <button
-                            type="button"
-                            onClick={() => removeItemRow(idx)}
-                            disabled={itemRows.length === 1}
-                            className="text-slate-400 hover:text-rose-500 disabled:opacity-30"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Optional Batch Entry for Perishables */}
-                      {currentProd?.has_expiry && (
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-                          <div>
-                            <label className="block text-[10px] text-amber-500 font-bold mb-0.5">Batch Number</label>
-                            <input
-                              type="text"
-                              value={row.batchNumber || ''}
-                              onChange={(e) => updateRow(idx, 'batchNumber', e.target.value)}
-                              placeholder="e.g. B-001"
-                              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-1 text-[11px] font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-amber-500 font-bold mb-0.5">Expiry Date</label>
-                            <input
-                              type="date"
-                              value={row.expiryDate || ''}
-                              onChange={(e) => updateRow(idx, 'expiryDate', e.target.value)}
-                              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-1 text-[11px] font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Financial Calculation Summary */}
-              <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-4 border border-blue-100 dark:border-blue-900/40 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>Taxable Subtotal:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>{settings.tax_label || 'Input VAT (15%)'}:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(tax)}</span>
-                </div>
-                <div className="flex justify-between items-baseline pt-1 border-t border-blue-200 dark:border-blue-900 text-sm font-black text-blue-900 dark:text-blue-200">
-                  <span>GRAND TOTAL:</span>
-                  <span className="font-mono text-lg">{formatCurrency(grandTotal)}</span>
-                </div>
-              </div>
-
-              {/* Immediate Payment Input */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Immediate Paid Amount ({settings.currency_symbol || 'SAR'})</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.paidAmount}
-                    onChange={(e) => setForm({ ...form, paidAmount: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment Source</label>
-                  <select
-                    value={form.paymentMethodId}
-                    onChange={(e) => setForm({ ...form, paymentMethodId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value={1}>Cash Drawer (Till Outflow)</option>
-                    <option value={2}>Bank Transfer / Card</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-500 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Processing Shipment...' : 'Confirm Goods Received'}
-                </button>
-              </div>
-            </form>
+      {/* Receive Purchase Order Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <Truck className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>Receive Supplier Purchase Order</span>
           </div>
-        </div>
-      )}
+        }
+        subtitle="Increases atomic inventory and recalculates Perpetual Weighted Average Cost (WAC)"
+        maxWidth="4xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" isLoading={loading} onClick={handleCreate}>
+              Confirm Receipt ({formatCurrency(grandTotal)})
+            </Button>
+          </>
+        }
+      >
+        {errorMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-      {/* Purchase Detail Voucher Modal */}
-      {isDetailModalOpen && selectedPurchaseDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h2 className="text-base font-bold">
-                  Purchase Voucher: {selectedPurchaseDetail.purchase.reference_no}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Supplier: {selectedPurchaseDetail.purchase.supplier_name} • Inv: {selectedPurchaseDetail.purchase.supplier_invoice_no || 'N/A'}
-                </p>
-              </div>
-              <button onClick={() => setIsDetailModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+        <form onSubmit={handleCreate} className="space-y-4">
+          {/* Supplier Info */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Supplier / Vendor *"
+              required
+              value={form.supplierId}
+              onChange={(e) => setForm({ ...form, supplierId: parseInt(e.target.value) })}
+            >
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.company_name || 'Vendor'})
+                </option>
+              ))}
+            </Select>
+
+            <Input
+              label="Supplier Physical Invoice Number"
+              value={form.supplierInvoiceNo}
+              onChange={(e) => setForm({ ...form, supplierInvoiceNo: e.target.value })}
+              placeholder="e.g. SINV-88402"
+            />
+          </div>
+
+          {/* Line Items Builder */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Purchased Shipment Items
+              </label>
+              <Button size="sm" variant="secondary" onClick={addItemRow} leftIcon={<Plus className="h-3.5 w-3.5" />}>
+                Add Line Item
+              </Button>
             </div>
 
-            <div className="space-y-3 text-xs mb-4">
-              <table className="w-full text-left">
-                <thead className="border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-400">
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {itemRows.map((row, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-12 gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 p-3 text-xs items-center"
+                >
+                  <div className="col-span-12 sm:col-span-4">
+                    <Select
+                      value={row.productId}
+                      onChange={(e) => updateRow(idx, 'productId', parseInt(e.target.value))}
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.sku})
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-2">
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      placeholder="Unit Cost"
+                      value={row.netUnitCost}
+                      onChange={(e) => updateRow(idx, 'netUnitCost', parseFloat(e.target.value) || 0)}
+                      rightAddon="SAR"
+                    />
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-2">
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      placeholder="Quantity"
+                      value={row.quantity}
+                      onChange={(e) => updateRow(idx, 'quantity', parseFloat(e.target.value) || 1)}
+                    />
+                  </div>
+
+                  <div className="col-span-10 sm:col-span-3">
+                    <Input
+                      type="text"
+                      placeholder="Batch # (Optional)"
+                      value={row.batchNumber || ''}
+                      onChange={(e) => updateRow(idx, 'batchNumber', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1 flex justify-end">
+                    <IconButton
+                      title="Remove Row"
+                      icon={<Trash2 className="h-3.5 w-3.5" />}
+                      variant="danger"
+                      size="sm"
+                      onClick={() => removeItemRow(idx)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Payment & Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-blue-50/50 dark:bg-sky-950/20 border border-blue-200 dark:border-sky-900/40">
+            <div>
+              <Input
+                label="Freight / Landed Cost (SAR)"
+                type="number"
+                step="0.01"
+                value={form.shippingCost}
+                onChange={(e) => setForm({ ...form, shippingCost: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+
+            <div>
+              <Input
+                label="Amount Paid at Receiving (SAR)"
+                type="number"
+                step="0.01"
+                value={form.paidAmount}
+                onChange={(e) => setForm({ ...form, paidAmount: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+
+            <div>
+              <Select
+                label="Payment Method"
+                value={form.paymentMethodId}
+                onChange={(e) => setForm({ ...form, paymentMethodId: parseInt(e.target.value) })}
+              >
+                <option value={1}>Cash (Drawer Outflow)</option>
+                <option value={2}>Bank Transfer</option>
+                <option value={3}>Cheque / Mada</option>
+              </Select>
+            </div>
+          </div>
+
+          {/* Financial Recalculation Preview */}
+          <div className="flex justify-between items-center p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono">
+            <span>Taxable Subtotal: {formatCurrency(subtotal)}</span>
+            <span>VAT (15%): {formatCurrency(tax)}</span>
+            <span className="font-bold text-sm text-blue-700 dark:text-sky-400">
+              Grand Total: {formatCurrency(grandTotal)}
+            </span>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Inspect Purchase Order Modal */}
+      {isDetailModalOpen && selectedPurchaseDetail && (
+        <Modal
+          isOpen={isDetailModalOpen}
+          onClose={() => setIsDetailModalOpen(false)}
+          title={
+            <div className="flex items-center gap-2">
+              <Truck className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+              <span>Purchase Order Details: {selectedPurchaseDetail.purchase?.reference_no}</span>
+            </div>
+          }
+          subtitle={`Supplier: ${selectedPurchaseDetail.purchase?.supplier_name} • Invoice: ${selectedPurchaseDetail.purchase?.supplier_invoice_no || 'N/A'}`}
+          maxWidth="2xl"
+          footer={
+            <Button variant="secondary" onClick={() => setIsDetailModalOpen(false)}>
+              Close
+            </Button>
+          }
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-850">
+              <div>
+                <div className="text-slate-400">Total Items:</div>
+                <div className="font-mono font-bold text-slate-900 dark:text-white">
+                  {selectedPurchaseDetail.items?.length || 0}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">Grand Total:</div>
+                <div className="font-mono font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(selectedPurchaseDetail.purchase?.grand_total)}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">Amount Paid:</div>
+                <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(selectedPurchaseDetail.purchase?.paid_amount)}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">Balance Due:</div>
+                <div className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                  {formatCurrency(selectedPurchaseDetail.purchase?.due_amount)}
+                </div>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-850 text-slate-400 uppercase text-[10px] font-bold">
                   <tr>
-                    <th className="py-1">Item</th>
-                    <th className="py-1 text-right">Net Cost</th>
-                    <th className="py-1 text-center">Qty</th>
-                    <th className="py-1 text-right">Total</th>
+                    <th className="py-2.5 px-3">Item</th>
+                    <th className="py-2.5 px-3 text-center">Qty</th>
+                    <th className="py-2.5 px-3 text-right">Unit Cost</th>
+                    <th className="py-2.5 px-3 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {selectedPurchaseDetail.items.map((item: any) => (
-                    <tr key={item.id}>
-                      <td className="py-2 font-bold text-slate-800 dark:text-slate-200">{item.product_name} ({item.sku})</td>
-                      <td className="py-2 text-right font-mono">{formatCurrency(item.net_unit_cost)}</td>
-                      <td className="py-2 text-center font-mono">{item.quantity}</td>
-                      <td className="py-2 text-right font-mono font-bold">{formatCurrency(item.subtotal)}</td>
+                  {selectedPurchaseDetail.items?.map((it: any, idx: number) => (
+                    <tr key={idx}>
+                      <td className="py-2 px-3 font-semibold text-slate-900 dark:text-white">{it.product_name}</td>
+                      <td className="py-2 px-3 text-center font-mono">{it.quantity}</td>
+                      <td className="py-2 px-3 text-right font-mono">{formatCurrency(it.unit_cost)}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold">{formatCurrency(it.subtotal)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-2 space-y-1 font-mono">
-                <div className="flex justify-between">
-                  <span className="font-sans text-slate-500 dark:text-slate-400">Grand Total:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{formatCurrency(selectedPurchaseDetail.purchase.grand_total)}</span>
-                </div>
-                <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                  <span className="font-sans text-slate-500 dark:text-slate-400">Paid Amount:</span>
-                  <span>{formatCurrency(selectedPurchaseDetail.purchase.paid_amount)}</span>
-                </div>
-                <div className="flex justify-between text-amber-600 dark:text-amber-400 font-bold">
-                  <span className="font-sans text-slate-500 dark:text-slate-400">Due Amount (Accounts Payable):</span>
-                  <span>{formatCurrency(selectedPurchaseDetail.purchase.due_amount)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={() => setIsDetailModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                Close
-              </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

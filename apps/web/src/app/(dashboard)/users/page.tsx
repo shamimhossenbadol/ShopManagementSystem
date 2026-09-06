@@ -2,6 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { DataTable } from '@/components/ui/DataTable';
+import { MetricCard } from '@/components/ui/MetricCard';
 import {
   UserCog,
   UserPlus,
@@ -11,6 +18,9 @@ import {
   AlertCircle,
   Edit2,
   X,
+  Lock,
+  Users,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -20,11 +30,14 @@ export default function UsersPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newPassword, setNewPassword] = useState('');
+  const [newPin, setNewPin] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [addForm, setAddForm] = useState({
@@ -32,19 +45,21 @@ export default function UsersPage() {
     fullName: '',
     password: '',
     role: 'sales_executive',
-    pinCode: '1234',
+    pinCode: '12345',
   });
 
   const [editForm, setEditForm] = useState({
     fullName: '',
     role: 'sales_executive',
-    pinCode: '1234',
+    pinCode: '12345',
     isActive: true,
   });
 
   const loadUsers = async () => {
+    setTableLoading(true);
     const res = await apiRequest('/auth/users');
     if (res.success && res.data) setUsers(res.data);
+    setTableLoading(false);
   };
 
   useEffect(() => {
@@ -65,7 +80,13 @@ export default function UsersPage() {
 
     if (res.success) {
       setIsAddModalOpen(false);
-      setAddForm({ username: '', fullName: '', password: '', role: 'sales_executive', pinCode: '1234' });
+      setAddForm({
+        username: '',
+        fullName: '',
+        password: '',
+        role: 'sales_executive',
+        pinCode: '12345',
+      });
       loadUsers();
     } else {
       setErrorMsg(res.message || 'Failed to create user account.');
@@ -77,7 +98,7 @@ export default function UsersPage() {
     setEditForm({
       fullName: u.full_name,
       role: u.role,
-      pinCode: u.pin_code || '1234',
+      pinCode: u.pin_code || '12345',
       isActive: u.is_active,
     });
     setErrorMsg(null);
@@ -131,317 +152,433 @@ export default function UsersPage() {
     }
   };
 
+  const openResetPin = (u: any) => {
+    setSelectedUser(u);
+    setNewPin(u.pin_code || '12345');
+    setErrorMsg(null);
+    setIsPinModalOpen(true);
+  };
+
+  const handleResetPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg(null);
+
+    const res = await apiRequest(`/auth/users/${selectedUser.id}/pin`, {
+      method: 'PUT',
+      body: JSON.stringify({ pinCode: newPin }),
+    });
+
+    setLoading(false);
+
+    if (res.success) {
+      setIsPinModalOpen(false);
+      alert(`5-digit PIN for ${selectedUser.username} updated to ${newPin}.`);
+      loadUsers();
+    } else {
+      setErrorMsg(res.message || 'Failed to reset PIN.');
+    }
+  };
+
+  const managerCount = users.filter((u) => u.role === 'manager').length;
+  const cashierCount = users.filter((u) => u.role === 'sales_executive').length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Staff & User Management</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Configure cashier staff accounts, role-based permissions, and 4-digit POS authorization PINs.
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            Staff & User Management
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Configure cashier employee accounts, role-based access permissions, and 5-digit POS authorization PINs.
           </p>
         </div>
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => {
             setErrorMsg(null);
             setIsAddModalOpen(true);
           }}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+          leftIcon={<UserPlus className="h-4 w-4" />}
         >
-          <UserPlus className="h-4 w-4" />
-          Add New Staff Account
-        </button>
+          Add Staff Member
+        </Button>
       </div>
 
-      {/* Users Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-[10px] font-bold uppercase text-slate-400">
-              <tr>
-                <th className="py-3 px-4">Staff Member</th>
-                <th className="py-3 px-4">Username</th>
-                <th className="py-3 px-4">System Role</th>
-                <th className="py-3 px-4 text-center">POS PIN Code</th>
-                <th className="py-3 px-4 text-center">Account Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                  <td className="py-3.5 px-4">
-                    <div className="font-bold text-slate-900 dark:text-white">{u.full_name}</div>
-                    <div className="text-[10px] text-slate-400">Created: {new Date(u.created_at).toLocaleDateString()}</div>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">{u.username}</td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
-                        u.role === 'manager' ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                      }`}
-                    >
-                      <Shield className="h-3 w-3" />
-                      {u.role.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-500 dark:text-slate-400">
-                    {u.pin_code ? '••••' : 'None'}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                        u.is_active ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
-                      }`}
-                    >
-                      {u.is_active ? 'Active' : 'Disabled'}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right space-x-1">
-                    <button
-                      onClick={() => openEdit(u)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600"
-                      title="Edit Profile & PIN"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => openResetPassword(u)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:text-amber-600"
-                      title="Reset Password"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Total Staff Profiles"
+          value={`${users.length} Users`}
+          subValue="Registered Operators"
+          icon={<Users className="h-5 w-5" />}
+          variant="primary"
+        />
+
+        <MetricCard
+          label="Store Managers"
+          value={`${managerCount} Managers`}
+          subValue="Full Privilege & PIN Approval"
+          icon={<ShieldCheck className="h-5 w-5" />}
+          variant="default"
+        />
+
+        <MetricCard
+          label="Sales Executives / Cashiers"
+          value={`${cashierCount} Cashiers`}
+          subValue="POS Terminal Operators"
+          icon={<UserCog className="h-5 w-5" />}
+          variant="success"
+        />
       </div>
 
-      {/* Add User Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-blue-500" />
-                Add Staff User Account
-              </h2>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
+      {/* Users DataTable */}
+      <DataTable
+        isLoading={tableLoading}
+        data={users}
+        keyExtractor={(u) => u.id}
+        emptyMessage="No staff accounts found."
+        columns={[
+          {
+            header: 'Staff Member',
+            accessor: (u) => (
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 dark:bg-sky-950/50 font-bold text-xs text-blue-700 dark:text-sky-400 border border-blue-200 dark:border-sky-900/50 uppercase">
+                  {u.full_name?.slice(0, 2) || 'ST'}
+                </div>
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white">{u.full_name}</div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Created: {new Date(u.created_at).toLocaleDateString('en-GB')}
+                  </div>
+                </div>
               </div>
-            )}
-
-            <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={addForm.fullName}
-                  onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Abdullah Al-Harbi"
+            ),
+          },
+          {
+            header: 'Username',
+            accessor: (u) => (
+              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                {u.username}
+              </span>
+            ),
+          },
+          {
+            header: 'RBAC Role',
+            accessor: (u) => (
+              <Badge variant={u.role === 'manager' ? 'primary' : 'neutral'}>
+                {u.role.replace('_', ' ').toUpperCase()}
+              </Badge>
+            ),
+          },
+          {
+            header: '5-Digit PIN',
+            align: 'center',
+            accessor: (u) => (
+              <span className="font-mono text-slate-500 font-bold">
+                {u.pin_code ? '•••••' : 'None'}
+              </span>
+            ),
+          },
+          {
+            header: 'Account Status',
+            align: 'center',
+            accessor: (u) => (
+              <Badge variant={u.is_active ? 'success' : 'danger'}>
+                {u.is_active ? 'ACTIVE' : 'DISABLED'}
+              </Badge>
+            ),
+          },
+          {
+            header: 'Actions',
+            align: 'right',
+            accessor: (u) => (
+              <div className="flex items-center justify-end gap-1.5">
+                <IconButton
+                  title="Edit Staff Account"
+                  icon={<Edit2 className="h-4 w-4" />}
+                  size="sm"
+                  onClick={() => openEdit(u)}
+                />
+                <IconButton
+                  title="Reset Password"
+                  icon={<KeyRound className="h-4 w-4" />}
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openResetPassword(u)}
+                />
+                <IconButton
+                  title="Reset 5-Digit PIN"
+                  icon={<ShieldCheck className="h-4 w-4 text-emerald-600" />}
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openResetPin(u)}
                 />
               </div>
+            ),
+          },
+        ]}
+      />
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Username *</label>
-                  <input
-                    type="text"
-                    required
-                    value={addForm.username}
-                    onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. cashier2"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Password *</label>
-                  <input
-                    type="password"
-                    required
-                    value={addForm.password}
-                    onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">System Role</label>
-                  <select
-                    value={addForm.role}
-                    onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value="sales_executive">Sales Executive (POS)</option>
-                    <option value="manager">Manager (Admin)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">POS Auth PIN (4-Digits)</label>
-                  <input
-                    type="password"
-                    maxLength={6}
-                    value={addForm.pinCode}
-                    onChange={(e) => setAddForm({ ...addForm, pinCode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="1234"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-500 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Creating...' : 'Create Account'}
-                </button>
-              </div>
-            </form>
+      {/* Add User Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>Create Staff Account</span>
           </div>
-        </div>
-      )}
+        }
+        subtitle="Provision login credentials and quick POS unlocking PIN"
+        maxWidth="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" isLoading={loading} onClick={handleCreateUser}>
+              Create Account
+            </Button>
+          </>
+        }
+      >
+        {errorMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <Input
+            label="Full Name *"
+            required
+            value={addForm.fullName}
+            onChange={(e) => setAddForm({ ...addForm, fullName: e.target.value })}
+            placeholder="e.g. Tariq Hossen"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Username (Login ID) *"
+              required
+              value={addForm.username}
+              onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
+              placeholder="e.g. tariq"
+            />
+
+            <Input
+              label="Account Password *"
+              type="password"
+              required
+              value={addForm.password}
+              onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+              placeholder="••••••••"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="System Role *"
+              value={addForm.role}
+              onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
+            >
+              <option value="sales_executive">Sales Executive (POS Cashier)</option>
+              <option value="manager">Store Manager (Full Privileges)</option>
+            </Select>
+
+            <Input
+              label="5-Digit POS Unlock PIN *"
+              type="password"
+              maxLength={10}
+              required
+              value={addForm.pinCode}
+              onChange={(e) => setAddForm({ ...addForm, pinCode: e.target.value })}
+              className="font-mono text-center tracking-widest font-bold"
+              placeholder="12345"
+            />
+          </div>
+        </form>
+      </Modal>
 
       {/* Edit User Modal */}
       {isEditModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold">Edit User: {selectedUser.username}</h2>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title={
+            <div className="flex items-center gap-2">
+              <Edit2 className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+              <span>Edit Staff Member: {selectedUser.username}</span>
+            </div>
+          }
+          subtitle="Update role assignment and POS PIN code"
+          maxWidth="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsEditModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" isLoading={loading} onClick={handleUpdateUser}>
+                Save Changes
+              </Button>
+            </>
+          }
+        >
+          {errorMsg && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleUpdateUser} className="space-y-4">
+            <Input
+              label="Full Name *"
+              required
+              value={editForm.fullName}
+              onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="System Role *"
+                value={editForm.role}
+                onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+              >
+                <option value="sales_executive">Sales Executive (POS Cashier)</option>
+                <option value="manager">Store Manager (Full Privileges)</option>
+              </Select>
+
+              <Input
+                label="5-Digit POS Unlock PIN *"
+                type="password"
+                maxLength={10}
+                required
+                value={editForm.pinCode}
+                onChange={(e) => setEditForm({ ...editForm, pinCode: e.target.value })}
+                className="font-mono text-center tracking-widest font-bold"
+              />
             </div>
 
-            <form onSubmit={handleUpdateUser} className="space-y-3 text-xs">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.fullName}
-                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Role</label>
-                  <select
-                    value={editForm.role}
-                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value="sales_executive">Sales Executive</option>
-                    <option value="manager">Manager</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">POS PIN Code</label>
-                  <input
-                    type="password"
-                    maxLength={6}
-                    value={editForm.pinCode}
-                    onChange={(e) => setEditForm({ ...editForm, pinCode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Account Status</label>
-                <select
-                  value={editForm.isActive ? 'active' : 'disabled'}
-                  onChange={(e) => setEditForm({ ...editForm, isActive: e.target.value === 'active' })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                >
-                  <option value="active">Active (Permitted to log in)</option>
-                  <option value="disabled">Disabled (Revoked access)</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-md"
-                >
-                  {loading ? 'Updating...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer pt-2">
+              <input
+                type="checkbox"
+                checked={editForm.isActive}
+                onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-slate-900 dark:text-white">Account is Active & Allowed to Sign In</span>
+            </label>
+          </form>
+        </Modal>
       )}
 
       {/* Reset Password Modal */}
       {isPasswordModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <h2 className="text-base font-bold mb-2">Reset Password for {selectedUser.username}</h2>
-            <form onSubmit={handleResetPassword} className="space-y-3 text-xs">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">New Password *</label>
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  placeholder="Enter new password..."
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <Modal
+          isOpen={isPasswordModalOpen}
+          onClose={() => setIsPasswordModalOpen(false)}
+          title={
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-amber-500" />
+              <span>Reset Password for {selectedUser.username}</span>
+            </div>
+          }
+          subtitle="Set a new login password for this staff member"
+          maxWidth="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsPasswordModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" isLoading={loading} onClick={handleResetPassword}>
+                Update Password
+              </Button>
+            </>
+          }
+        >
+          {errorMsg && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <Input
+              label="New Password *"
+              type="password"
+              required
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          </form>
+        </Modal>
+      )}
+
+      {/* Reset 5-Digit PIN Modal */}
+      {isPinModalOpen && selectedUser && (
+        <Modal
+          isOpen={isPinModalOpen}
+          onClose={() => setIsPinModalOpen(false)}
+          title={
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              <span>Reset 5-Digit PIN for {selectedUser.full_name}</span>
+            </div>
+          }
+          subtitle={`Username: @${selectedUser.username} • Role: ${selectedUser.role.toUpperCase()}`}
+          maxWidth="sm"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsPinModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" isLoading={loading} onClick={handleResetPin}>
+                Update PIN
+              </Button>
+            </>
+          }
+        >
+          {errorMsg && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleResetPin} className="space-y-4">
+            <Input
+              label="New 5-Digit PIN *"
+              type="text"
+              required
+              maxLength={10}
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value)}
+              placeholder="12345"
+              className="font-mono text-xl font-bold tracking-widest text-center"
+            />
+
+            <div className="flex gap-2">
+              {['12345', '56789', '00000', '99999'].map((preset) => (
                 <button
+                  key={preset}
                   type="button"
-                  onClick={() => setIsPasswordModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-slate-600 dark:text-slate-300"
+                  onClick={() => setNewPin(preset)}
+                  className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 font-mono text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-emerald-500 transition"
                 >
-                  Cancel
+                  {preset}
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-md"
-                >
-                  {loading ? 'Updating...' : 'Reset Password'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+              ))}
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

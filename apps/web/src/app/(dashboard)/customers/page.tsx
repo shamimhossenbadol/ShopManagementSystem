@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input, Textarea } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { DataTable } from '@/components/ui/DataTable';
+import { MetricCard } from '@/components/ui/MetricCard';
 import {
   Users,
   DollarSign,
@@ -13,6 +20,12 @@ import {
   UserPlus,
   Edit2,
   X,
+  FileText,
+  Phone,
+  Mail,
+  ShieldCheck,
+  ArrowDownRight,
+  ArrowUpRight,
 } from 'lucide-react';
 
 export default function CustomersPage() {
@@ -41,11 +54,14 @@ export default function CustomersPage() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const loadCustomers = async () => {
+    setTableLoading(true);
     const res = await apiRequest('/ledgers/customers');
     if (res.success && res.data) setCustomers(res.data);
+    setTableLoading(false);
   };
 
   useEffect(() => {
@@ -72,10 +88,18 @@ export default function CustomersPage() {
     setLoading(false);
     if (res.success) {
       setIsAddModalOpen(false);
-      setCustForm({ name: '', phone: '', email: '', vatNumber: '', address: '', creditLimit: 1000, openingBalance: 0 });
+      setCustForm({
+        name: '',
+        phone: '',
+        email: '',
+        vatNumber: '',
+        address: '',
+        creditLimit: 1000,
+        openingBalance: 0,
+      });
       loadCustomers();
     } else {
-      setErrorMsg(res.message || 'Failed to create customer.');
+      setErrorMsg(res.message || 'Failed to create customer profile.');
     }
   };
 
@@ -101,7 +125,7 @@ export default function CustomersPage() {
       loadCustomers();
       openStatement({ ...selectedCust, current_due: res.data.newBalance });
     } else {
-      setErrorMsg(res.message || 'Payment recording failed.');
+      setErrorMsg(res.message || 'Payment collection recording failed.');
     }
   };
 
@@ -112,330 +136,368 @@ export default function CustomersPage() {
   );
 
   const totalDueReceivables = customers.reduce((sum, c) => sum + Number(c.current_due || 0), 0);
+  const pendingDueCount = customers.filter((c) => Number(c.current_due) > 0).length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Customer Directory & Credit (Due)</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Track accounts receivable, credit limits, statements, and collect payments.
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            Customer Directory & Credit (Due)
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Track accounts receivable, credit accounts, credit limits, statements, and collect payments.
           </p>
         </div>
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => {
             setErrorMsg(null);
             setIsAddModalOpen(true);
           }}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+          leftIcon={<UserPlus className="h-4 w-4" />}
         >
-          <UserPlus className="h-4 w-4" />
           Add New Customer
-        </button>
+        </Button>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase text-slate-400">Total Outstanding Receivables (Customer Due)</div>
-          <div className="mt-2 font-mono text-2xl font-black text-amber-600 dark:text-amber-400">{formatCurrency(totalDueReceivables)}</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{customers.filter((c) => Number(c.current_due) > 0).length} Customers with pending balance</div>
-        </div>
+        <MetricCard
+          label="Total Accounts Receivable (Customer Due)"
+          value={formatCurrency(totalDueReceivables)}
+          subValue={`${pendingDueCount} Customers with Pending Balances`}
+          icon={<DollarSign className="h-5 w-5" />}
+          variant="warning"
+        />
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase text-slate-400">Registered Profiles</div>
-          <div className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">{customers.length} Customers</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Includes Walk-in counter accounts</div>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search customers by name or phone number..."
-          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2.5 pl-10 pr-4 text-xs text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
+        <MetricCard
+          label="Registered Customer Profiles"
+          value={`${customers.length} Profiles`}
+          subValue="Active CRM Registry"
+          icon={<Users className="h-5 w-5" />}
+          variant="primary"
         />
       </div>
 
+      {/* Main Grid: Customer Table + Live Statement Drawer */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Customer Directory Table */}
-        <div className="lg:col-span-2 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-[10px] font-bold uppercase text-slate-400">
-                <tr>
-                  <th className="py-3 px-4">Customer Name</th>
-                  <th className="py-3 px-4">Phone</th>
-                  <th className="py-3 px-4 text-right">Credit Limit</th>
-                  <th className="py-3 px-4 text-right">Outstanding Due</th>
-                  <th className="py-3 px-4 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-400">No customers found.</td>
-                  </tr>
-                ) : (
-                  filtered.map((c) => {
-                    const due = Number(c.current_due || 0);
-                    return (
-                      <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                        <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{c.name}</td>
-                        <td className="py-3.5 px-4 font-mono text-slate-500 dark:text-slate-400">{c.phone}</td>
-                        <td className="py-3.5 px-4 text-right font-mono text-slate-500 dark:text-slate-400">{formatCurrency(c.credit_limit || 0)}</td>
-                        <td className={`py-3.5 px-4 text-right font-mono font-bold ${due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
-                          {formatCurrency(due)}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <button
-                            onClick={() => openStatement(c)}
-                            className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition"
-                          >
-                            Statement / Pay
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Statement & Action Panel */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-              {selectedCust ? selectedCust.name : 'Select Customer'}
-            </h2>
-            {selectedCust && Number(selectedCust.current_due) > 0 && (
-              <button
-                onClick={() => {
-                  setErrorMsg(null);
-                  setIsPayModalOpen(true);
-                }}
-                className="flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-md hover:bg-emerald-500 transition"
-              >
-                <DollarSign className="h-3.5 w-3.5" />
-                Collect Due
-              </button>
-            )}
+        {/* Customers List (2 Cols) */}
+        <div className="lg:col-span-2 space-y-3">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customers by name or phone..."
+              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
+            />
           </div>
 
-          {!selectedCust ? (
-            <div className="py-12 text-center text-xs text-slate-400">Click "Statement / Pay" on any customer to inspect credit history.</div>
-          ) : (
-            <div className="space-y-2.5 max-h-[450px] overflow-y-auto pr-1">
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 p-3 text-center border border-amber-100 dark:border-amber-900/40 mb-3">
-                <div className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400">Total Outstanding Due</div>
-                <div className="font-mono text-2xl font-black text-amber-900 dark:text-amber-200">{formatCurrency(selectedCust.current_due || 0)}</div>
-                <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Limit: {formatCurrency(selectedCust.credit_limit || 0)}</div>
-              </div>
-
-              {statement.length === 0 ? (
-                <p className="text-xs text-slate-400 py-6 text-center">No ledger entries recorded.</p>
-              ) : (
-                statement.map((s) => (
-                  <div key={s.id} className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-2.5 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-[10px] uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                        {s.type}
-                      </span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        {Number(s.debit) > 0 ? `+${formatCurrency(s.debit)}` : `-${formatCurrency(s.credit)}`}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-1 font-medium">{s.notes}</div>
-                    <div className="text-[9px] text-slate-400 mt-1 flex justify-between">
-                      <span>Balance: {formatCurrency(s.balance)}</span>
-                      <span>{new Date(s.created_at).toLocaleDateString()}</span>
+          <DataTable
+            isLoading={tableLoading}
+            data={filtered}
+            keyExtractor={(c) => c.id}
+            emptyMessage="No customers found in CRM directory."
+            columns={[
+              {
+                header: 'Customer Name',
+                accessor: (c) => (
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white">{c.name}</div>
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      {c.phone ? `Phone: ${c.phone}` : 'Walk-in'} {c.vat_number ? `• VAT: ${c.vat_number}` : ''}
                     </div>
                   </div>
-                ))
+                ),
+              },
+              {
+                header: 'Credit Limit',
+                align: 'right',
+                accessor: (c) => (
+                  <span className="font-mono text-slate-500">
+                    {formatCurrency(c.credit_limit || 0)}
+                  </span>
+                ),
+              },
+              {
+                header: 'Outstanding Due',
+                align: 'right',
+                accessor: (c) => {
+                  const due = Number(c.current_due || 0);
+                  return (
+                    <span
+                      className={`font-mono font-bold ${
+                        due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'
+                      }`}
+                    >
+                      {formatCurrency(due)}
+                    </span>
+                  );
+                },
+              },
+              {
+                header: 'Action',
+                align: 'right',
+                accessor: (c) => (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openStatement(c)}
+                    leftIcon={<FileText className="h-3.5 w-3.5" />}
+                  >
+                    Statement / Pay
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </div>
+
+        {/* Selected Customer Statement Panel (1 Col) */}
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">
+                  {selectedCust ? selectedCust.name : 'Customer Credit Statement'}
+                </h2>
+                {selectedCust && (
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {selectedCust.phone || 'Walk-in'}
+                  </p>
+                )}
+              </div>
+              {selectedCust && Number(selectedCust.current_due) > 0 && (
+                <Button
+                  size="sm"
+                  variant="success"
+                  onClick={() => {
+                    setErrorMsg(null);
+                    setIsPayModalOpen(true);
+                  }}
+                  leftIcon={<DollarSign className="h-3.5 w-3.5" />}
+                >
+                  Collect Due
+                </Button>
               )}
             </div>
-          )}
+
+            {!selectedCust ? (
+              <div className="py-16 text-center text-xs text-slate-400 font-medium">
+                Click "Statement / Pay" on any customer to inspect credit statement & collect payments.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Balance Callout */}
+                <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/40 p-4 text-center border border-amber-200 dark:border-amber-900/40">
+                  <div className="text-[10px] uppercase font-bold text-amber-800 dark:text-amber-300">
+                    Total Outstanding Due
+                  </div>
+                  <div className="mt-1 font-mono text-2xl font-black text-amber-950 dark:text-amber-100">
+                    {formatCurrency(selectedCust.current_due || 0)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    Credit Limit: {formatCurrency(selectedCust.credit_limit || 0)}
+                  </div>
+                </div>
+
+                {/* Ledger Transactions */}
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                  {statement.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-8 text-center font-medium">
+                      No statement transactions logged for this customer.
+                    </p>
+                  ) : (
+                    statement.map((st) => (
+                      <div
+                        key={st.id}
+                        className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 p-3 text-xs space-y-1"
+                      >
+                        <div className="flex justify-between items-center">
+                          <Badge variant={st.type === 'invoice' ? 'warning' : 'success'}>
+                            {st.type?.toUpperCase()}
+                          </Badge>
+                          <span
+                            className={`font-mono font-bold ${
+                              st.type === 'invoice'
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            {st.type === 'invoice' ? `+${formatCurrency(st.debit)}` : `-${formatCurrency(st.credit)}`}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                          {st.notes || 'Customer statement entry'}
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-100 dark:border-slate-800">
+                          <span>Balance: {formatCurrency(st.balance)}</span>
+                          <span>{new Date(st.created_at).toLocaleDateString('en-GB')}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Add Customer Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-blue-500" />
-                Register New Customer
-              </h2>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>Register New Customer CRM Profile</span>
+          </div>
+        }
+        subtitle="Create customer account with credit limits and B2B VAT registration"
+        maxWidth="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" isLoading={loading} onClick={handleCreateCustomer}>
+              Save Customer
+            </Button>
+          </>
+        }
+      >
+        {errorMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleCreateCustomer} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Customer Full Name *"
+              required
+              value={custForm.name}
+              onChange={(e) => setCustForm({ ...custForm, name: e.target.value })}
+              placeholder="e.g. Tariq Al-Otaibi"
+            />
+            <Input
+              label="Contact Phone *"
+              required
+              value={custForm.phone}
+              onChange={(e) => setCustForm({ ...custForm, phone: e.target.value })}
+              placeholder="e.g. +966 50 123 4567"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="VAT Identification Number (B2B Invoices)"
+              value={custForm.vatNumber}
+              onChange={(e) => setCustForm({ ...custForm, vatNumber: e.target.value })}
+              placeholder="300998877600003"
+            />
+            <Input
+              label="Credit Limit (SAR)"
+              type="number"
+              step="0.01"
+              value={custForm.creditLimit}
+              onChange={(e) =>
+                setCustForm({ ...custForm, creditLimit: parseFloat(e.target.value) || 0 })
+              }
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Email Address"
+              type="email"
+              value={custForm.email}
+              onChange={(e) => setCustForm({ ...custForm, email: e.target.value })}
+              placeholder="customer@email.com"
+            />
+            <Input
+              label="Opening Due Balance (SAR)"
+              type="number"
+              step="0.01"
+              value={custForm.openingBalance}
+              onChange={(e) =>
+                setCustForm({ ...custForm, openingBalance: parseFloat(e.target.value) || 0 })
+              }
+            />
+          </div>
+
+          <Textarea
+            label="Physical Billing Address"
+            value={custForm.address}
+            onChange={(e) => setCustForm({ ...custForm, address: e.target.value })}
+            placeholder="Olaya Street, Riyadh, Saudi Arabia"
+            rows={2}
+          />
+        </form>
+      </Modal>
+
+      {/* Collect Due Payment Modal */}
+      {isPayModalOpen && selectedCust && (
+        <Modal
+          isOpen={isPayModalOpen}
+          onClose={() => setIsPayModalOpen(false)}
+          title={
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <span>Collect Customer Outstanding Due Payment</span>
             </div>
+          }
+          subtitle={`Customer: ${selectedCust.name} (Current Due: ${formatCurrency(selectedCust.current_due)})`}
+          maxWidth="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsPayModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="success" isLoading={loading} onClick={handlePayDue}>
+                Confirm Collection ({formatCurrency(payAmount)})
+              </Button>
+            </>
+          }
+        >
+          <form onSubmit={handlePayDue} className="space-y-4">
+            <Input
+              label="Collected Amount (SAR) *"
+              type="number"
+              step="0.01"
+              required
+              value={payAmount}
+              onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
+              className="font-mono text-xl font-bold"
+            />
 
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
+            <Select
+              label="Payment Inflow Method *"
+              value={payMethodId}
+              onChange={(e) => setPayMethodId(parseInt(e.target.value))}
+            >
+              <option value={1}>Cash Drawer (Register Inflow)</option>
+              <option value={2}>Mada / Visa Card</option>
+              <option value={3}>Bank Direct Transfer</option>
+            </Select>
 
-            <form onSubmit={handleCreateCustomer} className="space-y-3 text-xs">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Customer Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={custForm.name}
-                  onChange={(e) => setCustForm({ ...custForm, name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Tariq Al-Ghamdi"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Phone Number *</label>
-                  <input
-                    type="text"
-                    required
-                    value={custForm.phone}
-                    onChange={(e) => setCustForm({ ...custForm, phone: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                    placeholder="e.g. +966 50 123 4567"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Credit Limit ({settings.currency_symbol || 'SAR'})</label>
-                  <input
-                    type="number"
-                    value={custForm.creditLimit}
-                    onChange={(e) => setCustForm({ ...custForm, creditLimit: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Physical Address / City</label>
-                <input
-                  type="text"
-                  value={custForm.address}
-                  onChange={(e) => setCustForm({ ...custForm, address: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Olaya District, Riyadh"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Opening Balance</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={custForm.openingBalance}
-                  onChange={(e) => setCustForm({ ...custForm, openingBalance: parseFloat(e.target.value) || 0 })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-500 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Saving...' : 'Register Customer'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Collect Due Modal */}
-      {isPayModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <h2 className="text-base font-bold mb-1">Collect Customer Due Payment</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{selectedCust?.name}</p>
-
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handlePayDue} className="space-y-3 text-xs">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment Amount ({settings.currency_symbol || 'SAR'}) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono text-base font-bold text-emerald-600 dark:text-emerald-400 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment Destination</label>
-                <select
-                  value={payMethodId}
-                  onChange={(e) => setPayMethodId(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                >
-                  <option value={1}>Cash Drawer (Till Inflow)</option>
-                  <option value={2}>Bank Transfer / Mada</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Reference Notes</label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Paid in cash at front counter"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsPayModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Recording...' : 'Confirm Due Collection'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <Textarea
+              label="Payment Notes / Receipt Ref"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Received partial cash against due balance"
+              rows={2}
+            />
+          </form>
+        </Modal>
       )}
     </div>
   );

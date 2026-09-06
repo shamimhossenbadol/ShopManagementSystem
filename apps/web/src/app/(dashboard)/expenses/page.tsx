@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Input, Textarea } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { DataTable } from '@/components/ui/DataTable';
+import { MetricCard } from '@/components/ui/MetricCard';
 import {
   ReceiptText,
   Plus,
@@ -11,12 +18,17 @@ import {
   Calendar,
   FolderPlus,
   X,
+  DollarSign,
+  TrendingDown,
+  Tag,
+  Search,
 } from 'lucide-react';
 
 export default function ExpensesPage() {
   const { formatCurrency, settings } = useSettings();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -24,6 +36,7 @@ export default function ExpensesPage() {
   const [newCatName, setNewCatName] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -36,6 +49,7 @@ export default function ExpensesPage() {
   });
 
   const loadData = async () => {
+    setTableLoading(true);
     const res = await apiRequest('/expenses');
     if (res.success && res.data) setExpenses(res.data);
 
@@ -44,6 +58,7 @@ export default function ExpensesPage() {
       setCategories(catRes.data);
       if (catRes.data.length > 0) setForm((prev) => ({ ...prev, categoryId: catRes.data[0].id }));
     }
+    setTableLoading(false);
   };
 
   useEffect(() => {
@@ -80,7 +95,7 @@ export default function ExpensesPage() {
       });
       loadData();
     } else {
-      setErrorMsg(res.message || 'Failed to record expense.');
+      setErrorMsg(res.message || 'Failed to record expense voucher.');
     }
   };
 
@@ -98,251 +113,265 @@ export default function ExpensesPage() {
   };
 
   const totalSpent = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const cashSpent = expenses
+    .filter((e) => e.payment_method?.toLowerCase().includes('cash'))
+    .reduce((s, e) => s + Number(e.amount), 0);
+
+  const filteredExpenses = expenses.filter((e) => {
+    return (
+      e.reference_no?.toLowerCase().includes(search.toLowerCase()) ||
+      e.category_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (e.note && e.note.toLowerCase().includes(search.toLowerCase()))
+    );
+  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Operating Expenses Tracker</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Record overhead, rent, utility bills, packaging, and staff costs.
+          <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            Operating Expenses Tracker
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Record shop overhead, store rent, electricity bills, internet, petty cash, and staff costs.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="secondary"
+            size="md"
             onClick={() => setIsCatModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm"
+            leftIcon={<FolderPlus className="h-4 w-4" />}
           >
-            <FolderPlus className="h-4 w-4 text-slate-500" />
             Add Category
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
             onClick={() => {
               setErrorMsg(null);
               setIsAddModalOpen(true);
             }}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition"
+            leftIcon={<Plus className="h-4 w-4" />}
           >
-            <Plus className="h-4 w-4" />
-            Record New Expense
-          </button>
+            Record Expense Voucher
+          </Button>
         </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase text-slate-400">Total Operating Expenses Logged</div>
-          <div className="mt-2 font-mono text-2xl font-black text-rose-600 dark:text-rose-400">{formatCurrency(totalSpent)}</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{expenses.length} Total Expense Vouchers</div>
-        </div>
+        <MetricCard
+          label="Total Operating Expenses Logged"
+          value={formatCurrency(totalSpent)}
+          subValue={`${expenses.length} Expense Vouchers Recorded`}
+          icon={<TrendingDown className="h-5 w-5" />}
+          variant="danger"
+        />
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase text-slate-400">Active Expense Categories</div>
-          <div className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">{categories.length} Categories</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Rent, Electricity, Telecom, Supplies</div>
-        </div>
+        <MetricCard
+          label="Cash Drawer Till Deductions"
+          value={formatCurrency(cashSpent)}
+          subValue="Paid Directly from Shift Float"
+          icon={<DollarSign className="h-5 w-5" />}
+          variant="warning"
+        />
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-          <div className="text-xs font-bold uppercase text-slate-400">Cash Drawer Deduction Impact</div>
-          <div className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {formatCurrency(expenses.filter((e) => e.payment_method?.toLowerCase().includes('cash')).reduce((s, e) => s + Number(e.amount), 0))}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Paid directly from register till</div>
+        <MetricCard
+          label="Expense Categories"
+          value={`${categories.length} Categories`}
+          subValue="Rent, Utility Bills, Petty Cash, Supplies"
+          icon={<Tag className="h-5 w-5" />}
+          variant="default"
+        />
+      </div>
+
+      {/* Search Toolbar */}
+      <div className="flex items-center rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="relative flex-1 max-w-md">
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by expense voucher #, category, or note..."
+            className="text-xs"
+          />
         </div>
       </div>
 
-      {/* Expenses Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-[10px] font-bold uppercase text-slate-400">
-              <tr>
-                <th className="py-3 px-4">Reference / Date</th>
-                <th className="py-3 px-4">Category</th>
-                <th className="py-3 px-4">Payment Method</th>
-                <th className="py-3 px-4">Description</th>
-                <th className="py-3 px-4">Created By</th>
-                <th className="py-3 px-4 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {expenses.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400">No operational expenses logged yet.</td>
-                </tr>
-              ) : (
-                expenses.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                    <td className="py-3.5 px-4 font-mono">
-                      <div className="font-bold text-slate-900 dark:text-white">{e.reference_no}</div>
-                      <div className="text-[10px] text-slate-400">{e.date}</div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                        {e.category_name}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-400">{e.payment_method}</td>
-                    <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300 font-medium">{e.note || 'Operational expense'}</td>
-                    <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400">{e.created_by}</td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600 dark:text-rose-400">{formatCurrency(e.amount)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Expenses Master DataTable */}
+      <DataTable
+        isLoading={tableLoading}
+        data={filteredExpenses}
+        keyExtractor={(e) => e.id}
+        emptyMessage="No operational expense vouchers logged yet."
+        columns={[
+          {
+            header: 'Voucher Ref / Date',
+            accessor: (e) => (
+              <div>
+                <div className="font-mono font-bold text-slate-900 dark:text-white">
+                  {e.reference_no}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  {new Date(e.date).toLocaleDateString('en-GB')}
+                </div>
+              </div>
+            ),
+          },
+          {
+            header: 'Category',
+            accessor: (e) => (
+              <Badge variant="primary">{e.category_name}</Badge>
+            ),
+          },
+          {
+            header: 'Payment Method',
+            accessor: (e) => (
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {e.payment_method}
+              </span>
+            ),
+          },
+          {
+            header: 'Description / Note',
+            accessor: (e) => (
+              <span className="text-slate-600 dark:text-slate-300 font-medium">
+                {e.note || 'Operational shop expense'}
+              </span>
+            ),
+          },
+          {
+            header: 'Logged By',
+            accessor: (e) => (
+              <span className="text-slate-500 font-mono text-[11px]">{e.created_by}</span>
+            ),
+          },
+          {
+            header: 'Amount (SAR)',
+            align: 'right',
+            accessor: (e) => (
+              <span className="font-mono font-bold text-red-600 dark:text-red-400">
+                {formatCurrency(e.amount)}
+              </span>
+            ),
+          },
+        ]}
+      />
 
       {/* Record Expense Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-base font-bold flex items-center gap-2">
-                <ReceiptText className="h-4 w-4 text-blue-500" />
-                Record Operational Expense
-              </h2>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 p-2.5 text-xs text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateExpense} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Category *</label>
-                  <select
-                    value={form.categoryId}
-                    onChange={(e) => setForm({ ...form, categoryId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={form.date}
-                    onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Expense Amount ({settings.currency_symbol || 'SAR'}) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 font-mono text-base font-bold text-rose-600 dark:text-rose-400 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment Method</label>
-                  <select
-                    value={form.paymentMethodId}
-                    onChange={(e) => setForm({ ...form, paymentMethodId: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none font-semibold"
-                  >
-                    <option value={1}>Cash Drawer (Till Outflow)</option>
-                    <option value={2}>Bank Transfer / Mada</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Description / Reason</label>
-                <textarea
-                  rows={2}
-                  value={form.note}
-                  onChange={(e) => setForm({ ...form, note: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Electricity bill for shop (Mewar)"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-500 disabled:opacity-50"
-                >
-                  <Check className="h-4 w-4" />
-                  {loading ? 'Recording...' : 'Record Expense'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <ReceiptText className="h-5 w-5 text-blue-700 dark:text-sky-400" />
+            <span>Record Shop Expense Voucher</span>
           </div>
-        </div>
-      )}
+        }
+        subtitle="Deducts from store profit margin and records register outflow if cash"
+        maxWidth="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" isLoading={loading} onClick={handleCreateExpense}>
+              Save Expense Voucher
+            </Button>
+          </>
+        }
+      >
+        {errorMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleCreateExpense} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Expense Category *"
+              value={form.categoryId}
+              onChange={(e) => setForm({ ...form, categoryId: Number(e.target.value) })}
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+
+            <Input
+              label="Expense Date *"
+              type="date"
+              required
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Total Expense Amount (SAR) *"
+              type="number"
+              step="0.01"
+              required
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
+              className="font-mono text-lg font-bold"
+            />
+
+            <Select
+              label="Payment Source *"
+              value={form.paymentMethodId}
+              onChange={(e) => setForm({ ...form, paymentMethodId: Number(e.target.value) })}
+            >
+              <option value={1}>Cash Till (Register Float)</option>
+              <option value={2}>Bank Account / Wire</option>
+              <option value={3}>Company Card</option>
+            </Select>
+          </div>
+
+          <Textarea
+            label="Expense Purpose / Voucher Notes *"
+            required
+            value={form.note}
+            onChange={(e) => setForm({ ...form, note: e.target.value })}
+            placeholder="e.g. Monthly internet subscription (STC Fiber), Store cleaning supplies"
+            rows={2}
+          />
+        </form>
+      </Modal>
 
       {/* Add Category Modal */}
-      {isCatModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl text-slate-900 dark:text-white">
-            <h2 className="text-base font-bold mb-3 flex items-center gap-2">
-              <FolderPlus className="h-4 w-4 text-blue-500" />
-              Add Expense Category
-            </h2>
-            <form onSubmit={handleCreateCategory} className="space-y-3 text-xs">
-              <div>
-                <label className="block mb-1 font-bold text-slate-700 dark:text-slate-300">Category Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5 focus:border-blue-500 focus:outline-none"
-                  placeholder="e.g. Store Maintenance"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsCatModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold"
-                >
-                  Create Category
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={isCatModalOpen}
+        onClose={() => setIsCatModalOpen(false)}
+        title="Add Expense Category"
+        subtitle="Create a new expense grouping category"
+        maxWidth="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsCatModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleCreateCategory}>
+              Save Category
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Category Name *"
+          required
+          value={newCatName}
+          onChange={(e) => setNewCatName(e.target.value)}
+          placeholder="e.g. Electricity, Maintenance, Rent"
+        />
+      </Modal>
     </div>
   );
 }

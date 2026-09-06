@@ -9,6 +9,20 @@ export async function reportRoutes(fastify: FastifyInstance) {
 
   // GET /api/v1/reports/dashboard - Master KPI Summary
   fastify.get('/dashboard', async (request, reply) => {
+    // Determine business day start based on shop_closing_hour
+    const settingRes = await query(
+      `SELECT setting_value FROM settings WHERE setting_key = 'shop_closing_hour'`
+    );
+    const closingHourStr = settingRes.rows[0]?.setting_value || '00:00';
+    const [closeHour, closeMin] = closingHourStr.split(':').map((v: string) => parseInt(v, 10) || 0);
+
+    const now = new Date();
+    const baseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), closeHour, closeMin, 0, 0));
+    if (now.getUTCHours() < closeHour || (now.getUTCHours() === closeHour && now.getUTCMinutes() < closeMin)) {
+      baseDate.setUTCDate(baseDate.getUTCDate() - 1);
+    }
+    const businessDayStart = baseDate.toISOString();
+
     // 1. Today's Sales & Financial Metrics
     const todayRes = await query(`
       SELECT 
@@ -19,22 +33,22 @@ export async function reportRoutes(fastify: FastifyInstance) {
         COALESCE(SUM(paid_amount), 0) as cash_collected,
         COALESCE(SUM(due_amount), 0) as credit_sales
       FROM sales
-      WHERE created_at >= CURRENT_DATE AND sale_status = 'completed'
-    `);
+      WHERE created_at >= $1 AND sale_status = 'completed'
+    `, [businessDayStart]);
 
     // Today's COGS (Cost of goods sold from sale_items)
     const cogsRes = await query(`
       SELECT COALESCE(SUM(si.unit_cost * si.quantity), 0) as cogs
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
-      WHERE s.created_at >= CURRENT_DATE AND s.sale_status = 'completed'
-    `);
+      WHERE s.created_at >= $1 AND s.sale_status = 'completed'
+    `, [businessDayStart]);
 
     // Today's Operating Expenses
     const expRes = await query(`
       SELECT COALESCE(SUM(amount), 0) as today_expenses
-      FROM expenses WHERE date = CURRENT_DATE
-    `);
+      FROM expenses WHERE created_at >= $1
+    `, [businessDayStart]);
 
     const grossSales = Number(todayRes.rows[0].gross_sales);
     const cogs = Number(cogsRes.rows[0].cogs);

@@ -18,9 +18,11 @@ CREATE TABLE IF NOT EXISTS product_batches (
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     batch_number VARCHAR(100) NOT NULL,
     expiry_date DATE NOT NULL,
-    quantity_received NUMERIC(15, 3) NOT NULL CHECK (quantity_received >= 0),
-    quantity_remaining NUMERIC(15, 3) NOT NULL CHECK (quantity_remaining >= 0),
-    purchase_price NUMERIC(15, 4) NOT NULL CHECK (purchase_price >= 0),
+    initial_quantity NUMERIC(15, 3) NOT NULL CHECK (initial_quantity >= 0),
+    current_quantity NUMERIC(15, 3) NOT NULL CHECK (current_quantity >= 0),
+    cost_price NUMERIC(15, 4) NOT NULL CHECK (cost_price >= 0),
+    purchase_item_id INT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

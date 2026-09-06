@@ -11,11 +11,7 @@ export default function Home() {
     async function checkAuth() {
       const res = await apiRequest('/auth/me');
       if (res.success && res.data?.user) {
-        if (res.data.user.role === 'manager') {
-          router.replace('/dashboard');
-        } else {
-          router.replace('/pos');
-        }
+        router.replace('/pos');
       } else {
         router.replace('/login');
       }

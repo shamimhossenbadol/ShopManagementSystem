@@ -81,7 +81,8 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.is_weighable,
         p.is_quick_plu,
         p.is_active,
-        p.current_stock
+        p.current_stock,
+        p.image_url
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN brands b ON p.brand_id = b.id
@@ -106,7 +107,7 @@ export async function productRoutes(fastify: FastifyInstance) {
       sql += ` AND p.is_weighable = TRUE`;
     }
 
-    sql += ` ORDER BY p.name ASC LIMIT 200`;
+    sql += ` ORDER BY p.id ASC LIMIT 200`;
 
     const res = await query(sql, params);
     return reply.send({ success: true, data: res.rows });
@@ -124,6 +125,7 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.tax_rate_id, t.rate as tax_rate, p.tax_type,
         ${isManager ? 'p.cost_price,' : ''}
         p.selling_price, p.current_stock, p.has_expiry, p.is_weighable,
+        p.image_url,
         (SELECT file_path FROM product_images WHERE product_id = p.id AND is_primary = TRUE LIMIT 1) as primary_image
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id

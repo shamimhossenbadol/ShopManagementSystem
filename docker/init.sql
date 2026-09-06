@@ -663,8 +663,8 @@ ON CONFLICT (id) DO NOTHING;
 -- 5. Default Users
 -- Passwords below are hashed with bcrypt for "admin123" and "sales123"
 INSERT INTO users (id, role, username, email, password_hash, full_name, phone, pin_code, is_active) VALUES
-(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '1234', TRUE),
-(2, 'sales_executive', 'cashier1', 'cashier1@alnoorshop.com', '$2b$10$RALPUd90MJ1i2REruAjZF.BIAMOTRc.ROS718ALiptTV7ygDBhp2C', 'Rafiq Ahmed (Sales Executive)', '+966559876543', '5678', TRUE)
+(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE),
+(2, 'sales_executive', 'cashier1', 'cashier1@alnoorshop.com', '$2b$10$RALPUd90MJ1i2REruAjZF.BIAMOTRc.ROS718ALiptTV7ygDBhp2C', 'Rafiq Ahmed (Sales Executive)', '+966559876543', '56789', TRUE)
 ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 -- 6. Default Walk-in Customer
@@ -682,6 +682,7 @@ INSERT INTO settings (setting_key, setting_group, setting_value, description, is
 ('shop_phone', 'shop', '+966 11 456 7890', 'Shop Contact Phone', true),
 ('shop_email', 'shop', 'info@alnoorshop.com', 'Shop Email Address', true),
 ('shop_address', 'shop', 'King Fahd Road, Riyadh, Saudi Arabia', 'Shop Physical Address', true),
+('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true),
 ('shop_logo_path', 'shop', '', 'Shop Brand Logo URL or Path', true),
 ('receipt_header', 'shop', 'Welcome to Al-Noor Supermarket', 'Receipt Top Header Message', true),
 ('receipt_footer', 'shop', 'Thank you for shopping with us! Return within 7 days with invoice.', 'Receipt Bottom Note', true)

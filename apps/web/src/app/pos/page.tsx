@@ -505,157 +505,215 @@ export default function PosTerminalPage() {
     }
   };
 
-  // Print 80mm Cashier Shift X-Report Receipt (High-Legibility)
+  // Direct Print 80mm Cashier Shift X-Report (Standard Professional Thermal Format)
   const handlePrintSessionSummary = () => {
-    const shopName = settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET';
-    const cashierName = formatTwoWords(user?.fullName || user?.full_name || user?.username);
-    const role = user?.actualRole === 'manager' ? 'Manager (Cashier Shift)' : 'Sales Executive';
-    const openedAt = activeShift?.opened_at ? formatDateTime(activeShift.opened_at) : 'N/A';
-    const printTime = formatDateTime(new Date());
-    const openingFloatVal = formatCurrency(sessionSummaryData?.session?.opening_balance || activeShift?.opening_balance || 150);
-    const invoicesVal = `${sessionSummaryData?.invoicesCount ?? 0} Invoices`;
-    const grossSalesVal = formatCurrency(sessionSummaryData?.totalGrossSales ?? 0);
-    const cashSalesVal = formatCurrency(sessionSummaryData?.cashSales ?? 0);
-    const cardSalesVal = formatCurrency(sessionSummaryData?.cardSales ?? 0);
-    const expectedCashVal = formatCurrency(sessionSummaryData?.expectedCashInDrawer || (activeShift?.opening_balance || 150));
-    const countedVal = formatCurrency(Number(closingCountedCash) || 0);
+    const formatReportDate = (date: Date | string | number | undefined | null): string => {
+      if (!date) return 'N/A';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return 'N/A';
+      try {
+        const tz = settings.timezone || 'Asia/Riyadh';
+        const day = d.toLocaleDateString('en-GB', { day: 'numeric', timeZone: tz });
+        const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: tz });
+        const timeParts = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+          .replace(/\u202f/g, ' ')
+          .trim();
+        const time = timeParts.replace(/\s+(AM|PM)/i, '$1');
+        return `${day} ${month}, ${time}`;
+      } catch {
+        const day = d.getDate();
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mon = months[d.getMonth()];
+        let h = d.getHours();
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        const min = d.getMinutes().toString().padStart(2, '0');
+        return `${day} ${mon}, ${h}:${min}${ampm}`;
+      }
+    };
 
-    const printWindow = window.open('', '_blank', 'width=650,height=850,scrollbars=yes,resizable=yes');
-    if (!printWindow) {
-      alert('Please allow popup windows in your browser to print the shift summary.');
-      return;
+    const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+    const shopAddress = settings.shop_address || '';
+    const shopPhone = settings.shop_phone || '';
+    const cashierName = formatTwoWords(user?.fullName || user?.full_name || user?.username);
+    const terminalName = sessionSummaryData?.session?.terminal_name || activeShift?.terminal_name || 'Terminal-01';
+    const openedAt = formatReportDate(activeShift?.opened_at || sessionSummaryData?.session?.opened_at);
+    const printTime = formatReportDate(new Date());
+
+    const openingCash = Number(sessionSummaryData?.session?.opening_balance || activeShift?.opening_balance || 0);
+    const openingCard = Number(sessionSummaryData?.session?.opening_card_balance || activeShift?.opening_card_balance || 0);
+    const invoicesCount = sessionSummaryData?.invoicesCount ?? 0;
+    const grossSales = Number(sessionSummaryData?.totalGrossSales ?? 0);
+    const cashSales = Number(sessionSummaryData?.cashSales ?? 0);
+    const cardSales = Number(sessionSummaryData?.cardSales ?? 0);
+    const cashRefunds = Number(sessionSummaryData?.cashRefunds ?? 0);
+    const cashExpenses = Number(sessionSummaryData?.cashExpenses ?? 0);
+
+    const expectedCash = Number(
+      sessionSummaryData?.expectedCashInDrawer ??
+      (openingCash + cashSales - cashRefunds - cashExpenses)
+    );
+    const expectedCard = Number(
+      sessionSummaryData?.expectedCardInTerminal ??
+      (openingCard + cardSales)
+    );
+
+    const countedCash = closingCountedCash !== '' ? Number(closingCountedCash) : expectedCash;
+    const countedCard = closingCardTotal !== '' ? Number(closingCardTotal) : expectedCard;
+
+    const cashDiff = Math.round((countedCash - expectedCash) * 100) / 100;
+    const cardDiff = Math.round((countedCard - expectedCard) * 100) / 100;
+    const totalDiff = Math.round((Math.abs(cashDiff) + Math.abs(cardDiff)) * 100) / 100;
+
+    const printContent = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Shift_XReport_${terminalName}</title>
+    <style>
+      @page {
+        size: 80mm auto;
+        margin: 0;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #ffffff;
+        color: #000000;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        line-height: 1.35;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .receipt {
+        width: 76mm;
+        margin: 0 auto;
+        padding: 4mm 2mm;
+        box-sizing: border-box;
+      }
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
+      .bold { font-weight: 900; }
+      .title { font-size: 15px; font-weight: 900; letter-spacing: -0.02em; }
+      .divider { border-top: 1px dashed #000000; margin: 6px 0; }
+      .double-divider { border-top: 1.5px solid #000000; border-bottom: 1.5px solid #000000; height: 2px; margin: 7px 0; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: 12px; }
+      .row-bold { display: flex; justify-content: space-between; align-items: baseline; margin: 3px 0; font-weight: 900; font-size: 12.5px; }
+      .section-header { font-weight: 900; font-size: 11px; text-transform: uppercase; margin: 5px 0 2px; text-align: center; letter-spacing: 0.5px; }
+      .signatures { margin-top: 18px; font-size: 11px; }
+      .sig-line { margin-top: 22px; border-top: 1px solid #000; padding-top: 3px; }
+    </style>
+  </head>
+  <body>
+    <div class="receipt">
+      <div class="text-center">
+        <div class="title">${shopName}</div>
+        ${shopAddress ? `<div style="font-size: 10px; margin-top: 2px;">${shopAddress}</div>` : ''}
+        ${shopPhone ? `<div style="font-size: 10px;">Tel: ${shopPhone}</div>` : ''}
+        <div class="divider"></div>
+        <div class="bold" style="font-size: 13px; letter-spacing: 0.5px;">*** CASHIER SHIFT X-REPORT ***</div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="row"><span>Cashier:</span><span class="bold">${cashierName}</span></div>
+      <div class="row"><span>Shift Opened:</span><span>${openedAt}</span></div>
+      <div class="row"><span>Report Printed:</span><span>${printTime}</span></div>
+      <div class="row"><span>Shift Duration:</span><span class="bold">${sessionDuration}</span></div>
+
+      <div class="divider"></div>
+      <div class="section-header">--- OPENING FLOATS ---</div>
+      <div class="row"><span>Opening Cash Float:</span><span class="bold">${formatCurrency(openingCash)}</span></div>
+      <div class="row"><span>Opening Card Float:</span><span class="bold">${formatCurrency(openingCard)}</span></div>
+
+      <div class="divider"></div>
+      <div class="section-header">--- SHIFT SALES ---</div>
+      <div class="row"><span>Invoices Processed:</span><span class="bold">${invoicesCount}</span></div>
+      <div class="row"><span>Cash Received:</span><span class="bold">${formatCurrency(cashSales)}</span></div>
+      <div class="row"><span>Mada / Card Sales:</span><span class="bold">${formatCurrency(cardSales)}</span></div>
+      ${cashRefunds > 0 ? `<div class="row"><span>Cash Refunds:</span><span class="bold">-${formatCurrency(cashRefunds)}</span></div>` : ''}
+      ${cashExpenses > 0 ? `<div class="row"><span>Cash Expenses:</span><span class="bold">-${formatCurrency(cashExpenses)}</span></div>` : ''}
+      <div class="row-bold"><span>TOTAL GROSS SALES:</span><span class="bold">${formatCurrency(grossSales)}</span></div>
+
+      <div class="divider"></div>
+      <div class="section-header">--- SHIFT RECONCILIATION ---</div>
+      <div class="row"><span>Expected Cash in Drawer:</span><span class="bold">${formatCurrency(expectedCash)}</span></div>
+      <div class="row"><span>Counted Cash in Drawer:</span><span class="bold">${formatCurrency(countedCash)}</span></div>
+      <div class="row" style="font-size: 11px;">
+        <span>Cash Difference:</span>
+        <span class="bold">${cashDiff === 0 ? '0.00 SAR (BALANCED)' : `${cashDiff > 0 ? '+' : ''}${cashDiff.toFixed(2)} SAR (${cashDiff > 0 ? 'OVERAGE' : 'SHORTAGE'})`}</span>
+      </div>
+      <div style="margin: 4px 0;"></div>
+      <div class="row"><span>Expected Cash in Card:</span><span class="bold">${formatCurrency(expectedCard)}</span></div>
+      <div class="row"><span>Counted Cash in Card:</span><span class="bold">${formatCurrency(countedCard)}</span></div>
+      <div class="row" style="font-size: 11px;">
+        <span>Card Difference:</span>
+        <span class="bold">${cardDiff === 0 ? '0.00 SAR (BALANCED)' : `${cardDiff > 0 ? '+' : ''}${cardDiff.toFixed(2)} SAR (${cardDiff > 0 ? 'OVERAGE' : 'SHORTAGE'})`}</span>
+      </div>
+
+      ${closingAdjustments.length > 0 ? `
+        <div class="divider"></div>
+        <div class="section-header">--- DECLARED ADJUSTMENTS ---</div>
+        ${closingAdjustments.map((adj) => `
+          <div class="row" style="font-size: 11px;">
+            <span>${adj.description}:</span>
+            <span class="bold">${Number(adj.amount) > 0 ? '+' : ''}${Number(adj.amount).toFixed(2)} SAR</span>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      <div class="double-divider"></div>
+      <div class="text-center bold" style="font-size: 11.5px; margin: 4px 0;">
+        ${totalDiff < 0.01 
+          ? '*** DRAWER & CARD: BALANCED ***' 
+          : closingAdjustments.length > 0 
+          ? '*** DISCREPANCY RECONCILED ***' 
+          : `*** FLOAT DISCREPANCY: ${totalDiff.toFixed(2)} SAR ***`}
+      </div>
+      <div class="double-divider"></div>
+
+      <div class="signatures">
+        <div class="row">
+          <div style="width: 46%;">
+            <div class="sig-line text-center">Cashier Signature</div>
+          </div>
+          <div style="width: 46%;">
+            <div class="sig-line text-center">Manager Signature</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-center" style="margin-top: 14px; font-size: 10px; color: #333;">
+        *** END OF SHIFT REPORT ***
+      </div>
+    </div>
+  </body>
+</html>`;
+
+    // Direct Print via hidden iframe (no preview window or extra click required)
+    let printFrame = document.getElementById('shift-summary-print-frame') as HTMLIFrameElement | null;
+    if (!printFrame) {
+      printFrame = document.createElement('iframe');
+      printFrame.id = 'shift-summary-print-frame';
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = '0';
+      document.body.appendChild(printFrame);
     }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Shift Summary - ${cashierName}</title>
-          <style>
-            @page { size: auto; margin: 4mm; }
-            html, body {
-              margin: 0;
-              padding: 0;
-              background-color: #f1f5f9;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace;
-            }
-            .toolbar {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              background: #0f172a;
-              color: #fff;
-              padding: 12px 24px;
-              font-family: sans-serif;
-              font-size: 13px;
-              position: sticky;
-              top: 0;
-              z-index: 100;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            }
-            .toolbar button {
-              background: #2563eb;
-              color: white;
-              border: none;
-              padding: 8px 18px;
-              font-size: 13px;
-              font-weight: bold;
-              border-radius: 8px;
-              cursor: pointer;
-              transition: background 0.2s;
-            }
-            .toolbar button:hover { background: #1d4ed8; }
-            .container {
-              display: flex;
-              justify-content: center;
-              padding: 24px 16px 48px;
-            }
-            .card {
-              font-family: 'Courier New', Courier, monospace;
-              width: 100%;
-              max-width: 480px;
-              background: #ffffff;
-              color: #0f172a;
-              font-size: 14px;
-              line-height: 1.5;
-              padding: 28px 24px;
-              border-radius: 16px;
-              box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
-              border: 1px solid #e2e8f0;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .bold { font-weight: bold; }
-            .divider { border-top: 1.5px dashed #64748b; margin: 10px 0; }
-            .double-divider { border-top: 2.5px solid #0f172a; margin: 12px 0; }
-            .row { display: flex; justify-content: space-between; margin: 5px 0; font-size: 14px; }
-            .header-title { font-size: 18px; font-weight: 900; letter-spacing: -0.025em; }
-            .tag { font-size: 13px; font-weight: 700; }
-            @media print {
-              .toolbar { display: none !important; }
-              html, body { background: #fff !important; }
-              .container { padding: 0 !important; }
-              .card {
-                width: 80mm !important;
-                max-width: 80mm !important;
-                margin: 0 auto !important;
-                padding: 4mm !important;
-                box-shadow: none !important;
-                border: none !important;
-                border-radius: 0 !important;
-                font-size: 13px !important;
-              }
-              .row { font-size: 12px !important; margin: 3px 0 !important; }
-              .header-title { font-size: 15px !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="toolbar">
-            <span style="font-weight: bold; letter-spacing: 0.5px;">Standard Shift Report Preview</span>
-            <button onclick="window.print()">Print Report (Ctrl+P)</button>
-          </div>
-          <div class="container">
-            <div class="card">
-              <div class="text-center">
-                <div class="header-title">${shopName}</div>
-                <div class="tag" style="margin-top: 6px; color: #1e293b;">*** CASHIER SHIFT X-REPORT ***</div>
-                <div style="font-size: 12px; margin-top: 3px; color: #64748b;">Till #1 • Register Settlement Record</div>
-              </div>
-              <div class="divider"></div>
-              <div class="row"><span>Cashier:</span><span class="bold">${cashierName}</span></div>
-              <div class="row"><span>Role:</span><span class="bold">${role}</span></div>
-              <div class="row"><span>Shift Opened:</span><span>${openedAt}</span></div>
-              <div class="row"><span>Report Printed:</span><span>${printTime}</span></div>
-              <div class="row"><span>Duration:</span><span class="bold">${sessionDuration}</span></div>
-              <div class="divider"></div>
-              <div class="row"><span>Opening Float:</span><span class="bold">${openingFloatVal}</span></div>
-              <div class="row"><span>Invoices Count:</span><span class="bold">${invoicesVal}</span></div>
-              <div class="row"><span>Gross Sales:</span><span class="bold">${grossSalesVal}</span></div>
-              <div class="divider"></div>
-              <div class="row"><span>Cash Sales Received:</span><span class="bold">${cashSalesVal}</span></div>
-              <div class="row"><span>Electronic Card (Mada):</span><span class="bold">${cardSalesVal}</span></div>
-              <div class="divider"></div>
-              <div class="row" style="font-size: 15px;">
-                <span class="bold">EXPECTED CASH IN DRAWER:</span>
-                <span class="bold" style="color: #0369a1;">${expectedCashVal}</span>
-              </div>
-              <div class="row" style="font-size: 15px;">
-                <span class="bold">COUNTED CLOSING CASH:</span>
-                <span class="bold" style="color: #047857;">${countedVal}</span>
-              </div>
-              <div class="double-divider"></div>
-              <div class="text-center tag" style="margin-top: 24px; font-size: 12px; color: #475569;">
-                Cashier Signature: __________________
-                <br><br>
-                Manager Verification: ______________
-              </div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(printContent);
+      doc.close();
+      setTimeout(() => {
+        printFrame?.contentWindow?.focus();
+        printFrame?.contentWindow?.print();
+      }, 150);
+    }
   };
 
   // Add Item to Cart (Strict Real-Time Stock Checking Enforced)
@@ -1144,11 +1202,22 @@ export default function PosTerminalPage() {
                 <div className="flex flex-row items-center gap-2">
                   <button
                     type="button"
-                    disabled={isEndingShift}
+                    disabled={!canEndShift}
                     onClick={handlePrintSessionSummary}
-                    className="flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs transition uppercase whitespace-nowrap"
+                    title={
+                      !countedCashNum && countedCashNum !== 0
+                        ? 'Please enter Cash in Drawer to print report'
+                        : hasDiscrepancy && !isDiscrepancyFullyDeclared
+                        ? `Declare remaining ${remainingDiscrepancy > 0 ? '+' : ''}${remainingDiscrepancy.toFixed(2)} SAR to print report`
+                        : undefined
+                    }
+                    className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold shadow-xs transition uppercase whitespace-nowrap ${
+                      canEndShift
+                        ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 opacity-60 cursor-not-allowed'
+                    }`}
                   >
-                    <Printer className="h-4 w-4 text-blue-600 dark:text-sky-400" />
+                    <Printer className={`h-4 w-4 ${canEndShift ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}`} />
                     <span>Print X-Report</span>
                   </button>
                   <button

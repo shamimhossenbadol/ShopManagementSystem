@@ -1,233 +1,219 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { useSettings } from '@/hooks/useSettings';
-import { Printer, X, CheckCircle2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
 
-interface ReceiptModalProps {
-  data: any;
-  onClose: () => void;
-}
+// Date formatting matching session report style: "17 Aug, 12:46PM"
+export const formatReceiptDate = (date: Date | string | number | undefined | null, timezone?: string): string => {
+  if (!date) return 'N/A';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return 'N/A';
+  try {
+    const tz = timezone || 'Asia/Riyadh';
+    const day = d.toLocaleDateString('en-GB', { day: 'numeric', timeZone: tz });
+    const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: tz });
+    const timeParts = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+      .replace(/\u202f/g, ' ')
+      .trim();
+    const time = timeParts.replace(/\s+(AM|PM)/i, '$1');
+    return `${day} ${month}, ${time}`;
+  } catch {
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[d.getMonth()];
+    let h = d.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const min = d.getMinutes().toString().padStart(2, '0');
+    return `${day} ${mon}, ${h}:${min}${ampm}`;
+  }
+};
 
-export default function ReceiptModal({ data, onClose }: ReceiptModalProps) {
-  const { settings, formatCurrency, formatDateTime } = useSettings();
-  const [qrUrl, setQrUrl] = useState<string>('');
-  const [zoomLevel, setZoomLevel] = useState<number>(100);
+/**
+ * Directly prints standard 80mm thermal receipt to native printer via isolated hidden iframe.
+ * Eliminates preview dialog and prints directly.
+ */
+export async function printThermalReceipt(data: any, settings: any = {}) {
+  if (!data) return;
 
-  const { sale, items, invoice, qrData } = data || {};
+  const { sale, items, invoice, qrData, cashierName, payments, tenderedAmount, changeAmount } = data || {};
 
-  useEffect(() => {
-    if (qrData) {
-      QRCode.toDataURL(qrData, { width: 140, margin: 1 }, (err, url) => {
-        if (!err && url) setQrUrl(url);
-      });
+  // 1. Generate ZATCA QR Code Data URL if qrData is present
+  let qrUrl = '';
+  if (qrData) {
+    try {
+      qrUrl = await QRCode.toDataURL(qrData, { width: 140, margin: 1 });
+    } catch (e) {
+      console.warn('Failed to generate ZATCA QR Code for receipt:', e);
     }
-  }, [qrData]);
+  }
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+  const shopAddress = settings.shop_address || '';
+  const shopPhone = settings.shop_phone || '';
+  const vatNumber = settings.shop_vat_number || '300123456700003';
+  const invoiceNo = invoice?.invoice_no || sale?.reference_no || 'INV-0000';
+  const invoiceDate = formatReceiptDate(sale?.created_at || new Date(), settings.timezone);
+  const cashier = cashierName || 'Cashier';
 
-  const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 15, 160));
-  const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 15, 80));
-  const handleResetZoom = () => setZoomLevel(100);
+  const grandTotal = Number(sale?.grand_total || 0);
+  const subtotal = Number(sale?.subtotal || 0);
+  const totalTax = Number(sale?.total_tax || 0);
+  const totalDiscount = Number(sale?.total_discount || 0);
+  const paidAmount = Number(sale?.paid_amount || 0);
+  const dueAmount = Number(sale?.due_amount || 0);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-2 sm:p-4 backdrop-blur-sm">
-      <div className="flex max-h-[96vh] h-[92vh] flex-col rounded-3xl bg-white dark:bg-slate-900 shadow-2xl overflow-hidden w-full max-w-2xl border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 transition-colors">
-        {/* Modal Header with Standard View / Zoom Controls */}
-        <div className="flex flex-wrap items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 sm:px-6 py-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 print:hidden gap-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-bold text-sm">Sale Completed & Locked</span>
-            <span className="rounded-full bg-emerald-200/60 dark:bg-emerald-800/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-              Standard View Mode
-            </span>
-          </div>
+  // Cash payment & change calculation
+  const cashPayment = Array.isArray(payments) ? payments.find((p: any) => p.paymentMethodId === 1 || p.payment_method_id === 1) : null;
+  const cardPayment = Array.isArray(payments) ? payments.find((p: any) => p.paymentMethodId === 2 || p.payment_method_id === 2) : null;
 
-          <div className="flex items-center gap-1.5">
-            {/* Zoom Controls */}
-            <div className="flex items-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1 py-0.5 shadow-sm">
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                disabled={zoomLevel <= 80}
-                title="Zoom Out"
-                className="rounded-lg p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 transition"
-              >
-                <ZoomOut className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleResetZoom}
-                title="Reset Zoom (100%)"
-                className="px-1.5 text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 hover:text-blue-600"
-              >
-                {zoomLevel}%
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                disabled={zoomLevel >= 160}
-                title="Zoom In"
-                className="rounded-lg p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 transition"
-              >
-                <ZoomIn className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleResetZoom}
-                title="Reset to Standard"
-                className="rounded-lg p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
-              >
-                <RotateCcw className="h-3 w-3" />
-              </button>
-            </div>
+  // Customer Paid & Returnable / Change calculation
+  const totalTendered = tenderedAmount !== undefined && tenderedAmount !== null
+    ? Number(tenderedAmount)
+    : (Array.isArray(payments) && payments.length > 0
+        ? payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+        : paidAmount);
 
-            <button
-              onClick={onClose}
-              className="rounded-xl p-1 text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition ml-1"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+  const calculatedChange = changeAmount !== undefined && changeAmount !== null
+    ? Number(changeAmount)
+    : Math.max(0, Math.round((totalTendered - grandTotal) * 100) / 100);
 
-        {/* Printable Section with Standard Mode Full Height Preview */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex justify-center bg-slate-100 dark:bg-slate-950 print:p-0 print:bg-white">
-          <div
-            style={{ zoom: `${zoomLevel}%` }}
-            className="w-full flex justify-center transition-all duration-150"
-          >
-            <div
-              id="printable-receipt"
-              className="w-full max-w-[120mm] sm:max-w-[130mm] bg-white p-6 sm:p-7 font-mono text-sm shadow-lg border border-slate-300 text-slate-950 rounded-2xl leading-relaxed print:shadow-none print:border-0 print:rounded-none print:p-2 print:max-w-[95mm] print:text-xs"
-            >
-              <div className="text-center mb-4">
-                <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase text-black">
-                  {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
-                </h2>
-                {settings.shop_name_ar && (
-                  <p className="text-sm sm:text-base font-bold text-slate-800">{settings.shop_name_ar}</p>
-                )}
-                <p className="text-xs sm:text-sm text-slate-600 mt-1">
-                  CR: {settings.shop_cr_number || '1010123456'} | VAT: {settings.shop_vat_number || '300123456700003'}
-                </p>
-                <p className="text-xs sm:text-sm text-slate-600">
-                  {settings.shop_address || 'King Fahd Road, Riyadh, Saudi Arabia'}
-                </p>
-                <p className="text-xs sm:text-sm text-slate-600">Tel: {settings.shop_phone || '+966 11 456 7890'}</p>
-                <div className="mt-2.5 inline-block rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-900 uppercase tracking-wide border border-slate-200">
-                  {settings.receipt_header || 'Simplified Tax Invoice (فاتورة ضريبية مبسطة)'}
-                </div>
-              </div>
+  const printContent = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Invoice_${invoiceNo}</title>
+    <style>
+      @page {
+        size: 80mm auto;
+        margin: 0;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #ffffff;
+        color: #000000;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        line-height: 1.35;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .receipt {
+        width: 76mm;
+        margin: 0 auto;
+        padding: 4mm 2mm;
+        box-sizing: border-box;
+      }
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
+      .bold { font-weight: 900; }
+      .title { font-size: 15px; font-weight: 900; letter-spacing: -0.02em; }
+      .divider { border-top: 1px dashed #000000; margin: 6px 0; }
+      .double-divider { border-top: 1.5px solid #000000; border-bottom: 1.5px solid #000000; height: 2px; margin: 7px 0; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: 12px; }
+      .row-bold { display: flex; justify-content: space-between; align-items: baseline; margin: 3px 0; font-weight: 900; font-size: 13px; }
+      .item-row { margin: 4px 0; }
+      .item-name { font-weight: 900; font-size: 12px; word-break: break-word; }
+      .item-calc { display: flex; justify-content: space-between; font-size: 11.5px; margin-top: 1px; }
+      .qr-container { text-align: center; margin-top: 10px; margin-bottom: 4px; }
+      .qr-image { width: 130px; height: 130px; margin: 0 auto; display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="receipt">
+      <div class="text-center">
+        <div class="title">${shopName}</div>
+        ${shopAddress ? `<div style="font-size: 10px; margin-top: 2px;">${shopAddress}</div>` : ''}
+        ${shopPhone ? `<div style="font-size: 10px;">Tel: ${shopPhone}</div>` : ''}
+        ${vatNumber ? `<div style="font-size: 10px; margin-top: 1px;">VAT: ${vatNumber}</div>` : ''}
+      </div>
 
-              <div className="border-t-2 border-b-2 border-dashed border-slate-400 py-2.5 text-xs sm:text-sm my-3 space-y-1">
-                <div className="flex justify-between font-bold">
-                  <span>Invoice No:</span>
-                  <span className="text-slate-900">{invoice?.invoice_no || sale?.reference_no}</span>
-                </div>
-                <div className="flex justify-between text-slate-700">
-                  <span>Date & Time:</span>
-                  <span className="font-medium">
-                    {formatDateTime(sale?.created_at || new Date())}
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-700">
-                  <span>Cashier:</span>
-                  <span className="font-bold text-slate-900">{data?.cashierName || 'Cashier'}</span>
-                </div>
-              </div>
+      <div class="divider"></div>
+      <div class="row"><span>Invoice No:</span><span class="bold">${invoiceNo}</span></div>
+      <div class="row"><span>Date & Time:</span><span>${invoiceDate}</span></div>
+      <div class="row"><span>Cashier:</span><span class="bold">${cashier}</span></div>
 
-              {/* Items Table with Enhanced Legibility */}
-              <table className="w-full text-left mb-4 text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b-2 border-slate-300 font-black uppercase text-xs text-slate-800">
-                    <th className="py-2">Item</th>
-                    <th className="py-2 text-center">Qty</th>
-                    <th className="py-2 text-right">Price</th>
-                    <th className="py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items?.map((item: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="py-2 font-bold text-slate-900">{item.productName || item.name}</td>
-                      <td className="py-2 text-center font-mono font-medium">{item.quantity}</td>
-                      <td className="py-2 text-right font-mono">{Number(item.unitPrice).toFixed(2)}</td>
-                      <td className="py-2 text-right font-black font-mono text-slate-950">{Number(item.subtotal).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div class="divider"></div>
+      <div class="row bold" style="font-size: 11px; text-transform: uppercase;">
+        <span>Item Description</span>
+        <span>Total</span>
+      </div>
+      <div class="divider"></div>
 
-              {/* Totals */}
-              <div className="border-t-2 border-dashed border-slate-400 pt-3 text-xs sm:text-sm space-y-2">
-                <div className="flex justify-between text-slate-700">
-                  <span>Subtotal (Taxable Base):</span>
-                  <span className="font-mono font-semibold">{formatCurrency(sale?.subtotal || 0)}</span>
-                </div>
-                {Number(sale?.total_discount) > 0 && (
-                  <div className="flex justify-between text-emerald-700 font-semibold">
-                    <span>Discount:</span>
-                    <span className="font-mono">-{formatCurrency(sale?.total_discount || 0)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-slate-700">
-                  <span>{settings.tax_label || 'VAT (15%)'}:</span>
-                  <span className="font-mono font-semibold">{formatCurrency(sale?.total_tax || 0)}</span>
-                </div>
-                <div className="flex justify-between font-black text-base sm:text-lg border-t-2 border-slate-400 pt-2.5 text-black">
-                  <span>GRAND TOTAL:</span>
-                  <span className="font-mono">{formatCurrency(sale?.grand_total || 0)}</span>
-                </div>
-                <div className="flex justify-between text-slate-800 font-semibold pt-1">
-                  <span>Paid Amount:</span>
-                  <span className="font-mono">{formatCurrency(sale?.paid_amount || 0)}</span>
-                </div>
-                {Number(sale?.due_amount) > 0 && (
-                  <div className="flex justify-between text-rose-700 font-black">
-                    <span>Customer Due:</span>
-                    <span className="font-mono">{formatCurrency(sale?.due_amount || 0)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* ZATCA QR Code */}
-              {qrUrl && (
-                <div className="mt-5 text-center">
-                  <img src={qrUrl} alt="ZATCA E-Invoice QR" className="mx-auto h-36 w-36 border border-slate-200 p-1.5 rounded-xl shadow-sm bg-white" />
-                  <p className="text-[11px] text-slate-500 mt-2 font-sans font-medium">
-                    Scan via ZATCA E-Invoice Verification App
-                  </p>
-                </div>
-              )}
-
-              <div className="text-center mt-5 text-xs text-slate-600 border-t border-dashed border-slate-300 pt-3">
-                <p className="font-medium">{settings.receipt_footer || 'Thank you for shopping with us! Return within 7 days with invoice.'}</p>
-              </div>
+      ${items?.map((item: any) => {
+        const name = item.productName || item.name || 'Product';
+        const qty = Number(item.quantity || 1);
+        const price = Number(item.unitPrice || 0);
+        const total = Number(item.subtotal || qty * price);
+        return `
+          <div class="item-row">
+            <div class="item-name">${name}</div>
+            <div class="item-calc">
+              <span>${qty} x ${price.toFixed(2)} SAR</span>
+              <span class="bold">${total.toFixed(2)} SAR</span>
             </div>
           </div>
-        </div>
+        `;
+      }).join('')}
 
-        {/* Action Buttons */}
-        <div className="flex gap-3 border-t border-slate-100 dark:border-slate-800 p-4 bg-white dark:bg-slate-900 print:hidden">
-          <Button variant="secondary" size="md" onClick={onClose} className="w-1/2">
-            New Sale (Esc)
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handlePrint}
-            leftIcon={<Printer className="h-4 w-4" />}
-            className="w-1/2"
-          >
-            Print Receipt
-          </Button>
+      <div class="divider"></div>
+      <div class="row"><span>Subtotal (Taxable Base):</span><span class="bold">${subtotal.toFixed(2)} SAR</span></div>
+      ${totalDiscount > 0 ? `<div class="row"><span>Discount:</span><span class="bold">-${totalDiscount.toFixed(2)} SAR</span></div>` : ''}
+      <div class="row"><span>VAT (15%):</span><span class="bold">${totalTax.toFixed(2)} SAR</span></div>
+
+      <div class="double-divider"></div>
+      <div class="row-bold"><span>TOTAL AMOUNT:</span><span class="bold">${grandTotal.toFixed(2)} SAR</span></div>
+      <div class="double-divider"></div>
+
+      <div class="row bold"><span>Customer Paid:</span><span class="bold">${totalTendered.toFixed(2)} SAR</span></div>
+      ${cashPayment ? `<div class="row" style="font-size: 11px;"><span>- Cash Tendered:</span><span>${Number(cashPayment.amount || 0).toFixed(2)} SAR</span></div>` : ''}
+      ${cardPayment ? `<div class="row" style="font-size: 11px;"><span>- Mada / Card:</span><span>${Number(cardPayment.amount || 0).toFixed(2)} SAR</span></div>` : ''}
+      <div class="row-bold" style="font-size: 12.5px; margin-top: 3px; border-top: 1px dashed #000000; padding-top: 3px;"><span>Returnable / Change:</span><span class="bold">${calculatedChange.toFixed(2)} SAR</span></div>
+      ${dueAmount > 0 ? `<div class="row bold" style="font-size: 11px; color: #b91c1c;"><span>Customer Due:</span><span>${dueAmount.toFixed(2)} SAR</span></div>` : ''}
+
+      ${qrUrl ? `
+        <div class="qr-container">
+          <img src="${qrUrl}" alt="ZATCA QR" class="qr-image" />
+          <div style="font-size: 9px; margin-top: 3px; color: #444;">Scan via ZATCA E-Invoice App</div>
         </div>
+      ` : ''}
+
+      <div class="divider"></div>
+      <div class="text-center" style="font-size: 10px; color: #333; margin-top: 6px;">
+        <div>${settings.receipt_footer || 'Thank you for shopping with us!'}</div>
+        <div style="margin-top: 4px; font-weight: bold;">*** END OF INVOICE ***</div>
       </div>
     </div>
-  );
+  </body>
+</html>`;
+
+  // Direct print via isolated hidden iframe
+  let printFrame = document.getElementById('receipt-print-frame') as HTMLIFrameElement | null;
+  if (!printFrame) {
+    printFrame = document.createElement('iframe');
+    printFrame.id = 'receipt-print-frame';
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+  }
+
+  const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
+  if (doc) {
+    doc.open();
+    doc.write(printContent);
+    doc.close();
+    setTimeout(() => {
+      printFrame?.contentWindow?.focus();
+      printFrame?.contentWindow?.print();
+    }, 200);
+  }
+}
+
+// Default export returns null (preview modal removed)
+export default function ReceiptModal({ data }: { data?: any; onClose?: () => void }) {
+  return null;
 }

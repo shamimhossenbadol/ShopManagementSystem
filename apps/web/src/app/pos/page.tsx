@@ -8,7 +8,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { useSessionSync } from '@/hooks/useSessionSync';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import TenderModal from '@/components/pos/TenderModal';
-import ReceiptModal from '@/components/pos/ReceiptModal';
+import { printThermalReceipt } from '@/components/pos/ReceiptModal';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -97,7 +97,6 @@ export default function PosTerminalPage() {
 
   // Modals
   const [isTenderOpen, setIsTenderOpen] = useState(false);
-  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
   const [isOpenShiftModal, setIsOpenShiftModal] = useState(false);
   const [isSessionSummaryOpen, setIsSessionSummaryOpen] = useState(false);
@@ -360,7 +359,6 @@ export default function PosTerminalPage() {
         if (cart.length > 0) setIsTenderOpen(true);
       } else if (e.key === 'Escape') {
         setIsTenderOpen(false);
-        setIsReceiptOpen(false);
         setIsHeldModalOpen(false);
         setIsOpenShiftModal(false);
         setIsSessionSummaryOpen(false);
@@ -812,7 +810,48 @@ export default function PosTerminalPage() {
     }
   };
 
-  // Park / Hold Cart (Server-Side with Local Fallback)
+  // Fetch Held Sales for the Current User (Server-Side + Local Storage Fallback)
+  const fetchHeldSales = async () => {
+    try {
+      const res = await apiRequest('/sales/hold');
+      if (res.success && Array.isArray(res.data)) {
+        const currentUserId = user?.id;
+        const serverHeld = res.data
+          .filter((h: any) => !h.user_id || !currentUserId || Number(h.user_id) === Number(currentUserId))
+          .map((h: any) => ({
+            id: h.id,
+            reference: h.reference_no,
+            timestamp: h.created_at,
+            userId: h.user_id,
+            cart: (h.items || []).map((i: any) => ({
+              productId: i.productId || i.product_id,
+              name: i.name,
+              sku: i.sku,
+              barcode: i.barcode,
+              unitPrice: Number(i.unitPrice || i.unit_price),
+              quantity: Number(i.quantity),
+              discount: Number(i.discount || 0),
+              taxRate: Number(i.taxRate || 15),
+              isTaxInclusive: Boolean(i.isTaxInclusive),
+              stock: Number(i.stock || 0),
+            })),
+            isServer: true,
+          }));
+        setHeldSalesList(serverHeld);
+        return serverHeld;
+      }
+    } catch (err) {
+      console.warn('Failed to load server held sales, loading local', err);
+    }
+
+    const currentUserId = user?.id;
+    const list = (JSON.parse(localStorage.getItem('pos_held_sales') || '[]') as any[])
+      .filter((h: any) => !h.userId || !currentUserId || Number(h.userId) === Number(currentUserId));
+    setHeldSalesList(list);
+    return list;
+  };
+
+  // Park / Hold Cart (Quietly holds cart and updates count without toast message)
   const handleHoldCart = async () => {
     if (cart.length === 0) return;
     const holdRef = `HOLD-${Date.now().toString().slice(-4)}`;
@@ -834,7 +873,8 @@ export default function PosTerminalPage() {
 
       if (res.success) {
         setCart([]);
-        setErrorMsg(`Cart parked under reference ${res.data?.reference_no || holdRef}`);
+        setErrorMsg(null);
+        await fetchHeldSales();
         return;
       }
     } catch (err) {
@@ -844,48 +884,20 @@ export default function PosTerminalPage() {
     const held = {
       reference: holdRef,
       timestamp: new Date().toISOString(),
+      userId: user?.id,
       cart,
     };
     const currentList = JSON.parse(localStorage.getItem('pos_held_sales') || '[]');
     currentList.push(held);
     localStorage.setItem('pos_held_sales', JSON.stringify(currentList));
     setCart([]);
-    setErrorMsg(`Cart parked under reference ${holdRef}`);
+    setErrorMsg(null);
+    await fetchHeldSales();
   };
 
-  // Open Held Modal (Fetches Server-Side + Local Carts)
+  // Open Held Modal (Fetches Server-Side + Local Carts for current user)
   const openHeldModal = async () => {
-    try {
-      const res = await apiRequest('/sales/hold');
-      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-        const serverHeld = res.data.map((h: any) => ({
-          id: h.id,
-          reference: h.reference_no,
-          timestamp: h.created_at,
-          cart: (h.items || []).map((i: any) => ({
-            productId: i.productId || i.product_id,
-            name: i.name,
-            sku: i.sku,
-            barcode: i.barcode,
-            unitPrice: Number(i.unitPrice || i.unit_price),
-            quantity: Number(i.quantity),
-            discount: Number(i.discount || 0),
-            taxRate: Number(i.taxRate || 15),
-            isTaxInclusive: Boolean(i.isTaxInclusive),
-            stock: Number(i.stock || 0),
-          })),
-          isServer: true,
-        }));
-        setHeldSalesList(serverHeld);
-        setIsHeldModalOpen(true);
-        return;
-      }
-    } catch (err) {
-      console.warn('Failed to load server held sales, loading local', err);
-    }
-
-    const list = JSON.parse(localStorage.getItem('pos_held_sales') || '[]');
-    setHeldSalesList(list);
+    await fetchHeldSales();
     setIsHeldModalOpen(true);
   };
 
@@ -901,20 +913,20 @@ export default function PosTerminalPage() {
       localStorage.setItem('pos_held_sales', JSON.stringify(updated.filter((h: any) => !h.isServer)));
       setHeldSalesList(updated);
       setIsHeldModalOpen(false);
+      fetchHeldSales();
     }
   };
 
   // Delete / Discard Held Sale
   const deleteHeldSale = async (index: number) => {
-    if (confirm('Are you sure you want to discard this parked order?')) {
-      const item = heldSalesList[index];
-      if (item?.isServer && item.id) {
-        await apiRequest(`/sales/hold/${item.id}`, { method: 'DELETE' }).catch(() => {});
-      }
-      const updated = heldSalesList.filter((_, idx) => idx !== index);
-      localStorage.setItem('pos_held_sales', JSON.stringify(updated.filter((h: any) => !h.isServer)));
-      setHeldSalesList(updated);
+    const item = heldSalesList[index];
+    if (item?.isServer && item.id) {
+      await apiRequest(`/sales/hold/${item.id}`, { method: 'DELETE' }).catch(() => {});
     }
+    const updated = heldSalesList.filter((_, idx) => idx !== index);
+    localStorage.setItem('pos_held_sales', JSON.stringify(updated.filter((h: any) => !h.isServer)));
+    setHeldSalesList(updated);
+    fetchHeldSales();
   };
 
   // Open Shift with carry-forward and adjustments
@@ -962,11 +974,13 @@ export default function PosTerminalPage() {
       }
     });
 
-    const grandTotal = grossTotal + totalTax;
+    const roundedSubtotal = Math.round(grossTotal * 100) / 100;
+    const roundedTax = Math.round(totalTax * 100) / 100;
+    const grandTotal = Math.round((roundedSubtotal + roundedTax) * 100) / 100;
 
     return {
-      subtotal: grossTotal,
-      totalTax,
+      subtotal: roundedSubtotal,
+      totalTax: roundedTax,
       grandTotal,
       totalItems: cart.length,
       totalUnits: cart.reduce((sum, i) => sum + i.quantity, 0),
@@ -991,6 +1005,14 @@ export default function PosTerminalPage() {
       };
     }
   }, []);
+
+  // Load user's parked sales carts on session start
+  useEffect(() => {
+    if (user?.id) {
+      fetchHeldSales();
+    }
+  }, [user?.id]);
+
 
   // Finalize Sale Checkout
   const handleFinalizeSale = async (
@@ -1060,16 +1082,25 @@ export default function PosTerminalPage() {
         }
       });
 
-      setCompletedSaleData({
+      const paidSum = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const saleGrand = Number(res.data?.sale?.grand_total ?? totals.grandTotal);
+      const receiptPayload = {
         sale: res.data.sale,
-        items: cart,
+        items: res.data.items || cart,
+        payments: res.data.payments || payments || [],
+        tenderedAmount: res.data.tenderedAmount ?? paidSum,
+        changeAmount: res.data.changeAmount ?? Math.max(0, Math.round((paidSum - saleGrand) * 100) / 100),
         invoice: res.data.invoice,
         qrData: res.data.qrData,
         cashierName: formatTwoWords(user?.fullName || user?.full_name || user?.username),
-      });
+      };
+
+      setCompletedSaleData(receiptPayload);
       setIsTenderOpen(false);
-      setIsReceiptOpen(true);
       setCart([]);
+
+      // Directly open native printer dialog (no preview dialog)
+      printThermalReceipt(receiptPayload, settings);
     } else {
       setErrorMsg(res.message || 'Sale checkout failed.');
     }
@@ -1141,11 +1172,6 @@ export default function PosTerminalPage() {
           onClose={() => setIsTenderOpen(false)}
           loading={loadingPay}
         />
-      )}
-
-      {/* Thermal Receipt Modal with ZATCA QR */}
-      {isReceiptOpen && completedSaleData && (
-        <ReceiptModal data={completedSaleData} onClose={() => setIsReceiptOpen(false)} />
       )}
 
       {/* Premium End-of-Shift / Session Summary Modal (X-Report) */}
@@ -2088,6 +2114,19 @@ export default function PosTerminalPage() {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2">
+            {/* Direct Reprint Last Receipt (Native Printer) */}
+            {completedSaleData && (
+              <button
+                type="button"
+                onClick={() => printThermalReceipt(completedSaleData, settings)}
+                title="Reprint Last Invoice Directly to Native Printer"
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-blue-500 dark:hover:border-sky-400 transition"
+              >
+                <Printer className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400" />
+                <span className="hidden xl:inline text-[11px]">Reprint Last</span>
+              </button>
+            )}
+
             {/* Fullscreen Toggle Button */}
             <button
               type="button"

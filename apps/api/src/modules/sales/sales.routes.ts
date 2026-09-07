@@ -175,12 +175,19 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
         const grandTotal = round2(subtotal + totalTax);
         const totalPaid = round2(payments.reduce((sum, p) => sum + p.amount, 0));
-        const dueAmount = round2(Math.max(0, grandTotal - totalPaid));
+        const changeAmount = round2(Math.max(0, totalPaid - grandTotal));
+        let dueAmount = round2(Math.max(0, grandTotal - totalPaid));
+
+        // Precision tolerance: If payment is within 0.05 SAR (rounding halalas), consider fully paid
+        if (dueAmount <= 0.05) {
+          dueAmount = 0;
+        }
+
         const paymentStatus = dueAmount === 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
 
         // Strict Production Rule: Walk-in customers cannot have Customer Due / Credit
         if (dueAmount > 0 && (!customerId || Number(customerId) === 1)) {
-          throw new Error('Customer Due / Credit is not permitted for Walk-in Customer. Full payment is required or select a registered customer profile.');
+          throw new Error(`Customer Due is not permitted for Walk-in Customer. Outstanding: ${dueAmount.toFixed(2)} SAR. Full payment is required.`);
         }
 
         if (payments.length === 0 && (!customerId || Number(customerId) === 1)) {
@@ -215,7 +222,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
             invoiceDiscountType,
             round2(totalTax),
             grandTotal,
-            totalPaid,
+            round2(Math.min(grandTotal, totalPaid)),
             dueAmount,
             paymentStatus,
             idempotencyKey || null,
@@ -309,10 +316,11 @@ export async function salesRoutes(fastify: FastifyInstance) {
             [payment.paymentMethodId]
           );
           if (isCashRes.rows[0]?.is_cash && activeSessionId) {
+            const netCashIn = round2(Math.min(payment.amount, grandTotal));
             await client.query(
               `INSERT INTO cash_movements (session_id, type, amount, source, reference_id, description)
                VALUES ($1, 'cash_in', $2, 'sale', $3, $4)`,
-              [activeSessionId, payment.amount, sale.id, `POS Sale ${saleRef}`]
+              [activeSessionId, netCashIn, sale.id, `POS Sale ${saleRef}`]
             );
           }
         }
@@ -387,6 +395,8 @@ export async function salesRoutes(fastify: FastifyInstance) {
           sale,
           items: processedItems,
           payments,
+          tenderedAmount: totalPaid,
+          changeAmount,
           invoice: invoiceInsert.rows[0],
           qrData,
         };
@@ -573,7 +583,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, message: 'Sale held successfully.', data: res });
   });
 
-  // GET /api/v1/sales/hold - List held carts
+  // GET /api/v1/sales/hold - List held carts for current user
   fastify.get('/hold', async (request, reply) => {
     const res = await query(
       `SELECT h.*, 
@@ -602,7 +612,9 @@ export async function salesRoutes(fastify: FastifyInstance) {
        LEFT JOIN tax_rates t ON t.id = p.tax_rate_id
        LEFT JOIN users u ON h.user_id = u.id
        LEFT JOIN customers c ON c.id = h.customer_id
-       GROUP BY h.id, u.full_name, c.name ORDER BY h.created_at DESC`
+       WHERE h.user_id = $1
+       GROUP BY h.id, u.full_name, c.name ORDER BY h.created_at DESC`,
+      [request.user!.id]
     );
     return reply.send({ success: true, data: res.rows });
   });
@@ -636,7 +648,11 @@ export async function salesRoutes(fastify: FastifyInstance) {
   // DELETE /api/v1/sales/hold/:id - Remove held cart after resuming
   fastify.delete('/hold/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    await query(`DELETE FROM held_sales WHERE id = $1`, [Number(id)]);
+    await query(`DELETE FROM held_sales WHERE id = $1 AND (user_id = $2 OR $3 = 'manager')`, [
+      Number(id),
+      request.user!.id,
+      request.user!.role,
+    ]);
     return reply.send({ success: true, message: 'Held cart cleared.' });
   });
 }

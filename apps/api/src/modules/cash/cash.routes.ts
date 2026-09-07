@@ -7,6 +7,7 @@ import { broadcastSessionEvent } from '../auth/auth.routes.js';
 
 const openShiftSchema = z.object({
   openingBalance: z.coerce.number().min(0),
+  openingCardBalance: z.coerce.number().min(0).optional().default(0),
   terminalName: z.string().optional().default('Terminal-01'),
   adjustments: z.array(z.object({
     amount: z.coerce.number(),
@@ -148,6 +149,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
           hasLastSession: false,
           isFirstSession: true,
           carryForwardBalance: 0,
+          carryForwardCardBalance: 0,
         },
       });
     }
@@ -163,6 +165,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         lastClosedByUsername: last.username,
         lastClosedAt: last.closed_at,
         carryForwardBalance: Number(last.closing_balance),
+        carryForwardCardBalance: Number(last.terminal_card_total || 0),
         lastExpectedBalance: Number(last.expected_balance),
         lastDifference: Number(last.difference),
         lastCloseType: last.close_type || 'normal',
@@ -210,9 +213,11 @@ export async function cashRoutes(fastify: FastifyInstance) {
     );
 
     const openingFloat = Number(session.opening_balance || 0);
+    const openingCardFloat = Number(session.opening_card_balance || 0);
     const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
     const liveExpected = round2(openingFloat + netFlow);
-    const liveCardTotal = round2(Number(cardRes.rows[0]?.card_total || 0));
+    const liveCardSales = round2(Number(cardRes.rows[0]?.card_total || 0));
+    const liveCardTotal = round2(openingCardFloat + liveCardSales);
 
     return reply.send({
       success: true,
@@ -221,7 +226,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         session,
         liveExpectedCash: liveExpected,
         liveCardTotal: liveCardTotal,
-        cardSalesTotal: liveCardTotal,
+        cardSalesTotal: liveCardSales,
         totalMovements: Number(movRes.rows[0]?.total_movements || 0),
       },
     });
@@ -287,6 +292,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
     );
 
     const openingFloat = Number(session.opening_balance || 0);
+    const openingCardFloat = Number(session.opening_card_balance || 0);
     const cashSales = Number(movRes.rows[0]?.cash_sales || 0);
     const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
     const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
@@ -294,6 +300,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
     const invoicesCount = Number(salesRes.rows[0]?.invoices_count || 0);
     const totalGrossSales = Number(salesRes.rows[0]?.total_gross_sales || (cashSales + cardSales));
     const expectedCashInDrawer = round2(openingFloat + cashSales - cashRefunds - cashExpenses);
+    const expectedCardInTerminal = round2(openingCardFloat + cardSales);
 
     return reply.send({
       success: true,
@@ -303,6 +310,9 @@ export async function cashRoutes(fastify: FastifyInstance) {
           id: session.id,
           opened_at: session.opened_at,
           opening_balance: openingFloat,
+          opening_card_balance: openingCardFloat,
+          carry_forward_balance: Number(session.carry_forward_balance || 0),
+          carry_forward_card_balance: Number(session.carry_forward_card_balance || 0),
           terminal_name: session.terminal_name || 'Terminal-01',
         },
         cashier: {
@@ -318,6 +328,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         cashRefunds,
         cashExpenses,
         expectedCashInDrawer,
+        expectedCardInTerminal,
       },
     });
   });
@@ -329,7 +340,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, message: 'Invalid opening float.', errors: parsed.error.format() });
     }
 
-    const { openingBalance, terminalName, adjustments } = parsed.data;
+    const { openingBalance, openingCardBalance, terminalName, adjustments } = parsed.data;
 
     // If this user already has an active open shift, gracefully resume it
     const existing = await query(
@@ -364,21 +375,24 @@ export async function cashRoutes(fastify: FastifyInstance) {
       const res = await withTransaction(async (client) => {
         // Get last closed session for carry-forward and sequence
         const lastRes = await client.query(
-          `SELECT id, closing_balance, sequence_number FROM cash_sessions
+          `SELECT id, closing_balance, terminal_card_total, sequence_number FROM cash_sessions
            WHERE status = 'closed' ORDER BY closed_at DESC LIMIT 1`
         );
 
         const previousSessionId = lastRes.rows[0]?.id || null;
         const carryForwardBalance = lastRes.rows[0] ? Number(lastRes.rows[0].closing_balance) : 0;
+        const carryForwardCardBalance = lastRes.rows[0] ? Number(lastRes.rows[0].terminal_card_total || 0) : 0;
         const nextSequence = (lastRes.rows[0]?.sequence_number || 0) + 1;
 
         const s = await client.query(
           `INSERT INTO cash_sessions 
            (user_id, status, opening_balance, expected_balance, terminal_name, 
-            sequence_number, previous_session_id, carry_forward_balance, close_type)
-           VALUES ($1, 'open', $2, $2, $3, $4, $5, $6, 'normal') RETURNING *`,
+            sequence_number, previous_session_id, carry_forward_balance, close_type,
+            opening_card_balance, carry_forward_card_balance)
+           VALUES ($1, 'open', $2, $2, $3, $4, $5, $6, 'normal', $7, $8) RETURNING *`,
           [request.user!.id, openingBalance, terminalName || 'Terminal-01', 
-           nextSequence, previousSessionId, carryForwardBalance]
+           nextSequence, previousSessionId, carryForwardBalance,
+           openingCardBalance, carryForwardCardBalance]
         );
         const session = s.rows[0];
 
@@ -406,11 +420,13 @@ export async function cashRoutes(fastify: FastifyInstance) {
           `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
            VALUES ($1, 'CASH_SHIFT_OPENED', 'cash_sessions', $2, $3)`,
           [request.user!.id, session.id, JSON.stringify({ 
-            openingFloat: openingBalance, 
+            openingFloat: openingBalance,
+            openingCardBalance,
             terminalName: terminalName || 'Terminal-01',
             sequenceNumber: nextSequence,
             previousSessionId,
             carryForwardBalance,
+            carryForwardCardBalance,
             openingAdjustments: adjustments || [],
           })]
         );
@@ -483,7 +499,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
         const expectedBalance = round2(Number(session.opening_balance) + netFlow);
         const difference = round2(actualClosingBalance - expectedBalance);
 
-        const expectedCard = round2(Number(cardRes.rows[0]?.card_total || 0));
+        const openingCardFloat = Number(session.opening_card_balance || 0);
+        const expectedCard = round2(openingCardFloat + Number(cardRes.rows[0]?.card_total || 0));
         const cardDifference = round2(terminalCardTotal - expectedCard);
 
         // 3. Update session record with close_type
@@ -546,7 +563,9 @@ export async function cashRoutes(fastify: FastifyInstance) {
             openedAt: session.opened_at,
             closedAt: new Date().toISOString(),
             openingFloat: Number(session.opening_balance),
+            openingCardFloat: Number(session.opening_card_balance || 0),
             carryForwardBalance: Number(session.carry_forward_balance || 0),
+            carryForwardCardBalance: Number(session.carry_forward_card_balance || 0),
             cashSales: Number(movRes.rows[0]?.cash_sales || 0),
             cashRefunds: Number(movRes.rows[0]?.cash_refunds || 0),
             cashExpenses: Number(movRes.rows[0]?.cash_expenses || 0),

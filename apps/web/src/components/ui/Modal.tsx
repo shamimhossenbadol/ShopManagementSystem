@@ -12,6 +12,8 @@ export interface ModalProps {
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
   showCloseButton?: boolean;
+  bodyClassName?: string;
+  className?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -23,6 +25,8 @@ export const Modal: React.FC<ModalProps> = ({
   footer,
   maxWidth = 'lg',
   showCloseButton = true,
+  bodyClassName,
+  className = '',
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -63,7 +67,7 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Modal Card */}
       <div
-        className={`relative w-full ${maxWidthStyles[maxWidth]} rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-10 overflow-hidden flex flex-col max-h-[90vh] transition-all transform scale-100 animate-scaleIn`}
+        className={`relative w-full ${maxWidthStyles[maxWidth]} ${className} rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-10 overflow-hidden flex flex-col max-h-[90vh] transition-all transform animate-scaleIn`}
       >
         {/* Header */}
         {(title || showCloseButton) && (
@@ -88,7 +92,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className={`flex-1 overflow-y-auto ${bodyClassName !== undefined ? bodyClassName : 'p-6'}`}>{children}</div>
 
         {/* Footer Actions */}
         {footer && (

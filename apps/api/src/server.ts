@@ -71,6 +71,8 @@ async function runAutoMigrations() {
       ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_total DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
       ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
       ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS opening_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
+      ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS carry_forward_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
 
       -- Enforce single open POS session globally
       CREATE UNIQUE INDEX IF NOT EXISTS uq_single_open_cash_session 

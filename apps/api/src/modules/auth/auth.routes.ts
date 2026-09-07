@@ -480,7 +480,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     // Check active cash session: remains active until explicitly closed on logout
     const sessionRes = await query(
-      `SELECT id, status, opened_at, opening_balance 
+      `SELECT id, status, opened_at, opening_balance, opening_card_balance, carry_forward_balance, carry_forward_card_balance, sequence_number, terminal_name 
        FROM cash_sessions 
        WHERE user_id = $1 AND status = 'open' 
        ORDER BY opened_at DESC LIMIT 1`,

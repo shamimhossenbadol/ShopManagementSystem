@@ -26,10 +26,10 @@ const closeShiftSchema = z.object({
 });
 
 /**
- * Calculates start and end timestamps for a given business day date string
+ * Calculates start and end timestamps for a given business date range
  * taking into account the configured shop_closing_hour (default "00:00").
  */
-async function getBusinessDayBounds(dateStr?: string) {
+async function getBusinessRangeBounds(startDateStr?: string, endDateStr?: string) {
   const settingRes = await query(
     `SELECT setting_value FROM settings WHERE setting_key = 'shop_closing_hour'`
   );
@@ -39,29 +39,40 @@ async function getBusinessDayBounds(dateStr?: string) {
   const tzRes = await query(`SELECT setting_value FROM settings WHERE setting_key = 'timezone'`);
   const timeZone = tzRes.rows[0]?.setting_value || 'Asia/Riyadh';
 
-  let formattedDate: string;
-  if (dateStr) {
-    formattedDate = dateStr;
-  } else {
-    try {
-      formattedDate = new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date());
-    } catch {
-      formattedDate = new Date().toISOString().split('T')[0];
-    }
+  let todayDate: string;
+  try {
+    todayDate = new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date());
+  } catch {
+    todayDate = new Date().toISOString().split('T')[0];
   }
 
-  const [y, m, d] = formattedDate.split('-').map(Number);
-  // Start of business day taking into account closing hour
-  const startOfDay = new Date(Date.UTC(y, m - 1, d, closeHour, closeMin, 0, 0));
-  const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+  const startFormatted = startDateStr || todayDate;
+  const endFormatted = endDateStr || startFormatted;
+
+  const [sy, sm, sd] = startFormatted.split('-').map(Number);
+  const startOfDay = new Date(Date.UTC(sy, sm - 1, sd, closeHour, closeMin, 0, 0));
+
+  const [ey, em, ed] = endFormatted.split('-').map(Number);
+  const startOfEndDay = new Date(Date.UTC(ey, em - 1, ed, closeHour, closeMin, 0, 0));
+  const endOfDay = new Date(startOfEndDay.getTime() + 24 * 60 * 60 * 1000);
+
+  const isTodayIncluded = todayDate >= startFormatted && todayDate <= endFormatted;
 
   return {
-    businessDate: formattedDate,
+    startDate: startFormatted,
+    endDate: endFormatted,
+    businessDate: startFormatted === endFormatted ? startFormatted : `${startFormatted} to ${endFormatted}`,
     closingHour: closingHourStr,
     timeZone,
     startTime: startOfDay.toISOString(),
     endTime: endOfDay.toISOString(),
+    isTodayIncluded,
+    todayDate,
   };
+}
+
+async function getBusinessDayBounds(dateStr?: string) {
+  return getBusinessRangeBounds(dateStr, dateStr);
 }
 
 export async function cashRoutes(fastify: FastifyInstance) {
@@ -87,20 +98,49 @@ export async function cashRoutes(fastify: FastifyInstance) {
         [session.id]
       );
 
+      // Operational cash flow & cash sales
+      const movRes = await query(
+        `SELECT 
+          COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
+          COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales
+         FROM cash_movements WHERE session_id = $1`,
+        [session.id]
+      );
+
+      // Card sales
+      const cardRes = await query(
+        `SELECT COALESCE(SUM(sp.amount), 0) as card_total
+         FROM sale_payments sp
+         JOIN payment_methods pm ON pm.id = sp.payment_method_id
+         JOIN sales s ON s.id = sp.sale_id
+         WHERE s.session_id = $1 AND pm.is_cash = FALSE AND s.sale_status = 'completed'`,
+        [session.id]
+      );
+
+      const openingBal = Number(session.opening_balance || 0);
+      const openingCardBal = Number(session.opening_card_balance || 0);
+      const cashSales = Number(movRes.rows[0]?.cash_sales || 0);
+      const cardSales = Number(cardRes.rows[0]?.card_total || 0);
+      const liveExpected = round2(openingBal + Number(movRes.rows[0]?.net_operational_flow || 0));
+
       return reply.send({
         success: true,
         data: {
           status: 'occupied',
           activeSession: {
             id: session.id,
+            sequenceNumber: session.sequence_number,
             userId: session.user_id,
             userName: session.user_name,
             username: session.username,
             openedAt: session.opened_at,
-            openingBalance: Number(session.opening_balance),
-            terminalName: session.terminal_name,
+            openingBalance: openingBal,
+            openingCardBalance: openingCardBal,
             salesCount: Number(salesRes.rows[0]?.sales_count || 0),
             totalSales: Number(salesRes.rows[0]?.total_sales || 0),
+            cashSales,
+            cardSales,
+            liveExpectedCash: liveExpected,
           },
         },
       });
@@ -121,11 +161,13 @@ export async function cashRoutes(fastify: FastifyInstance) {
         status: 'available',
         lastSession: lastRes.rows.length > 0 ? {
           id: lastRes.rows[0].id,
+          sequenceNumber: lastRes.rows[0].sequence_number,
           closedAt: lastRes.rows[0].closed_at,
           closedBy: lastRes.rows[0].user_name,
-          closingBalance: Number(lastRes.rows[0].closing_balance),
-          expectedBalance: Number(lastRes.rows[0].expected_balance),
-          difference: Number(lastRes.rows[0].difference),
+          closingBalance: Number(lastRes.rows[0].closing_balance || 0),
+          terminalCardTotal: Number(lastRes.rows[0].terminal_card_total || 0),
+          expectedBalance: Number(lastRes.rows[0].expected_balance || 0),
+          difference: Number(lastRes.rows[0].difference || 0),
           closeType: lastRes.rows[0].close_type || 'normal',
         } : null,
       },
@@ -190,10 +232,10 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
     const session = res.rows[0];
 
-    // Compute live expected cash
+    // Compute live expected cash (excluding opening_float to avoid double-counting)
     const movRes = await query(
       `SELECT 
-        COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow,
+        COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
         COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
         COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
         COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses,
@@ -214,7 +256,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
     const openingFloat = Number(session.opening_balance || 0);
     const openingCardFloat = Number(session.opening_card_balance || 0);
-    const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+    const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
     const liveExpected = round2(openingFloat + netFlow);
     const liveCardSales = round2(Number(cardRes.rows[0]?.card_total || 0));
     const liveCardTotal = round2(openingCardFloat + liveCardSales);
@@ -276,7 +318,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
         COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
         COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses,
-        COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow
+        COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow
        FROM cash_movements WHERE session_id = $1`,
       [session.id]
     );
@@ -299,7 +341,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
     const cardSales = Number(cardRes.rows[0]?.card_total || 0);
     const invoicesCount = Number(salesRes.rows[0]?.invoices_count || 0);
     const totalGrossSales = Number(salesRes.rows[0]?.total_gross_sales || (cashSales + cardSales));
-    const expectedCashInDrawer = round2(openingFloat + cashSales - cashRefunds - cashExpenses);
+    const netOperationalFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
+    const expectedCashInDrawer = round2(openingFloat + netOperationalFlow);
     const expectedCardInTerminal = round2(openingCardFloat + cardSales);
 
     return reply.send({
@@ -474,10 +517,10 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
         const session = sessRes.rows[0];
 
-        // 1. Calculate Expected Cash from movements
+        // 1. Calculate Expected Cash from operational movements (excluding opening_float)
         const movRes = await client.query(
           `SELECT 
-            COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow,
+            COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
             COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
             COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
             COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses
@@ -495,7 +538,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
           [session.id]
         );
 
-        const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+        const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedBalance = round2(Number(session.opening_balance) + netFlow);
         const difference = round2(actualClosingBalance - expectedBalance);
 
@@ -613,14 +656,14 @@ export async function cashRoutes(fastify: FastifyInstance) {
         const currentSession = openRes.rows[0];
         const displacedUserId = currentSession.user_id;
 
-        // Calculate expected balance for the session being force-closed
+        // Calculate expected balance for the session being force-closed (excluding opening_float)
         const movRes = await client.query(
-          `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow
+          `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow
            FROM cash_movements WHERE session_id = $1`,
           [currentSession.id]
         );
 
-        const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+        const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedBalance = round2(Number(currentSession.opening_balance) + netFlow);
 
         // Force-close the current session
@@ -692,11 +735,13 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
   // GET /api/v1/cash/daily-summary - Daily Consolidated Business Day Cash Matrix & Staff Records
   fastify.get('/daily-summary', async (request, reply) => {
-    const { date } = request.query as { date?: string };
-    const bounds = await getBusinessDayBounds(date);
+    const { date, startDate, endDate } = request.query as { date?: string; startDate?: string; endDate?: string };
+    const effectiveStart = startDate || date;
+    const effectiveEnd = endDate || date || effectiveStart;
+    const bounds = await getBusinessRangeBounds(effectiveStart, effectiveEnd);
 
-    // 1. Get all sessions for this business day (and any active open shifts if checking today)
-    const isToday = !date || date === bounds.businessDate;
+    // 1. Get all sessions for this business day/range (and any active open shifts if checking today/range includes today)
+    const isToday = bounds.isTodayIncluded;
     const sessRes = await query(
       `SELECT cs.*, u.full_name as user_name, u.username, u.role as user_role
        FROM cash_sessions cs
@@ -749,17 +794,20 @@ export async function cashRoutes(fastify: FastifyInstance) {
     // 6. Enrich each session with shift-specific metrics
     const staffSessions = [];
     let totalOpeningFloat = 0;
+    let totalOpeningCardFloat = 0;
     let totalExpectedCashInDrawers = 0;
     let totalCountedCash = 0;
     let totalDiscrepancy = 0;
 
     for (const sess of sessRes.rows) {
       const openFloat = Number(sess.opening_balance || 0);
+      const openCardFloat = Number(sess.opening_card_balance || 0);
       totalOpeningFloat += openFloat;
+      totalOpeningCardFloat += openCardFloat;
 
       const movRes = await query(
         `SELECT 
-          COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow,
+          COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
           COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
           COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
           COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses
@@ -772,22 +820,25 @@ export async function cashRoutes(fastify: FastifyInstance) {
          FROM sale_payments sp
          JOIN payment_methods pm ON pm.id = sp.payment_method_id
          JOIN sales s ON s.id = sp.sale_id
-         WHERE sp.created_by = $1 AND pm.is_cash = FALSE AND s.created_at >= $2 AND (s.created_at <= $3 OR $3 IS NULL)`,
-        [sess.user_id, sess.opened_at, sess.closed_at]
+         WHERE pm.is_cash = FALSE
+           AND s.sale_status = 'completed'
+           AND (s.session_id = $1 OR (s.session_id IS NULL AND sp.created_by = $2 AND s.created_at >= $3 AND (s.created_at <= $4 OR $4 IS NULL)))`,
+        [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
       );
 
       const sessSalesRes = await query(
         `SELECT COUNT(id) as invoices_count, COALESCE(SUM(grand_total), 0) as gross_sales
-         FROM sales
-         WHERE user_id = $1 AND created_at >= $2 AND (created_at <= $3 OR $3 IS NULL) AND sale_status = 'completed'`,
-        [sess.user_id, sess.opened_at, sess.closed_at]
+         FROM sales s
+         WHERE s.sale_status = 'completed'
+           AND (s.session_id = $1 OR (s.session_id IS NULL AND s.user_id = $2 AND s.created_at >= $3 AND (s.created_at <= $4 OR $4 IS NULL)))`,
+        [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
       );
 
       const sessCashSales = Number(movRes.rows[0]?.cash_sales || 0);
       const sessCardSales = Number(cardRes.rows[0]?.card_total || 0);
       const sessCashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
       const sessCashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
-      const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+      const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
       const expectedCash = round2(openFloat + netFlow);
       const countedCash = Number(sess.closing_balance || 0);
       const diff = sess.status === 'closed' ? round2(Number(sess.difference || (countedCash - expectedCash))) : 0;
@@ -800,6 +851,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
       staffSessions.push({
         id: sess.id,
+        sequenceNumber: sess.sequence_number,
         terminalName: sess.terminal_name || 'Terminal-01',
         userId: sess.user_id,
         userName: sess.user_name,
@@ -809,6 +861,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         openedAt: sess.opened_at,
         closedAt: sess.closed_at,
         openingFloat: openFloat,
+        openingCardFloat: openCardFloat,
         invoicesCount: Number(sessSalesRes.rows[0]?.invoices_count || 0),
         grossSales: Number(sessSalesRes.rows[0]?.gross_sales || 0),
         cashSales: sessCashSales,
@@ -840,11 +893,15 @@ export async function cashRoutes(fastify: FastifyInstance) {
       success: true,
       data: {
         businessDate: bounds.businessDate,
+        startDate: bounds.startDate,
+        endDate: bounds.endDate,
         closingHour: bounds.closingHour,
         startTime: bounds.startTime,
         endTime: bounds.endTime,
+        isRange: bounds.startDate !== bounds.endDate,
         totals: {
           totalOpeningFloat: round2(totalOpeningFloat),
+          totalOpeningCardFloat: round2(totalOpeningCardFloat),
           totalInvoices,
           totalGrossSales: round2(totalGrossSales),
           totalTaxCollected: round2(totalTaxCollected),
@@ -865,9 +922,11 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
   // GET /api/v1/cash/sessions - History of shifts with full financial metrics (Manager only)
   fastify.get('/sessions', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
-    const { status, userId, limit = 100, offset = 0 } = request.query as {
+    const { status, userId, startDate, endDate, limit = 100, offset = 0 } = request.query as {
       status?: string;
       userId?: string;
+      startDate?: string;
+      endDate?: string;
       limit?: number;
       offset?: number;
     };
@@ -886,6 +945,19 @@ export async function cashRoutes(fastify: FastifyInstance) {
     if (userId && Number(userId) > 0) {
       params.push(Number(userId));
       conditions.push(`cs.user_id = $${params.length}`);
+    }
+
+    if (startDate || endDate) {
+      const bounds = await getBusinessRangeBounds(startDate, endDate);
+      params.push(bounds.startTime);
+      const startParam = `$${params.length}`;
+      params.push(bounds.endTime);
+      const endParam = `$${params.length}`;
+      params.push(bounds.isTodayIncluded);
+      const todayParam = `$${params.length}`;
+      conditions.push(
+        `((cs.opened_at >= ${startParam} AND cs.opened_at < ${endParam}) OR (${todayParam}::boolean = TRUE AND cs.status = 'open' AND cs.opened_at >= (${startParam}::timestamptz - interval '36 hours')))`
+      );
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -912,7 +984,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
         const movRes = await query(
           `SELECT 
-            COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow,
+            COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
             COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
             COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
             COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses
@@ -925,13 +997,15 @@ export async function cashRoutes(fastify: FastifyInstance) {
            FROM sale_payments sp
            JOIN payment_methods pm ON pm.id = sp.payment_method_id
            JOIN sales s ON s.id = sp.sale_id
-           WHERE (s.session_id = $1 OR (s.session_id IS NULL AND sp.created_by = $2 AND pm.is_cash = FALSE AND s.created_at >= $3 AND s.created_at <= COALESCE($4, $3 + interval '12 hours'))) AND s.sale_status = 'completed'`,
+           WHERE pm.is_cash = FALSE
+             AND s.sale_status = 'completed'
+             AND (s.session_id = $1 OR (s.session_id IS NULL AND sp.created_by = $2 AND s.created_at >= $3 AND s.created_at <= COALESCE($4, $3 + interval '12 hours')))`,
           [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
         );
 
         const salesRes = await query(
           `SELECT COUNT(id) as invoices_count, COALESCE(SUM(grand_total), 0) as gross_sales
-           FROM sales
+           FROM sales s
            WHERE (s.session_id = $1 OR (s.session_id IS NULL AND s.user_id = $2 AND s.created_at >= $3 AND s.created_at <= COALESCE($4, $3 + interval '12 hours'))) AND s.sale_status = 'completed'`,
           [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
         );
@@ -940,13 +1014,14 @@ export async function cashRoutes(fastify: FastifyInstance) {
         const cardSales = Number(cardRes.rows[0]?.card_total || 0);
         const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
         const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
-        const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+        const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedCash = round2(openFloat + netFlow);
         const countedCash = Number(sess.closing_balance || 0);
         const diff = sess.status === 'closed' ? round2(Number(sess.difference ?? (countedCash - expectedCash))) : 0;
 
         return {
           id: sess.id,
+          sequenceNumber: sess.sequence_number,
           terminalName: sess.terminal_name || 'Terminal-01',
           userId: sess.user_id,
           userName: sess.user_name,
@@ -956,6 +1031,9 @@ export async function cashRoutes(fastify: FastifyInstance) {
           openedAt: sess.opened_at,
           closedAt: sess.closed_at,
           openingFloat: openFloat,
+          openingCardFloat: Number(sess.opening_card_balance || 0),
+          carryForwardBalance: Number(sess.carry_forward_balance || 0),
+          carryForwardCardBalance: Number(sess.carry_forward_card_balance || 0),
           invoicesCount: Number(salesRes.rows[0]?.invoices_count || 0),
           grossSales: Number(salesRes.rows[0]?.gross_sales || 0),
           cashSales,
@@ -1038,10 +1116,10 @@ export async function cashRoutes(fastify: FastifyInstance) {
       sessRes.rows.map(async (sess: any) => {
         const openFloat = Number(sess.opening_balance || 0);
 
-        // Cash movements summary
+        // Cash movements summary (excluding opening_float)
         const movRes = await query(
           `SELECT 
-            COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow,
+            COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
             COALESCE(SUM(CASE WHEN source = 'sale' THEN amount ELSE 0 END), 0) as cash_sales,
             COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
             COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses
@@ -1083,7 +1161,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
         const cardSales = Number(cardRes.rows[0]?.card_total || 0);
         const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
         const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
-        const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+        const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedCash = round2(openFloat + netFlow);
 
         return {
@@ -1100,7 +1178,9 @@ export async function cashRoutes(fastify: FastifyInstance) {
           closedAt: sess.closed_at,
           terminalName: sess.terminal_name || 'Terminal-01',
           openingBalance: openFloat,
+          openingCardBalance: Number(sess.opening_card_balance || 0),
           carryForwardBalance: Number(sess.carry_forward_balance || 0),
+          carryForwardCardBalance: Number(sess.carry_forward_card_balance || 0),
           previousSessionId: sess.previous_session_id,
           salesCount: Number(salesRes.rows[0]?.invoices_count || 0),
           grossSales: Number(salesRes.rows[0]?.gross_sales || 0),
@@ -1169,61 +1249,15 @@ export async function cashRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // POST /api/v1/cash/sessions/:id/force-close - Manager Force Close Session
+  // POST /api/v1/cash/sessions/:id/force-close - Disabled: Manager cannot terminate POS session remotely
   fastify.post('/sessions/:id/force-close', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { note } = (request.body as { note?: string }) || {};
-
-    const sessRes = await query(
-      `SELECT * FROM cash_sessions WHERE id = $1`,
-      [Number(id)]
-    );
-
-    if (sessRes.rows.length === 0) {
-      return reply.status(404).send({ success: false, message: 'Session not found.' });
-    }
-
-    const session = sessRes.rows[0];
-    if (session.status === 'closed') {
-      return reply.status(400).send({ success: false, message: 'Session is already closed.' });
-    }
-
-    // Compute expected cash
-    const movRes = await query(
-      `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow
-       FROM cash_movements WHERE session_id = $1`,
-      [session.id]
-    );
-
-    const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
-    const expectedCash = round2(Number(session.opening_balance || 0) + netFlow);
-
-    const updated = await query(
-      `UPDATE cash_sessions 
-       SET status = 'closed', closed_at = NOW(), closing_balance = $1, expected_balance = $1, difference = 0,
-           closing_note = $2, close_type = 'force_closed', force_closed_by = $3
-       WHERE id = $4 RETURNING *`,
-      [expectedCash, note || `Force-closed by manager @${request.user!.username}`, request.user!.id, session.id]
-    );
-
-    await query(
-      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
-       VALUES ($1, 'CASH_SHIFT_FORCE_CLOSED', 'cash_sessions', $2, $3)`,
-      [request.user!.id, session.id, JSON.stringify({ forceClosedBy: request.user!.username, expectedCash })]
-    );
-
-    // Invalidate the displaced cashier's POS session (never touch manager dashboard sessions)
-    await query(`UPDATE users SET current_pos_session_id = NULL WHERE id = $1`, [session.user_id]);
-    broadcastSessionEvent(session.user_id, 'SESSION_SUPERSEDED', undefined, 'pos');
-
-    return reply.send({
-      success: true,
-      message: 'Session force-closed successfully.',
-      data: updated.rows[0],
+    return reply.status(403).send({
+      success: false,
+      message: 'Manager force-close is disabled. POS sessions must be closed directly at the checkout counter.',
     });
   });
 
-  // GET /api/v1/cash/sessions/:id - Shift detail with movements and adjustments breakdown
+  // GET /api/v1/cash/sessions/:id - Shift detail with movements, adjustments, and dynamic invoice-level view
   fastify.get('/sessions/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const sessRes = await query(
@@ -1237,6 +1271,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
     );
 
     if (sessRes.rows.length === 0) return reply.status(404).send({ success: false, message: 'Session not found.' });
+
+    const sess = sessRes.rows[0];
 
     const movRes = await query(
       `SELECT * FROM cash_movements WHERE session_id = $1 ORDER BY created_at ASC`,
@@ -1252,12 +1288,171 @@ export async function cashRoutes(fastify: FastifyInstance) {
       [Number(id)]
     );
 
+    // Invoices / sales for this session
+    const salesRes = await query(
+      `SELECT 
+         s.id, s.reference_no, s.created_at, s.total_items, s.subtotal,
+         s.total_discount, s.total_tax, s.grand_total, s.paid_amount, s.due_amount,
+         s.payment_status, s.sale_status,
+         COALESCE(i.invoice_no, s.reference_no) as invoice_no,
+         COALESCE(c.name, 'Walk-in Customer') as customer_name,
+         c.phone as customer_phone
+       FROM sales s
+       LEFT JOIN invoices i ON i.sale_id = s.id
+       LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE (s.session_id = $1 OR (s.session_id IS NULL AND s.user_id = $2 AND s.created_at >= $3 AND (s.created_at <= $4 OR $4 IS NULL)))
+         AND s.sale_status = 'completed'
+       ORDER BY s.created_at DESC`,
+      [Number(id), sess.user_id, sess.opened_at, sess.closed_at]
+    );
+
+    const saleIds = salesRes.rows.map((s: any) => s.id);
+    const paymentsBySale: Record<number, any[]> = {};
+    const itemsBySale: Record<number, any[]> = {};
+
+    if (saleIds.length > 0) {
+      const payRes = await query(
+        `SELECT sp.sale_id, sp.amount, pm.name as method_name, pm.is_cash
+         FROM sale_payments sp
+         JOIN payment_methods pm ON pm.id = sp.payment_method_id
+         WHERE sp.sale_id = ANY($1::int[])`,
+        [saleIds]
+      );
+      for (const p of payRes.rows) {
+        if (!paymentsBySale[p.sale_id]) paymentsBySale[p.sale_id] = [];
+        paymentsBySale[p.sale_id].push({
+          methodName: p.method_name,
+          amount: Number(p.amount),
+          isCash: p.is_cash,
+        });
+      }
+
+      const itemsRes = await query(
+        `SELECT si.sale_id, si.product_id, si.quantity, si.unit_price, si.tax_amount, si.subtotal,
+                p.name as product_name, p.sku
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = ANY($1::int[])
+         ORDER BY si.id ASC`,
+        [saleIds]
+      );
+      for (const item of itemsRes.rows) {
+        if (!itemsBySale[item.sale_id]) itemsBySale[item.sale_id] = [];
+        itemsBySale[item.sale_id].push({
+          productId: item.product_id,
+          productName: item.product_name,
+          sku: item.sku,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unit_price),
+          taxAmount: Number(item.tax_amount),
+          subtotal: Number(item.subtotal),
+        });
+      }
+    }
+
+    const invoices = salesRes.rows.map((s: any) => ({
+      id: s.id,
+      invoiceNo: s.invoice_no,
+      referenceNo: s.reference_no,
+      createdAt: s.created_at,
+      customerName: s.customer_name,
+      customerPhone: s.customer_phone,
+      totalItems: Number(s.total_items),
+      subtotal: Number(s.subtotal),
+      totalDiscount: Number(s.total_discount),
+      totalTax: Number(s.total_tax),
+      grandTotal: Number(s.grand_total),
+      paidAmount: Number(s.paid_amount),
+      paymentStatus: s.payment_status,
+      payments: paymentsBySale[s.id] || [],
+      items: itemsBySale[s.id] || [],
+    }));
+
+    // Calculate accurate aggregated financial metrics for both open and closed states
+    const openFloat = Number(sess.opening_balance || 0);
+    const openCardFloat = Number(sess.opening_card_balance || 0);
+
+    let totalGrossSales = 0;
+    let totalTaxCollected = 0;
+    for (const inv of invoices) {
+      totalGrossSales += inv.grandTotal;
+      totalTaxCollected += inv.totalTax;
+    }
+
+    const payBreakdownRes = await query(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN pm.is_cash = TRUE THEN sp.amount ELSE 0 END), 0) as cash_sales,
+        COALESCE(SUM(CASE WHEN pm.is_cash = FALSE THEN sp.amount ELSE 0 END), 0) as card_sales
+       FROM sale_payments sp
+       JOIN payment_methods pm ON pm.id = sp.payment_method_id
+       JOIN sales s ON s.id = sp.sale_id
+       WHERE pm.is_cash IS NOT NULL
+         AND s.sale_status = 'completed'
+         AND (s.session_id = $1 OR (s.session_id IS NULL AND sp.created_by = $2 AND s.created_at >= $3 AND (s.created_at <= $4 OR $4 IS NULL)))`,
+      [Number(id), sess.user_id, sess.opened_at, sess.closed_at]
+    );
+
+    const movSummaryRes = await query(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
+        COALESCE(SUM(CASE WHEN source = 'refund' THEN amount ELSE 0 END), 0) as cash_refunds,
+        COALESCE(SUM(CASE WHEN source = 'expense' THEN amount ELSE 0 END), 0) as cash_expenses,
+        COALESCE(SUM(CASE WHEN type = 'cash_in' AND source NOT IN ('opening_float', 'sale') THEN amount ELSE 0 END), 0) as manual_cash_ins
+       FROM cash_movements WHERE session_id = $1`,
+      [Number(id)]
+    );
+
+    const cashSales = Number(payBreakdownRes.rows[0]?.cash_sales || 0);
+    const cardSales = Number(payBreakdownRes.rows[0]?.card_sales || 0);
+    const netOperationalFlow = Number(movSummaryRes.rows[0]?.net_operational_flow || 0);
+    const cashRefunds = Number(movSummaryRes.rows[0]?.cash_refunds || 0);
+    const cashExpenses = Number(movSummaryRes.rows[0]?.cash_expenses || 0);
+    const manualCashIns = Number(movSummaryRes.rows[0]?.manual_cash_ins || 0);
+
+    const isClosed = sess.status === 'closed';
+    const expectedCash = isClosed ? Number(sess.expected_balance || 0) : round2(openFloat + netOperationalFlow);
+    const countedCash = isClosed ? Number(sess.closing_balance || 0) : null;
+    const cashDifference = isClosed ? round2(Number(sess.difference || 0)) : null;
+
+    const expectedCard = isClosed 
+      ? Number(sess.terminal_card_expected ?? round2(openCardFloat + cardSales))
+      : round2(openCardFloat + cardSales);
+    const countedCard = isClosed ? Number(sess.terminal_card_total || 0) : null;
+    const cardDifference = isClosed ? round2(Number(sess.terminal_card_discrepancy || 0)) : null;
+
     return reply.send({
       success: true,
       data: {
         session: {
-          ...sessRes.rows[0],
-          forceClosedByName: sessRes.rows[0].force_closed_by_name,
+          ...sess,
+          opening_balance: openFloat,
+          opening_card_balance: openCardFloat,
+          openingBalance: openFloat,
+          openingCardBalance: openCardFloat,
+          carryForwardBalance: Number(sess.carry_forward_balance || 0),
+          carryForwardCardBalance: Number(sess.carry_forward_card_balance || 0),
+          forceClosedByName: sess.force_closed_by_name,
+          grossSales: round2(totalGrossSales),
+          cashSales: round2(cashSales),
+          cardSales: round2(cardSales),
+          totalTaxCollected: round2(totalTaxCollected),
+          invoicesCount: invoices.length,
+          netOperationalFlow: round2(netOperationalFlow),
+          cashRefunds: round2(cashRefunds),
+          cashExpenses: round2(cashExpenses),
+          manualCashIns: round2(manualCashIns),
+          expected_balance: round2(expectedCash),
+          expectedCash: round2(expectedCash),
+          closing_balance: countedCash !== null ? countedCash : 0,
+          countedCash,
+          difference: cashDifference !== null ? cashDifference : 0,
+          cashDifference,
+          terminal_card_expected: round2(expectedCard),
+          expectedCard: round2(expectedCard),
+          terminal_card_total: countedCard !== null ? countedCard : 0,
+          countedCard,
+          terminal_card_discrepancy: cardDifference !== null ? cardDifference : 0,
+          cardDifference,
         },
         movements: movRes.rows,
         adjustments: adjRes.rows.map((a: any) => ({
@@ -1268,6 +1463,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
           createdBy: a.created_by_name,
           createdAt: a.created_at,
         })),
+        invoices,
       },
     });
   });

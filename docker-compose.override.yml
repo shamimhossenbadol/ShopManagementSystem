@@ -1,0 +1,21 @@
+﻿services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    image: shopmanagement-web:dev
+    container_name: shop_web
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      INTERNAL_API_URL: http://api:5000
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/public:/app/apps/web/public
+      - ./apps/web/tailwind.config.ts:/app/apps/web/tailwind.config.ts:ro
+      - ./apps/web/tsconfig.json:/app/apps/web/tsconfig.json:ro
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+    command: npm run dev

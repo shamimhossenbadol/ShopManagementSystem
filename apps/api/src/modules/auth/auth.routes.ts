@@ -196,13 +196,13 @@ export async function authRoutes(fastify: FastifyInstance) {
         const activeSession = openSessionRes.rows[0];
         // If the open session belongs to a DIFFERENT user, POS is occupied
         if (activeSession.user_id !== user.id) {
-          // Calculate cash movements & drawer balance
+          // Calculate operational cash movements & drawer balance (excluding opening_float)
           const movRes = await query(
-            `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0) as net_cash_flow
+            `SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow
              FROM cash_movements WHERE session_id = $1`,
             [activeSession.id]
           );
-          const netFlow = Number(movRes.rows[0]?.net_cash_flow || 0);
+          const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
           const expectedBalance = Number(activeSession.opening_balance) + netFlow;
 
           if (!forceTakeover) {

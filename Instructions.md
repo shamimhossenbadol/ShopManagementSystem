@@ -332,25 +332,37 @@ $$\text{Business Day End} = (D + 1\text{ day})\text{ at }H_{\text{close}}$$
 - When $H_{\text{close}} = \text{'02:00'}$, transactions occurring between 00:00:00 and 01:59:59 belong to the previous calendar day's business records.
 - All Dashboard KPIs, Sales Trends, VAT reports, and Cash Drawer shift summaries cycle dynamically according to this business day window.
 
-### 9.2 Multi-Terminal Cash Drawer Calculation Model
-In a store operating multiple checkout counters (terminals) concurrently:
+### 9.2 Cash Drawer Calculation & Reconciliation Model
+In store operations:
 
-1. **Per-Terminal Cash Drawer Formula**:
-   For each terminal $k \in \{1, \dots, N\}$:
-   $$\text{Expected Cash}_k = \text{Opening Float}_k + \text{Cash Sales}_k - \text{Cash Returns}_k - \text{Cash Deductions/Expenses}_k + \text{Cash In}_k$$
+1. **Per-Shift Cash Drawer Formula**:
+   $$\text{Expected Cash} = \text{Opening Float} + \text{Cash Sales} - \text{Cash Returns} - \text{Cash Deductions/Expenses} + \text{Cash In (excluding float)}$$
+   *Note on Ledger Precision*: When recording an opening float into the `cash_movements` ledger as an initial `cash_in`, the operational expected cash calculation must never double-count the float. The formula strictly evaluates $\text{Opening Float} + \text{Operational Net Cash Flow}$.
 
-2. **Electronic Card Settlement**:
-   $$\text{Terminal Card Expected}_k = \sum \text{Mada/Credit Card payments on Terminal } k$$
+2. **Dual Floats & Electronic Card Settlement**:
+   - Both **Cash Drawer Float** (`opening_balance`) and **Card Float** (`opening_card_balance`) are tracked upon shift opening.
+   - At shift close:
+     $$\text{Terminal Card Expected} = \sum \text{Mada/Credit Card payments during shift}$$
+   - Cashiers reconcile by printing the bank POS card machine batch settlement slip and entering the slip total (`terminal_card_total`). Discrepancy is $\text{terminal\_card\_total} - \text{terminal\_card\_expected}$. Electronic card balances settle with the bank, while drawer cash carries forward to the next session.
 
-3. **Store Consolidated Daily Matrix**:
-   $$\text{Total Expected Store Cash} = \sum_{k=1}^N \text{Expected Cash}_k$$
-   $$\text{Total Actual Store Cash} = \sum_{k=1}^N \text{Counted Cash}_k$$
-   $$\text{Total Store Discrepancy} = \text{Total Actual Store Cash} - \text{Total Expected Store Cash}$$
+3. **Single POS Counter Architecture (Single-Terminal)**:
+   - The shop operates a single physical checkout counter. There are NO multiple terminals and NO Terminal IDs.
+   - Exactly one POS counter session may be active globally (`uq_single_open_cash_session`).
+   - Sessions are linked sequentially via `sequence_number` and `previous_session_id`.
+   - The verified closing cash and card totals of the preceding shift automatically serve as suggested carry-forward balances for the incoming shift.
 
-4. **Blind Count & Z-Report Reconciliation**:
-   - Cashiers submit a blind physical cash count and card terminal batch settlement slip total at shift end.
-   - The system compares expected vs actual and generates an official Z-Report with discrepancy categorization (`BALANCED`, `OVERAGE`, or `SHORTAGE`).
-   - Managers can export the complete daily records for all terminals as **CSV** or print the consolidated **Daily Z-Report** with a single click.
+4. **POS Operator Takeover Protocol**:
+   - If a cashier attempts to log in via 5-digit PIN while another cashier's session remains open, the system responds with `POS_OCCUPIED` and presents an interactive takeover confirmation showing the active operator's identity, elapsed shift time, and live drawer cash.
+   - Upon confirming takeover, the displaced session is automatically closed with `close_type = 'takeover'`, its POS session token is revoked via WebSocket broadcast (`SESSION_SUPERSEDED`), and the incoming cashier activates their shift.
+
+5. **Discrepancy Adjustments Ledger (`session_adjustments`)**:
+   - Cashiers can record declared explanations for variances during shift opening and closing.
+   - Adjustments are persisted in the append-only `session_adjustments` ledger with a database trigger prohibiting mutations or deletions (`trg_session_adjustments_no_update_delete`).
+
+6. **Manager Cash Oversight Center (`/cash`)**:
+   - In accordance with Section 8.2 (Zero-Privilege POS), the Manager does not open, operate, or terminate cashier tills from the Manager Portal. POS sessions must be closed directly at the checkout counter.
+   - The `/cash` section provides managerial oversight: real-time till occupancy, store-wide daily business metrics, timeline-based chronological shift audit trails, and deep inspection modal with dynamic invoice-level view (including all sales, payments, and line items).
+   - Managers can export daily business day records as **CSV** or print the consolidated **Daily Z-Report** with a single click. All toolbar buttons and controls maintain a strict uniform height (`h-10`).
 
 ---
 

@@ -667,7 +667,7 @@ CREATE TABLE registers (
 
 CREATE TABLE cash_sessions (
     id SERIAL PRIMARY KEY,
-    register_id INT NOT NULL REFERENCES registers(id) ON DELETE RESTRICT,
+    register_id INT REFERENCES registers(id) ON DELETE RESTRICT,
     user_id INT NOT NULL REFERENCES users(id),
     status cash_session_status_enum NOT NULL DEFAULT 'open',
     opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -680,13 +680,23 @@ CREATE TABLE cash_sessions (
     terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000, -- System recorded card sales
     terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000, -- Settlement discrepancy
     closing_note TEXT,
+    terminal_name VARCHAR(100) DEFAULT 'Terminal-01',
+    sequence_number INT,
+    previous_session_id INT REFERENCES cash_sessions(id),
+    carry_forward_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    close_type VARCHAR(20) DEFAULT 'normal', -- 'normal', 'takeover', 'force_closed'
+    force_closed_by INT REFERENCES users(id),
+    force_close_reason TEXT,
+    opening_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    carry_forward_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX uq_open_cash_session_per_register ON cash_sessions(register_id) WHERE status = 'open';
+-- Enforce single open POS session globally
+CREATE UNIQUE INDEX IF NOT EXISTS uq_single_open_cash_session ON cash_sessions ((1)) WHERE status = 'open';
 
 CREATE TABLE cash_movements (
     id BIGSERIAL PRIMARY KEY,
-    session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE RESTRICT,
+    session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE CASCADE,
     type cash_movement_type_enum NOT NULL,
     amount DECIMAL(15,4) NOT NULL,
     source cash_movement_source_enum NOT NULL,
@@ -694,6 +704,18 @@ CREATE TABLE cash_movements (
     description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Discrepancy Adjustments Ledger (Immutable)
+CREATE TABLE IF NOT EXISTS session_adjustments (
+    id BIGSERIAL PRIMARY KEY,
+    session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE RESTRICT,
+    adjustment_type VARCHAR(20) NOT NULL CHECK (adjustment_type IN ('opening', 'closing')),
+    amount DECIMAL(15,4) NOT NULL,
+    description TEXT NOT NULL,
+    created_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_session_adjustments_session ON session_adjustments(session_id);
 
 -- 6. SALES & POS CORE
 CREATE TABLE sales (

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { printZReportDirectly } from './printZReport';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
@@ -71,6 +72,21 @@ function formatDateBadge(dateStr: string) {
   } catch {
     return dateStr;
   }
+}
+
+function formatHumanDate(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const y = parts[0];
+      const m = months[parseInt(parts[1], 10) - 1] || parts[1];
+      const d = parts[2].padStart(2, '0');
+      return `${d} ${m} ${y}`;
+    }
+  } catch {}
+  return dateStr || '';
 }
 
 interface ActiveTillInfo {
@@ -165,10 +181,6 @@ export default function CashSessionsPage() {
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoicePaymentFilter, setInvoicePaymentFilter] = useState<'all' | 'cash' | 'card'>('all');
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<number | null>(null);
-
-  // Official Z-Report Modal States
-  const [zReportModalOpen, setZReportModalOpen] = useState(false);
-  const [zReportData, setZReportData] = useState<any>(null);
 
   // Main Data Fetcher
   const loadOverview = useCallback(async (startParam?: string, endParam?: string) => {
@@ -287,7 +299,7 @@ export default function CashSessionsPage() {
     setInspectLoading(false);
   };
 
-  // Export Daily or Range Business Records as CSV
+  // Export Daily or Range Business Records as CSV (Executive Financial Audit Ledger)
   const handleExportCSV = () => {
     const sessions = dailyData?.staffSessions?.length ? dailyData.staffSessions : allShifts;
     if (!sessions || !sessions.length) {
@@ -296,117 +308,307 @@ export default function CashSessionsPage() {
     }
 
     const isRange = startDate !== endDate;
-    const periodLabel = isRange ? `${startDate} to ${endDate}` : startDate;
-    const { totals } = dailyData || {};
+    const formattedStartDate = formatHumanDate(startDate);
+    const formattedEndDate = formatHumanDate(endDate);
+    const periodLabel = isRange ? `${formattedStartDate} to ${formattedEndDate}` : formattedStartDate;
 
-    const summaryMeta = [
-      `"AUDIT PERIOD",${JSON.stringify(periodLabel)}`,
-      `"TOTAL REGISTER SHIFTS",${sessions.length}`,
-      `"TOTAL GROSS SALES (SAR)",${Number(totals?.totalGrossSales || 0).toFixed(2)}`,
-      `"TOTAL CASH SALES (SAR)",${Number(totals?.totalCashSales || 0).toFixed(2)}`,
-      `"TOTAL CARD (MADA) SALES (SAR)",${Number(totals?.totalCardSales || 0).toFixed(2)}`,
-      `"TOTAL CASH DEDUCTIONS (SAR)",${Number((totals?.totalCashRefunds || 0) + (totals?.totalCashExpenses || 0)).toFixed(2)}`,
-      `"EXPECTED CASH IN DRAWERS (SAR)",${Number(totals?.expectedCashInDrawers || 0).toFixed(2)}`,
-      `"TOTAL COUNTED CASH (SAR)",${Number(totals?.totalCountedCash || 0).toFixed(2)}`,
-      `"TOTAL DISCREPANCY (SAR)",${Number(totals?.totalDiscrepancy || 0).toFixed(2)}`,
+    const shopName = settings?.shop_name_en || settings?.shop_name_ar || 'AL-NOOR SUPERMARKET & HYPERMARKET';
+    const vatNumber = settings?.shop_vat_number || settings?.vat_number || '300123456700003';
+    const crNumber = settings?.shop_cr_number || settings?.cr_number || '1010123456';
+    const phone = settings?.shop_phone || settings?.phone || '+966 11 456 7890';
+    const address = settings?.shop_address || settings?.address || 'Riyadh, Saudi Arabia';
+
+    const closedCount = sessions.filter((s: any) => s.status === 'closed').length;
+    const activeCount = sessions.filter((s: any) => s.status !== 'closed').length;
+
+    // Aggregate key indicators
+    const { totals } = dailyData || {};
+    const totalGrossRevenue = Number(totals?.totalGrossSales || sessions.reduce((sum: number, s: any) => sum + Number(s.grossSales || 0), 0));
+    const totalVatCollected = Number(totals?.totalTaxCollected || sessions.reduce((sum: number, s: any) => sum + Number(s.totalTaxCollected || 0), 0)) ||
+      Number(((totalGrossRevenue * 15) / 115).toFixed(2));
+    const totalNetRevenue = Math.max(0, totalGrossRevenue - totalVatCollected);
+    const totalCashSales = Number(totals?.totalCashSales || sessions.reduce((sum: number, s: any) => sum + Number(s.cashSales || 0), 0));
+    const totalCardSales = Number(totals?.totalCardSales || sessions.reduce((sum: number, s: any) => sum + Number(s.cardSales || 0), 0));
+    const totalInvoicesCount = Number(totals?.totalInvoices || sessions.reduce((sum: number, s: any) => sum + Number(s.invoicesCount || 0), 0));
+    const totalCashRefunds = Number(totals?.totalCashRefunds || sessions.reduce((sum: number, s: any) => sum + Number(s.cashRefunds || 0), 0));
+    const totalCashExpenses = Number(totals?.totalCashExpenses || sessions.reduce((sum: number, s: any) => sum + Number(s.cashExpenses || 0), 0));
+    // Physical Cash Drawer Metrics (STRICTLY SEPARATED)
+    const totalOpeningCashFloat = Number(totals?.totalOpeningFloat || sessions.reduce((sum: number, s: any) => sum + Number(s.openingFloat || s.opening_balance || 0), 0));
+    const totalExpectedCash = Number(totals?.expectedCashInDrawers || sessions.reduce((sum: number, s: any) => sum + Number(s.expectedCash || s.expected_balance || 0), 0));
+    const totalCountedCash = Number(totals?.totalCountedCash || sessions.filter((s: any) => s.status === 'closed').reduce((sum: number, s: any) => sum + Number(s.countedCash || s.closing_balance || 0), 0));
+    const totalCashVariance = Number(totals?.totalDiscrepancy || sessions.filter((s: any) => s.status === 'closed').reduce((sum: number, s: any) => sum + Number(s.difference || s.cashDifference || 0), 0));
+
+    // Electronic Card Terminal Metrics (STRICTLY SEPARATED)
+    const totalOpeningCardFloat = Number(totals?.totalOpeningCardFloat || sessions.reduce((sum: number, s: any) => sum + Number(s.openingCardFloat || s.opening_card_balance || 0), 0));
+    const totalExpectedCard = Number(totals?.expectedCardTotal || sessions.reduce((sum: number, s: any) => {
+      const cardFloat = Number(s.openingCardFloat ?? s.opening_card_balance ?? 0);
+      const cardSales = Number(s.cardSales ?? 0);
+      return sum + (s.terminalCardExpected !== undefined && s.terminalCardExpected !== null ? Number(s.terminalCardExpected) : (cardFloat + cardSales));
+    }, 0));
+    const totalCountedCard = Number(totals?.totalCountedCard || sessions.filter((s: any) => s.status === 'closed').reduce((sum: number, s: any) => sum + Number(s.terminalCardTotal ?? s.countedCard ?? 0), 0));
+    const totalCardVariance = Number(totals?.totalCardDiscrepancy || sessions.filter((s: any) => s.status === 'closed').reduce((sum: number, s: any) => sum + Number(s.terminalCardDiscrepancy ?? s.cardDifference ?? 0), 0));
+
+    // Combined Store Audit Totals (Total Section Concept)
+    const totalCombinedFloats = totalOpeningCashFloat + totalOpeningCardFloat;
+    const totalCombinedExpected = totalExpectedCash + totalExpectedCard;
+    const totalCombinedCounted = totalCountedCash + totalCountedCard;
+    const totalNetVariance = totalCashVariance + totalCardVariance;
+
+    const cashSharePct = totalGrossRevenue > 0 ? ((totalCashSales / totalGrossRevenue) * 100).toFixed(1) : '0.0';
+    const cardSharePct = totalGrossRevenue > 0 ? ((totalCardSales / totalGrossRevenue) * 100).toFixed(1) : '0.0';
+    const avgBasket = totalInvoicesCount > 0 ? (totalGrossRevenue / totalInvoicesCount).toFixed(2) : '0.00';
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    // 1. Business & Store Identification Block
+    const metaBlock = [
+      ['REPORT TITLE', escapeCSV('OFFICIAL POINT OF SALE CASH DRAWER & FINANCIAL AUDIT LEDGER')],
+      ['COMPANY / SHOP NAME', escapeCSV(shopName)],
+      ['VAT REGISTRATION NUMBER', escapeCSV(vatNumber)],
+      ['COMMERCIAL REGISTRATION (CR)', escapeCSV(crNumber)],
+      ['STORE ADDRESS', escapeCSV(address)],
+      ['STORE PHONE', escapeCSV(phone)],
+      ['AUDIT PERIOD', escapeCSV(periodLabel)],
+      ['AUDIT SCOPE', escapeCSV(isRange ? 'Consolidated Period Records' : 'Daily Shift Settlement Records')],
+      ['GENERATED TIMESTAMP', escapeCSV(new Date().toLocaleString())],
+      ['BASE CURRENCY', escapeCSV('SAR (Saudi Riyal)')],
     ];
 
-    const headers = [
-      'Shift #',
+    // 2. Executive Financial KPI Summary (Structured into Cash, Card, and Total Audit Sections)
+    const summaryKPIs = [
+      ['', ''],
+      ['--- EXECUTIVE FINANCIAL AUDIT SUMMARY (KPIS) ---', ''],
+      ['FINANCIAL METRIC', 'AMOUNT (SAR) / METRIC VALUE', 'BUSINESS BENCHMARK / AUDIT NOTE'],
+      ['Total Register Shifts', `${sessions.length} Shifts`, `${closedCount} Closed & Settled, ${activeCount} Live / Active`],
+      ['Total Customer Invoices / Transactions', `${totalInvoicesCount} Invoices`, 'Completed Point of Sale customer bills'],
+      ['Gross Revenue (VAT Inclusive)', totalGrossRevenue.toFixed(2), 'Total customer sales billing value (Cash + Card)'],
+      ['Net Taxable Revenue (Excl. VAT)', totalNetRevenue.toFixed(2), 'Gross sales minus 15% VAT component'],
+      ['Total VAT Collected (15% Standard Rate)', totalVatCollected.toFixed(2), '15% ZATCA tax collected on behalf of authority'],
+      ['Average Basket / Ticket Size', avgBasket, 'Average customer spend per invoice'],
+      ['Direct Physical Cash Sales', totalCashSales.toFixed(2), `${cashSharePct}% of total gross revenue`],
+      ['Electronic Card (Mada) Sales', totalCardSales.toFixed(2), `${cardSharePct}% of total gross revenue`],
+      ['Cash Customer Refunds (Outflow)', totalCashRefunds.toFixed(2), 'Deductions from cash drawer for returned merchandise'],
+      ['Cash Operating Expenses (Outflow)', totalCashExpenses.toFixed(2), 'Authorized store payouts from drawer'],
+      ['', ''],
+      ['--- 1. PHYSICAL CASH DRAWER RECONCILIATION ---', ''],
+      ['Opening Cash Float', totalOpeningCashFloat.toFixed(2), 'Starting physical drawer float across counters'],
+      ['Direct Physical Cash Sales', totalCashSales.toFixed(2), 'Cash received in register tills'],
+      ['Cash Deductions (Refunds + Expenses)', (totalCashRefunds + totalCashExpenses).toFixed(2), 'Cash paid out of till'],
+      ['Expected Cash in Drawers', totalExpectedCash.toFixed(2), 'Cash Float + Cash Sales - Cash Deductions'],
+      ['Actual Counted Cash', totalCountedCash.toFixed(2), 'Physical cash counted upon register closure'],
+      ['Cash Drawer Variance', totalCashVariance.toFixed(2), Math.abs(totalCashVariance) < 0.01 ? 'BALANCED (100% Reconciliation)' : (totalCashVariance > 0 ? 'OVERAGE (Surplus Cash in Drawer)' : 'SHORTAGE (Deficit in Drawer)')],
+      ['', ''],
+      ['--- 2. ELECTRONIC CARD TERMINAL SETTLEMENT ---', ''],
+      ['Opening Card Float', totalOpeningCardFloat.toFixed(2), 'Initial electronic card terminal float / balance'],
+      ['Terminal Card Sales', totalCardSales.toFixed(2), 'Sum of electronic card batch transactions'],
+      ['Expected Electronic Card Total', totalExpectedCard.toFixed(2), 'Opening Card Float + Terminal Card Sales'],
+      ['Actual Settled Card Terminals', totalCountedCard.toFixed(2), 'Bank POS terminal settlement batch slips'],
+      ['Card Terminal Variance', totalCardVariance.toFixed(2), Math.abs(totalCardVariance) < 0.01 ? 'BALANCED (100% Reconciliation)' : (totalCardVariance > 0 ? 'CARD SURPLUS' : 'CARD DISCREPANCY DETECTED')],
+      ['', ''],
+      ['--- 3. TOTAL SHIFT AUDIT SETTLEMENT (TOTAL SECTION) ---', ''],
+      ['Total Combined Opening Floats', totalCombinedFloats.toFixed(2), 'Cash Float + Card Float'],
+      ['Total Combined Expected Settlements', totalCombinedExpected.toFixed(2), 'Expected Cash in Till + Expected Card Settlements'],
+      ['Total Combined Counted & Settled', totalCombinedCounted.toFixed(2), 'Counted Physical Cash + Settled Terminal Slips'],
+      ['NET STORE AUDIT DISCREPANCY', totalNetVariance.toFixed(2), Math.abs(totalNetVariance) < 0.01 ? 'PERFECT RECONCILIATION (100% MATCH)' : (totalNetVariance > 0 ? 'NET STORE SURPLUS' : 'NET STORE DEFICIT')],
+      ['', ''],
+      ['--- DETAILED REGISTER SHIFT AUDIT LEDGER ---', ''],
+    ];
+
+    // 3. Detailed Tabular Columns
+    const tableHeaders = [
+      'Shift Sequence',
+      'Shift Session ID',
+      'Terminal / Register',
       'Cashier Name',
       'Username',
-      'Status',
-      'Opened At',
-      'Closed At',
-      'Drawer Cash Float (SAR)',
-      'Card Float (SAR)',
-      'Invoices Count',
-      'Gross Sales (SAR)',
+      'Operator Role',
+      'Shift Status',
+      'Shift Opened At',
+      'Shift Closed At',
+      'Shift Duration',
+      'Opening Cash Float (SAR)',
+      'Opening Card Float (SAR)',
+      'Total Invoices',
+      'Gross Sales Incl. VAT (SAR)',
+      'Net Sales Excl. VAT (SAR)',
+      'VAT Collected 15% (SAR)',
       'Cash Sales (SAR)',
       'Card Sales (SAR)',
-      'Cash Refunds (SAR)',
-      'Cash Expenses (SAR)',
-      'Expected Cash (SAR)',
-      'Counted Cash (SAR)',
+      'Cash Tender %',
+      'Card Tender %',
+      'Average Ticket (SAR)',
+      'Customer Cash Refunds (SAR)',
+      'Cash Operating Expenses (SAR)',
+      'Net Cash Flow (SAR)',
+      'Expected Cash In Drawer (SAR)',
+      'Actual Counted Cash (SAR)',
       'Cash Variance (SAR)',
-      'Card Settled (SAR)',
+      'Cash Drawer Audit Status',
+      'Expected Card Total (SAR)',
+      'Actual Settled Card (SAR)',
       'Card Variance (SAR)',
-      'Closing Note',
+      'Card Terminal Audit Status',
+      'Net Shift Variance (SAR)',
+      'Shift Reconciliation Result',
+      'Closing Note / Cashier Audit Remarks',
     ];
 
-    const rows = sessions.map((s: any) => [
-      s.sequenceNumber || s.id,
-      `"${s.userName || ''}"`,
-      `"${s.username || ''}"`,
-      s.status,
-      `"${s.openedAt ? new Date(s.openedAt).toLocaleString() : ''}"`,
-      `"${s.closedAt ? new Date(s.closedAt).toLocaleString() : 'ACTIVE'}"`,
-      Number(s.openingFloat || 0).toFixed(2),
-      Number(s.openingCardFloat || 0).toFixed(2),
-      s.invoicesCount || 0,
-      Number(s.grossSales || 0).toFixed(2),
-      Number(s.cashSales || 0).toFixed(2),
-      Number(s.cardSales || 0).toFixed(2),
-      Number(s.cashRefunds || 0).toFixed(2),
-      Number(s.cashExpenses || 0).toFixed(2),
-      Number(s.expectedCash || 0).toFixed(2),
-      Number(s.countedCash || 0).toFixed(2),
-      Number(s.difference || 0).toFixed(2),
-      Number(s.terminalCardTotal || 0).toFixed(2),
-      Number(s.terminalCardDiscrepancy || 0).toFixed(2),
-      `"${(s.closingNote || '').replace(/"/g, '""')}"`,
-    ]);
+    const tableRows = sessions.map((s: any) => {
+      const gross = Number(s.grossSales || 0);
+      const vat = Number(s.totalTaxCollected || 0) || Number(((gross * 15) / 115).toFixed(2));
+      const net = Math.max(0, gross - vat);
+      const cash = Number(s.cashSales || 0);
+      const card = Number(s.cardSales || 0);
+      const invoices = Number(s.invoicesCount || 0);
+      const refunds = Number(s.cashRefunds || 0);
+      const expenses = Number(s.cashExpenses || 0);
+      const netCashFlow = cash - refunds - expenses;
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      [
-        ...summaryMeta,
-        '',
-        headers.join(','),
-        ...rows.map((e: any[]) => e.join(',')),
-      ].join('\n');
+      const cashPct = gross > 0 ? `${((cash / gross) * 100).toFixed(1)}%` : '0.0%';
+      const cardPct = gross > 0 ? `${((card / gross) * 100).toFixed(1)}%` : '0.0%';
+      const ticket = invoices > 0 ? (gross / invoices).toFixed(2) : '0.00';
 
-    const encodedUri = encodeURI(csvContent);
+      const isClosed = s.status === 'closed';
+      const cashDiff = isClosed ? Number(s.difference ?? s.cashDifference ?? 0) : 0;
+      const cardDiff = isClosed ? Number(s.terminalCardDiscrepancy ?? s.cardDifference ?? 0) : 0;
+      const netShiftDiff = cashDiff + cardDiff;
+
+      const cashStatus = !isClosed ? 'ACTIVE / IN PROGRESS' : Math.abs(cashDiff) < 0.01 ? 'BALANCED' : cashDiff > 0 ? 'OVERAGE' : 'SHORTAGE';
+      const cardStatus = !isClosed ? 'ACTIVE / IN PROGRESS' : Math.abs(cardDiff) < 0.01 ? 'BALANCED' : 'DISCREPANCY';
+      const auditResult = !isClosed ? 'ACTIVE REGISTER' : Math.abs(netShiftDiff) < 0.01 ? 'BALANCED (100%)' : 'VARIANCE DETECTED';
+
+      const cleanName = (s.userName || 'Cashier')
+        .replace(/\s*\([^)]*\)/g, '')
+        .replace(/@\w+/g, '')
+        .trim();
+
+      return [
+        escapeCSV(s.sequenceNumber ? `Shift #${s.sequenceNumber}` : `Shift #${s.id}`),
+        s.id,
+        escapeCSV(s.terminalName || 'Terminal-01'),
+        escapeCSV(cleanName),
+        escapeCSV(s.username || ''),
+        escapeCSV(s.userRole || 'cashier'),
+        escapeCSV(isClosed ? 'CLOSED' : 'ACTIVE'),
+        escapeCSV(s.openedAt ? new Date(s.openedAt).toLocaleString() : ''),
+        escapeCSV(s.closedAt ? new Date(s.closedAt).toLocaleString() : 'ACTIVE / LIVE'),
+        escapeCSV(computeDuration(s.openedAt, s.closedAt)),
+        Number(s.openingFloat || s.opening_balance || 0).toFixed(2),
+        Number(s.openingCardFloat || s.opening_card_balance || 0).toFixed(2),
+        invoices,
+        gross.toFixed(2),
+        net.toFixed(2),
+        vat.toFixed(2),
+        cash.toFixed(2),
+        card.toFixed(2),
+        escapeCSV(cashPct),
+        escapeCSV(cardPct),
+        ticket,
+        refunds.toFixed(2),
+        expenses.toFixed(2),
+        netCashFlow.toFixed(2),
+        Number(s.expectedCash || s.expected_balance || 0).toFixed(2),
+        isClosed ? Number(s.countedCash || s.closing_balance || 0).toFixed(2) : 'UNCOUNTED',
+        cashDiff.toFixed(2),
+        escapeCSV(cashStatus),
+        Number(s.terminalCardExpected !== undefined && s.terminalCardExpected !== null ? s.terminalCardExpected : ((Number(s.openingCardFloat || s.opening_card_balance || 0)) + card)).toFixed(2),
+        isClosed ? Number(s.terminalCardTotal ?? s.countedCard ?? 0).toFixed(2) : 'UNCOUNTED',
+        cardDiff.toFixed(2),
+        escapeCSV(cardStatus),
+        netShiftDiff.toFixed(2),
+        escapeCSV(auditResult),
+        escapeCSV(s.closingNote || ''),
+      ];
+    });
+
+    const csvLines = [
+      ...metaBlock.map(row => row.join(',')),
+      ...summaryKPIs.map(row => row.join(',')),
+      tableHeaders.join(','),
+      ...tableRows.map(row => row.join(',')),
+    ];
+
+    const csvContent = '\uFEFF' + csvLines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.href = url;
     const filename = isRange
-      ? `Cash_Drawer_Audit_${startDate}_to_${endDate}.csv`
-      : `Cash_Drawer_Audit_${startDate}.csv`;
+      ? `POS_Cash_Audit_${startDate}_to_${endDate}.csv`
+      : `POS_Cash_Audit_${startDate}.csv`;
     link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  // Open Consolidated Z-Report for selected Date or Range
+  // Print Consolidated Z-Report for selected Date or Range directly to native printer (Excluding Active Sessions)
   const handleOpenConsolidatedZReport = () => {
     const isRange = startDate !== endDate;
-    const periodLabel = isRange ? `${startDate} to ${endDate}` : startDate;
-    const { totals } = dailyData || {};
+    const formattedStartDate = formatHumanDate(startDate);
+    const formattedEndDate = formatHumanDate(endDate);
+    const periodLabel = isRange ? `${formattedStartDate} - ${formattedEndDate}` : formattedStartDate;
 
-    setZReportData({
-      isRange,
-      periodLabel,
-      sessionId: isRange
-        ? `STORE-PERIOD-${startDate}-TO-${endDate}`
-        : `STORE-DAILY-${startDate}`,
-      cashierName: isRange
-        ? `Consolidated Store Period Audit (${periodLabel})`
-        : 'Consolidated Store Daily Report',
-      openedAt: dailyData?.startTime,
-      closedAt: dailyData?.endTime,
-      totalShifts: dailyData?.staffSessions?.length || allShifts.length,
-      openingFloat: totals?.totalOpeningFloat || 0,
-      openingCardFloat: totals?.totalOpeningCardFloat || 0,
-      grossSales: totals?.totalGrossSales || 0,
-      cashSales: totals?.totalCashSales || 0,
-      cardSales: totals?.totalCardSales || 0,
-      vatCollected: totals?.totalTaxCollected || 0,
-      expectedCash: totals?.expectedCashInDrawers || 0,
-      actualCash: totals?.totalCountedCash || 0,
-      cashVariance: totals?.totalDiscrepancy || 0,
-    });
-    setZReportModalOpen(true);
+    // Filter strictly for CLOSED sessions only - active sessions must not be included
+    const allSessions = dailyData?.staffSessions || allShifts || [];
+    const closedSessions = allSessions.filter((s: any) => s.status === 'closed');
+
+    if (closedSessions.length === 0) {
+      alert('No closed register shifts found for the selected period. Active shifts are not included.');
+      return;
+    }
+
+    const totalOpeningFloat = closedSessions.reduce((sum: number, s: any) => sum + Number(s.openingFloat || s.opening_balance || 0), 0);
+    const totalOpeningCardFloat = closedSessions.reduce((sum: number, s: any) => sum + Number(s.openingCardFloat || s.opening_card_balance || 0), 0);
+    const totalGrossSales = closedSessions.reduce((sum: number, s: any) => sum + Number(s.grossSales || 0), 0);
+    const totalCashSales = closedSessions.reduce((sum: number, s: any) => sum + Number(s.cashSales || 0), 0);
+    const totalCardSales = closedSessions.reduce((sum: number, s: any) => sum + Number(s.cardSales || 0), 0);
+    const totalInvoices = closedSessions.reduce((sum: number, s: any) => sum + Number(s.invoicesCount || 0), 0);
+    const totalTaxCollected = closedSessions.reduce((sum: number, s: any) => sum + Number(s.totalTaxCollected || 0), 0) ||
+      (Number(dailyData?.totals?.totalTaxCollected || 0) > 0 && closedSessions.length === allSessions.length
+        ? Number(dailyData?.totals?.totalTaxCollected)
+        : Number(((totalGrossSales * 15) / 115).toFixed(2)));
+    const totalCashRefunds = closedSessions.reduce((sum: number, s: any) => sum + Number(s.cashRefunds || 0), 0);
+    const totalCashExpenses = closedSessions.reduce((sum: number, s: any) => sum + Number(s.cashExpenses || 0), 0);
+    const expectedCashInDrawers = closedSessions.reduce((sum: number, s: any) => sum + Number(s.expectedCash || s.expected_balance || 0), 0);
+    const totalCountedCash = closedSessions.reduce((sum: number, s: any) => sum + Number(s.countedCash || s.closing_balance || 0), 0);
+    const totalDiscrepancy = closedSessions.reduce((sum: number, s: any) => sum + Number(s.difference || s.cashDifference || 0), 0);
+    const expectedCard = closedSessions.reduce((sum: number, s: any) => sum + Number(s.terminalCardExpected ?? s.expectedCard ?? s.cardSales ?? 0), 0);
+    const actualCard = closedSessions.reduce((sum: number, s: any) => sum + Number(s.terminalCardTotal ?? s.countedCard ?? s.cardSales ?? 0), 0);
+    const cardVariance = closedSessions.reduce((sum: number, s: any) => sum + Number(s.terminalCardDiscrepancy ?? s.cardDifference ?? 0), 0);
+
+    printZReportDirectly(
+      {
+        isRange: true,
+        periodLabel,
+        sessionId: periodLabel,
+        cashierName: 'Consolidated Store Ledger',
+        totalShifts: closedSessions.length,
+        openingFloat: totalOpeningFloat,
+        openingCardFloat: totalOpeningCardFloat,
+        grossSales: totalGrossSales,
+        cashSales: totalCashSales,
+        cardSales: totalCardSales,
+        vatCollected: totalTaxCollected,
+        invoicesCount: totalInvoices,
+        cashRefunds: totalCashRefunds,
+        cashExpenses: totalCashExpenses,
+        expectedCash: expectedCashInDrawers,
+        actualCash: totalCountedCash,
+        cashVariance: totalDiscrepancy,
+        expectedCard,
+        actualCard,
+        cardVariance,
+      },
+      settings,
+      formatCurrency,
+      formatDateTime
+    );
   };
 
   // Compute Shift Duration helper (including seconds)
@@ -643,112 +845,227 @@ export default function CashSessionsPage() {
         </div>
       )}
 
-      {/* 3. Store Financial Matrix (6 High-Contrast Metric Cards with Dual Floats) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-            <Layers className="h-4 w-4 text-blue-600 dark:text-sky-400" />
-            Performance Matrix ({dailyData?.businessDate || rangeLabel})
-          </h2>
-          <span className="text-xs text-slate-400 font-mono">
-            {totals?.activeDrawersCount || 0} Open • {totals?.closedDrawersCount || 0} Closed Shifts
-          </span>
-        </div>
+      {/* 3. Store Financial Matrix (5 Structured Audit Matrix Cards) */}
+      {(() => {
+        // 1. Opening Floats
+        const openCash = Number(totals?.totalOpeningFloat || 0);
+        const openCard = Number(totals?.totalOpeningCardFloat || 0);
+        const openTotal = openCash + openCard;
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* Card 1: Total Dual Floats */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Total Floats</span>
-              <Banknote className="h-4 w-4 text-blue-500" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-slate-900 dark:text-white">
-              {formatCurrency((totals?.totalOpeningFloat || 0) + (totals?.totalOpeningCardFloat || 0))}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400 font-mono">
-              Cash: {formatCurrency(totals?.totalOpeningFloat || 0)}
-            </div>
-          </div>
+        // 2. Sales Inflows
+        const cashSales = Number(totals?.totalCashSales || 0);
+        const cardSales = Number(totals?.totalCardSales || 0);
+        const grossSales = Number(totals?.totalGrossSales || (cashSales + cardSales));
+        const cashInflowPct = grossSales > 0 ? ((cashSales / grossSales) * 100).toFixed(0) : '0';
+        const cardInflowPct = grossSales > 0 ? ((cardSales / grossSales) * 100).toFixed(0) : '0';
 
-          {/* Card 2: Cash Inflows */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Cash Inflows</span>
-              <Coins className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-emerald-600 dark:text-emerald-400">
-              {formatCurrency(totals?.totalCashSales || 0)}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400">Direct cash register sales</div>
-          </div>
+        // 3. Refunds & Out
+        const cashOut = Number((totals?.totalCashRefunds || 0) + (totals?.totalCashExpenses || 0));
+        const cardOut = Number(totals?.totalCardRefunds || 0);
+        const totalOut = cashOut + cardOut;
 
-          {/* Card 3: Mada / Card Sales */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Mada / Card</span>
-              <CreditCard className="h-4 w-4 text-sky-500" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-sky-600 dark:text-sky-400">
-              {formatCurrency(totals?.totalCardSales || 0)}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400">Electronic settlements</div>
-          </div>
+        // 4. Expected
+        const expectedCash = Number(totals?.expectedCashInDrawers || 0);
+        const expectedCard = Number(totals?.expectedCardTotal || (openCard + cardSales));
+        const totalExpected = expectedCash + expectedCard;
 
-          {/* Card 4: Deductions (Refunds & Expenses) */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Refunds & Out</span>
-              <ArrowDownLeft className="h-4 w-4 text-amber-500" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-amber-600 dark:text-amber-400">
-              {formatCurrency((totals?.totalCashRefunds || 0) + (totals?.totalCashExpenses || 0))}
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400">Total cash deductions</div>
-          </div>
+        // 5. Counted & Diff
+        const countedCash = Number(totals?.totalCountedCash || 0);
+        const countedCard = Number(totals?.totalCountedCard || 0);
+        const cashDiff = Number(totals?.totalDiscrepancy || 0);
+        const cardDiff = Number(totals?.totalCardDiscrepancy || 0);
+        const netDiff = Number(totals?.netTotalDiscrepancy ?? (cashDiff + cardDiff));
+        const isDiffBalanced = Math.abs(netDiff) < 0.01;
 
-          {/* Card 5: Expected in Drawers */}
-          <div className="rounded-2xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 p-4 shadow-sm">
+        return (
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-blue-700 dark:text-sky-400">
-                Expected in Till
-              </span>
-              <Layers className="h-4 w-4 text-blue-600 dark:text-sky-400" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-blue-900 dark:text-sky-300">
-              {formatCurrency(totals?.expectedCashInDrawers || 0)}
-            </div>
-            <div className="mt-1 text-[10px] text-blue-600/70 dark:text-sky-400/70">
-              Float + Cash Sales - Deductions
-            </div>
-          </div>
-
-          {/* Card 6: Audit Discrepancy */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Counted / Diff</span>
-              <ShieldAlert className="h-4 w-4 text-purple-500" />
-            </div>
-            <div className="mt-2 font-mono text-lg font-black text-slate-900 dark:text-white">
-              {formatCurrency(totals?.totalCountedCash || 0)}
-            </div>
-            <div className="mt-1 flex items-center gap-1 font-mono text-[10px]">
-              <span>Diff:</span>
-              <span
-                className={
-                  Math.abs(totals?.totalDiscrepancy || 0) < 0.01
-                    ? 'text-emerald-500 font-bold'
-                    : totals?.totalDiscrepancy > 0
-                    ? 'text-sky-500 font-bold'
-                    : 'text-rose-500 font-bold'
-                }
-              >
-                {totals?.totalDiscrepancy > 0 ? '+' : ''}
-                {formatCurrency(totals?.totalDiscrepancy || 0)}
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <Layers className="h-4 w-4 text-blue-600 dark:text-sky-400" />
+                Performance Matrix ({dailyData?.businessDate || rangeLabel})
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                {totals?.activeDrawersCount || 0} Open • {totals?.closedDrawersCount || 0} Closed Shifts
               </span>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+              {/* 1. Opening FLOATS */}
+              <div className="rounded-2xl border border-slate-200 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] p-3.5 shadow-sm space-y-2.5 hover:border-slate-300 dark:hover:border-neutral-700 transition-all">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-neutral-800/80">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    1. Opening Floats
+                  </span>
+                  <Banknote className="h-4 w-4 text-blue-500" />
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Cash:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {formatCurrency(openCash)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Card:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {formatCurrency(openCard)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/80 dark:border-neutral-800 flex items-center justify-between font-mono">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total:</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">
+                    {formatCurrency(openTotal)}
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. CASH INFLOWS */}
+              <div className="rounded-2xl border border-slate-200 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] p-3.5 shadow-sm space-y-2.5 hover:border-slate-300 dark:hover:border-neutral-700 transition-all">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-neutral-800/80">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    2. Cash Inflows
+                  </span>
+                  <Coins className="h-4 w-4 text-emerald-500" />
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Cash:</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(cashSales)} <span className="text-[10px] text-slate-400 font-normal">({cashInflowPct}%)</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Card:</span>
+                    <span className="font-bold text-sky-600 dark:text-sky-400">
+                      {formatCurrency(cardSales)} <span className="text-[10px] text-slate-400 font-normal">({cardInflowPct}%)</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/80 dark:border-neutral-800 flex items-center justify-between font-mono">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total:</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">
+                    {formatCurrency(grossSales)}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. REFUNDS & OUT */}
+              <div className="rounded-2xl border border-slate-200 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] p-3.5 shadow-sm space-y-2.5 hover:border-slate-300 dark:hover:border-neutral-700 transition-all">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-neutral-800/80">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    3. Refunds & Out
+                  </span>
+                  <ArrowDownLeft className="h-4 w-4 text-amber-500" />
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Cash:</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">
+                      {formatCurrency(cashOut)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Card:</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">
+                      {formatCurrency(cardOut)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/80 dark:border-neutral-800 flex items-center justify-between font-mono">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total:</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">
+                    {formatCurrency(totalOut)}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. EXPECTED */}
+              <div className="rounded-2xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-3.5 shadow-sm space-y-2.5 hover:border-blue-300 dark:hover:border-blue-800 transition-all">
+                <div className="flex items-center justify-between pb-2 border-b border-blue-100 dark:border-blue-900/50">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-blue-700 dark:text-sky-400">
+                    4. Expected
+                  </span>
+                  <Layers className="h-4 w-4 text-blue-600 dark:text-sky-400" />
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-700/80 dark:text-sky-400/80 font-sans text-xs font-medium">Cash:</span>
+                    <span className="font-bold text-blue-900 dark:text-sky-200">
+                      {formatCurrency(expectedCash)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-700/80 dark:text-sky-400/80 font-sans text-xs font-medium">Card:</span>
+                    <span className="font-bold text-blue-900 dark:text-sky-200">
+                      {formatCurrency(expectedCard)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-blue-200/80 dark:border-blue-900/60 flex items-center justify-between font-mono">
+                  <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-sky-400 tracking-wider">Total:</span>
+                  <span className="text-sm font-black text-blue-950 dark:text-white">
+                    {formatCurrency(totalExpected)}
+                  </span>
+                </div>
+              </div>
+
+              {/* 5. COUNTED */}
+              <div className="rounded-2xl border border-slate-200 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] p-3.5 shadow-sm space-y-2.5 hover:border-slate-300 dark:hover:border-neutral-700 transition-all">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-neutral-800/80">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    5. Counted
+                  </span>
+                  <ShieldAlert
+                    className={`h-4 w-4 ${
+                      isDiffBalanced ? 'text-emerald-500' : 'text-rose-500'
+                    }`}
+                  />
+                </div>
+
+                <div className="space-y-1.5 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Cash:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {formatCurrency(countedCash)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-neutral-400 font-sans text-xs font-medium">Card:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {formatCurrency(countedCard)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/80 dark:border-neutral-800 flex items-center justify-between font-mono">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Diff:</span>
+                  <span
+                    className={`text-sm font-black ${
+                      isDiffBalanced
+                        ? 'text-emerald-500 font-bold'
+                        : netDiff > 0
+                        ? 'text-sky-500 font-bold'
+                        : 'text-rose-500 font-bold'
+                    }`}
+                  >
+                    {netDiff > 0 ? '+' : ''}
+                    {formatCurrency(netDiff)}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* 4. Filter Toolbar (Equal h-10 Controls) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-[#0B0F17] p-3 rounded-2xl border border-slate-200 dark:border-neutral-800 shadow-sm">
@@ -952,77 +1269,63 @@ export default function CashSessionsPage() {
             setInspectModalOpen(false);
             setSelectedShiftDetails(null);
           }}
-          title={
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 flex items-center justify-center text-blue-600 dark:text-sky-400 font-bold shrink-0 shadow-sm">
-                <User className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-black text-sm sm:text-base text-slate-900 dark:text-white">
-                    Shift #{selectedShiftDetails?.session?.sequence_number || selectedShiftDetails?.session?.id || ''}
-                  </span>
-                  {selectedShiftDetails?.session?.status === 'open' ? (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Active Now
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400 border border-slate-200 dark:border-neutral-700">
-                      Closed Shift
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-slate-500 dark:text-neutral-400 flex flex-wrap items-center gap-2 mt-0.5">
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">
-                    {selectedShiftDetails?.session?.user_name || 'Loading...'}
-                  </span>
-                  <span className="text-slate-300 dark:text-neutral-600">•</span>
-                  <span className="flex items-center gap-1 font-mono text-[11px]">
-                    <Clock className="h-3 w-3 text-slate-400" />
-                    {computeDuration(selectedShiftDetails?.session?.opened_at, selectedShiftDetails?.session?.closed_at)}
-                  </span>
-                  <span className="text-slate-300 dark:text-neutral-600">•</span>
-                  <span className="font-mono text-[11px] text-slate-400">
-                    Opened {formatTimeWithSeconds(selectedShiftDetails?.session?.opened_at)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          }
+          showCloseButton={false}
           maxWidth="4xl"
           footer={
             <div className="flex w-full items-center justify-between">
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={() => {
-                  if (selectedShiftDetails?.session) {
-                    const s = selectedShiftDetails.session;
-                    const isClosed = s.status === 'closed';
-                    setZReportData({
-                      sessionId: s.sequence_number ? `#${s.sequence_number}` : `#${s.id}`,
-                      cashierName: s.user_name || 'Cashier',
-                      openedAt: s.opened_at,
-                      closedAt: s.closed_at || new Date().toISOString(),
-                      openingFloat: Number(s.openingBalance ?? s.opening_balance ?? 0),
-                      openingCardFloat: Number(s.openingCardBalance ?? s.opening_card_balance ?? 0),
-                      grossSales: Number(s.grossSales ?? ((s.cashSales || 0) + (s.cardSales || 0))),
-                      cashSales: Number(s.cashSales || 0),
-                      cardSales: Number(s.cardSales || 0),
-                      vatCollected: Number(s.totalTaxCollected || 0),
-                      expectedCash: Number(s.expectedCash ?? s.expected_balance ?? 0),
-                      actualCash: Number(isClosed ? (s.closing_balance || 0) : (s.expectedCash ?? s.expected_balance ?? 0)),
-                      cashVariance: Number(isClosed ? (s.cashDifference ?? s.difference ?? 0) : 0),
-                    });
-                    setZReportModalOpen(true);
-                  }
-                }}
-                leftIcon={<Printer className="h-4 w-4" />}
-                className="h-10 min-h-[40px] max-h-[40px]"
-              >
-                Print Shift Z-Report
-              </Button>
+              {selectedShiftDetails?.session?.status === 'closed' ? (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    if (selectedShiftDetails?.session) {
+                      const s = selectedShiftDetails.session;
+                      printZReportDirectly(
+                        {
+                          sessionId: s.sequence_number ? `#${s.sequence_number}` : `#${s.id}`,
+                          shiftSequence: s.sequence_number || s.id,
+                          cashierName: s.user_name || 'Cashier',
+                          cashierUsername: s.username,
+                          cashierRole: s.user_role,
+                          status: s.status,
+                          openedAt: s.opened_at,
+                          closedAt: s.closed_at,
+                          duration: computeDuration(s.opened_at, s.closed_at),
+                          openingFloat: Number(s.openingBalance ?? s.opening_balance ?? 0),
+                          openingCardFloat: Number(s.openingCardBalance ?? s.opening_card_balance ?? 0),
+                          grossSales: Number(s.grossSales ?? ((s.cashSales || 0) + (s.cardSales || 0))),
+                          cashSales: Number(s.cashSales || 0),
+                          cardSales: Number(s.cardSales || 0),
+                          vatCollected: Number(s.totalTaxCollected || 0),
+                          invoicesCount: Number(s.invoicesCount ?? selectedShiftDetails.invoices?.length ?? 0),
+                          cashRefunds: Number(s.cashRefunds || 0),
+                          cashExpenses: Number(s.cashExpenses || 0),
+                          manualCashIns: Number(s.manualCashIns || 0),
+                          expectedCash: Number(s.expectedCash ?? s.expected_balance ?? 0),
+                          actualCash: Number(s.closing_balance || 0),
+                          cashVariance: Number(s.cashDifference ?? s.difference ?? 0),
+                          expectedCard: Number(s.expectedCard ?? s.terminal_card_expected ?? s.cardSales ?? 0),
+                          actualCard: Number(s.countedCard ?? s.terminal_card_total ?? s.cardSales ?? 0),
+                          cardVariance: Number(s.cardDifference ?? s.terminal_card_discrepancy ?? 0),
+                          forceClosedByName: s.forceClosedByName || s.force_closed_by_name,
+                        },
+                        settings,
+                        formatCurrency,
+                        formatDateTime
+                      );
+                    }
+                  }}
+                  leftIcon={<Printer className="h-4 w-4" />}
+                  className="h-10 min-h-[40px] max-h-[40px]"
+                >
+                  Print Shift Z-Report
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 px-3 py-2 rounded-xl">
+                  <Clock className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span>Z-Report available after shift closing</span>
+                </div>
+              )}
               <Button
                 variant="secondary"
                 size="md"
@@ -1041,185 +1344,233 @@ export default function CashSessionsPage() {
             <div className="flex items-center justify-center py-16">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
-          ) : (
-            <div className="space-y-5 text-xs">
-              {/* 1. Shift Reconciliation KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* Card A: Cash Drawer Reconciliation */}
-                <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] shadow-sm space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-neutral-500 flex items-center gap-1.5">
-                      <Banknote className="h-4 w-4 text-emerald-500" />
-                      Drawer Cash
-                    </span>
-                    {selectedShiftDetails.session.status === 'open' ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 border border-blue-200/60 dark:border-blue-900/60 font-mono">
-                        LIVE SHIFT
+          ) : (() => {
+            const s = selectedShiftDetails.session;
+            const invList: ShiftInvoice[] = selectedShiftDetails.invoices || [];
+            const isOpen = s.status === 'open';
+            const totalItemsSold = invList.reduce((sum, inv) => sum + Number(inv.totalItems || 0), 0);
+            const netSales = invList.reduce((sum, inv) => sum + Number(inv.subtotal || 0), 0) ||
+              ((Number(s.grossSales || 0)) - (Number(s.totalTaxCollected || 0)));
+            const cashDiff = Number(s.difference || 0);
+            const cardDiff = Number(s.terminal_card_discrepancy || 0);
+            const isCashBalanced = Math.abs(cashDiff) < 0.01;
+            const isCardBalanced = Math.abs(cardDiff) < 0.01;
+            const expectedCash = s.expectedCash ?? s.expected_balance ?? 0;
+            const expectedCard = s.expectedCard ?? s.terminal_card_expected ?? ((s.opening_card_balance || 0) + (s.cardSales || 0));
+            const cashDeductions = (Number(s.cashRefunds || 0)) + (Number(s.cashExpenses || 0));
+
+            return (
+              <div className="space-y-5 text-xs">
+                {/* 1. Shift Reconciliation: 2 High-Yield Business Cards */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* CARD 1: Sales & Revenue Breakdown */}
+                  <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] shadow-sm flex flex-col space-y-3.5">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-neutral-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shadow-sm">
+                          <Receipt className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white block">
+                            Sales & Revenue Matrix
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {invList.length} {invList.length === 1 ? 'Invoice' : 'Invoices'} • {totalItemsSold} Items Sold
+                          </span>
+                        </div>
+                      </div>
+
+                      {isOpen ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Live</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400 border border-slate-200 dark:border-neutral-700">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Settled</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Primary Hero: Total Sales Highlight */}
+                    <div className="mt-1 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent dark:from-emerald-950/40 dark:to-transparent p-3.5 rounded-xl border border-emerald-500/20 flex flex-col items-center justify-center text-center">
+                      <span className="text-[10px] uppercase font-black text-emerald-700 dark:text-emerald-400 tracking-wider">
+                        TOTAL SALES (VAT INCLUSIVE)
                       </span>
-                    ) : Math.abs(Number(selectedShiftDetails.session.difference || 0)) < 0.01 ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/60 font-mono">
-                        ✓ BALANCED
-                      </span>
-                    ) : (
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md font-mono ${
-                          Number(selectedShiftDetails.session.difference) > 0
-                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 border border-amber-200'
-                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 border border-rose-200'
-                        }`}
-                      >
-                        {Number(selectedShiftDetails.session.difference) > 0 ? '+' : ''}
-                        {formatCurrency(selectedShiftDetails.session.difference)}
-                      </span>
-                    )}
+                      <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight mt-0.5">
+                        {formatCurrency(s.grossSales || 0)}
+                      </div>
+                    </div>
+
+                    {/* 4-KPI Grid */}
+                    <div className="grid grid-cols-2 gap-2.5 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/60 dark:border-neutral-800/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Cash Sells</span>
+                        <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                          {formatCurrency(s.cashSales || 0)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-sans">
+                          {s.grossSales > 0 ? `${Math.round(((s.cashSales || 0) / s.grossSales) * 100)}% of revenue` : '0%'}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/60 dark:border-neutral-800/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Card (Mada) Sells</span>
+                        <span className="text-sm font-black text-sky-600 dark:text-sky-400 mt-0.5 block">
+                          {formatCurrency(s.cardSales || 0)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-sans">
+                          {s.grossSales > 0 ? `${Math.round(((s.cardSales || 0) / s.grossSales) * 100)}% of revenue` : '0%'}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/60 dark:border-neutral-800/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Net Sells (Excl. VAT)</span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 block">
+                          {formatCurrency(netSales)}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#121620] border border-slate-200/60 dark:border-neutral-800/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">VAT Collected (15%)</span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 block">
+                          {formatCurrency(s.totalTaxCollected || 0)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1 font-mono text-xs">
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Opening Float:</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {formatCurrency(selectedShiftDetails.session.opening_balance || 0)}
-                      </span>
+                  {/* CARD 2: Cash & Card Drawer Settlement Reconciliation */}
+                  <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] shadow-sm flex flex-col space-y-3.5">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-neutral-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 flex items-center justify-center font-bold shadow-sm">
+                          <Banknote className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white block">
+                            Cash & Card Reconciliation
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Dual Floats, Settlements & Variances
+                          </span>
+                        </div>
+                      </div>
+
+                      {isOpen ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Live</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400 border border-slate-200 dark:border-neutral-700">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Settled</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Cash Inflows:</span>
-                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                        +{formatCurrency(selectedShiftDetails.session.cashSales || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Deductions:</span>
-                      <span className="font-semibold text-amber-600 dark:text-amber-400">
-                        -{formatCurrency((selectedShiftDetails.session.cashRefunds || 0) + (selectedShiftDetails.session.cashExpenses || 0))}
-                      </span>
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex justify-between items-baseline">
-                      <span className="text-slate-600 dark:text-neutral-300 font-bold">Expected Cash:</span>
-                      <span className="text-base font-black text-blue-600 dark:text-sky-400">
-                        {formatCurrency(selectedShiftDetails.session.expectedCash ?? selectedShiftDetails.session.expected_balance ?? 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-baseline text-[11px]">
-                      <span className="text-slate-400">Counted Cash:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {selectedShiftDetails.session.status === 'closed'
-                          ? formatCurrency(selectedShiftDetails.session.closing_balance || 0)
-                          : 'Active Counter'}
-                      </span>
+
+                    {/* Structured Comparison Table: Cash vs Card */}
+                    <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-neutral-800">
+                      <table className="w-full text-xs font-mono">
+                        <thead className="bg-slate-50 dark:bg-[#121620] text-slate-500 font-bold border-b border-slate-200/80 dark:border-neutral-800">
+                          <tr>
+                            <th className="p-2 text-left font-sans text-[10px] uppercase tracking-wider text-slate-400">Reconciliation Stage</th>
+                            <th className="p-2 text-right text-emerald-600 dark:text-emerald-400 text-[11px]">Cash Drawer</th>
+                            <th className="p-2 text-right text-sky-600 dark:text-sky-400 text-[11px]">Card Terminal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-neutral-800/80 text-[11px]">
+                          <tr className="hover:bg-slate-50/50 dark:hover:bg-neutral-800/30">
+                            <td className="p-2 font-sans text-slate-600 dark:text-neutral-400 font-medium">Opening Float</td>
+                            <td className="p-2 text-right font-bold text-slate-800 dark:text-slate-200">
+                              {formatCurrency(s.opening_balance || 0)}
+                            </td>
+                            <td className="p-2 text-right font-bold text-slate-800 dark:text-slate-200">
+                              {formatCurrency(s.opening_card_balance || 0)}
+                            </td>
+                          </tr>
+
+                          <tr className="hover:bg-slate-50/50 dark:hover:bg-neutral-800/30">
+                            <td className="p-2 font-sans text-slate-600 dark:text-neutral-400 font-medium">Sales Inflow</td>
+                            <td className="p-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                              +{formatCurrency(s.cashSales || 0)}
+                            </td>
+                            <td className="p-2 text-right font-semibold text-sky-600 dark:text-sky-400">
+                              +{formatCurrency(s.cardSales || 0)}
+                            </td>
+                          </tr>
+
+                          <tr className="hover:bg-slate-50/50 dark:hover:bg-neutral-800/30">
+                            <td className="p-2 font-sans text-slate-600 dark:text-neutral-400 font-medium">Operating Deductions</td>
+                            <td className="p-2 text-right font-semibold text-amber-600 dark:text-amber-400">
+                              {cashDeductions > 0 ? `-${formatCurrency(cashDeductions)}` : '0.00 SAR'}
+                            </td>
+                            <td className="p-2 text-right text-slate-400">—</td>
+                          </tr>
+
+                          {/* Expected Highlight Row */}
+                          <tr className="bg-blue-50/50 dark:bg-blue-950/20 font-bold border-t border-slate-200/80 dark:border-neutral-800">
+                            <td className="p-2 font-sans text-blue-700 dark:text-sky-300 font-bold">Expected Amount</td>
+                            <td className="p-2 text-right font-black text-blue-700 dark:text-sky-400 text-xs">
+                              {formatCurrency(expectedCash)}
+                            </td>
+                            <td className="p-2 text-right font-black text-sky-600 dark:text-sky-300 text-xs">
+                              {formatCurrency(expectedCard)}
+                            </td>
+                          </tr>
+
+                          {/* Counted Row */}
+                          <tr className="hover:bg-slate-50/50 dark:hover:bg-neutral-800/30 font-semibold">
+                            <td className="p-2 font-sans text-slate-700 dark:text-slate-300 font-bold">Counted / Slip Total</td>
+                            <td className="p-2 text-right font-black text-slate-900 dark:text-white">
+                              {isOpen ? 'Active Counter' : formatCurrency(s.closing_balance || 0)}
+                            </td>
+                            <td className="p-2 text-right font-black text-slate-900 dark:text-white">
+                              {isOpen ? 'Active Counter' : formatCurrency(s.terminal_card_total || 0)}
+                            </td>
+                          </tr>
+
+                          {/* Variance Row */}
+                          <tr className="bg-slate-50/80 dark:bg-[#121620] font-bold">
+                            <td className="p-2 font-sans text-slate-600 dark:text-neutral-400">Audit Variance</td>
+                            <td className="p-2 text-right">
+                              {isOpen ? (
+                                <span className="text-slate-400 font-normal">Pending Close</span>
+                              ) : isCashBalanced ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ Balanced</span>
+                              ) : (
+                                <span className={cashDiff > 0 ? 'text-amber-600 font-black' : 'text-rose-600 font-black'}>
+                                  {cashDiff > 0 ? '+' : ''}{formatCurrency(cashDiff)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2 text-right">
+                              {isOpen ? (
+                                <span className="text-slate-400 font-normal">Pending Close</span>
+                              ) : isCardBalanced ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ Balanced</span>
+                              ) : (
+                                <span className="text-rose-600 font-black">
+                                  {cardDiff > 0 ? '+' : ''}{formatCurrency(cardDiff)}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
-
-                {/* Card B: Card & Electronic Terminal */}
-                <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] shadow-sm space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-neutral-500 flex items-center gap-1.5">
-                      <CreditCard className="h-4 w-4 text-sky-500" />
-                      Terminal Batch (Mada)
-                    </span>
-                    {selectedShiftDetails.session.status === 'open' ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 border border-blue-200/60 dark:border-blue-900/60 font-mono">
-                        LIVE SHIFT
-                      </span>
-                    ) : Math.abs(Number(selectedShiftDetails.session.terminal_card_discrepancy || 0)) < 0.01 ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/60 font-mono">
-                        ✓ BALANCED
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 border border-rose-200 font-mono">
-                        Variance: {formatCurrency(selectedShiftDetails.session.terminal_card_discrepancy || 0)}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-1 font-mono text-xs">
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Opening Card Float:</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {formatCurrency(selectedShiftDetails.session.opening_card_balance || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Electronic Sales:</span>
-                      <span className="font-semibold text-sky-600 dark:text-sky-400">
-                        +{formatCurrency(selectedShiftDetails.session.cardSales || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Settlement Status:</span>
-                      <span className="font-semibold text-slate-600 dark:text-neutral-300">
-                        {selectedShiftDetails.session.status === 'closed' ? 'Settled & Verified' : 'Awaiting Shift Close'}
-                      </span>
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex justify-between items-baseline">
-                      <span className="text-slate-600 dark:text-neutral-300 font-bold">Expected Card:</span>
-                      <span className="text-base font-black text-sky-600 dark:text-sky-400">
-                        {formatCurrency(
-                          selectedShiftDetails.session.expectedCard ??
-                          selectedShiftDetails.session.terminal_card_expected ??
-                          ((selectedShiftDetails.session.opening_card_balance || 0) + (selectedShiftDetails.session.cardSales || 0))
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-baseline text-[11px]">
-                      <span className="text-slate-400">Batch Slip Counted:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {selectedShiftDetails.session.status === 'closed'
-                          ? formatCurrency(selectedShiftDetails.session.terminal_card_total || 0)
-                          : 'Active Counter'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card C: Sales Volume & Tax Breakdown */}
-                <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] shadow-sm space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-neutral-500 flex items-center gap-1.5">
-                      <Receipt className="h-4 w-4 text-purple-500" />
-                      Trading Volume
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-300 font-mono">
-                      {selectedShiftDetails.invoices?.length || 0} {selectedShiftDetails.invoices?.length === 1 ? 'Invoice' : 'Invoices'}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1 font-mono text-xs">
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Cash Sales:</span>
-                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(selectedShiftDetails.session.cashSales || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>Card Sales:</span>
-                      <span className="font-semibold text-sky-600 dark:text-sky-400">
-                        {formatCurrency(selectedShiftDetails.session.cardSales || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-neutral-400">
-                      <span>VAT Collected:</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {formatCurrency(selectedShiftDetails.session.totalTaxCollected || 0)}
-                      </span>
-                    </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-neutral-800 flex justify-between items-baseline">
-                      <span className="text-slate-600 dark:text-neutral-300 font-bold">Gross Sales:</span>
-                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(selectedShiftDetails.session.grossSales || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-baseline text-[11px]">
-                      <span className="text-slate-400">Avg Ticket:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {selectedShiftDetails.invoices?.length > 0
-                          ? formatCurrency((selectedShiftDetails.session.grossSales || 0) / selectedShiftDetails.invoices.length)
-                          : formatCurrency(0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* 2. Premium 3-Segment Tab Bar */}
               <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-neutral-900 rounded-xl border border-slate-200/60 dark:border-neutral-800">
@@ -1345,6 +1696,16 @@ export default function CashSessionsPage() {
                     <div className="max-h-96 overflow-y-auto space-y-2.5 pr-1">
                       {filteredInvoices.map((inv: ShiftInvoice) => {
                         const isExpanded = expandedInvoiceId === inv.id;
+                        const cashPaid = inv.payments && inv.payments.length > 0
+                          ? inv.payments.filter((p) => p.isCash).reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                          : Number(inv.paidAmount || 0);
+                        const cardPaid = inv.payments && inv.payments.length > 0
+                          ? inv.payments.filter((p) => !p.isCash).reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                          : 0;
+
+                        const cleanCustomer = (inv.customerName || 'Walk-in Customer')
+                          .replace(/\s*\(General Account\)/gi, '')
+                          .trim() || 'Walk-in Customer';
 
                         return (
                           <div
@@ -1355,55 +1716,50 @@ export default function CashSessionsPage() {
                               onClick={() => setExpandedInvoiceId(isExpanded ? null : inv.id)}
                               className="flex items-center justify-between cursor-pointer select-none gap-3"
                             >
+                              {/* 1. Left: Icon + Invoice ID & Customer Name */}
                               <div className="flex items-center gap-3 min-w-0">
                                 <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-neutral-400 shrink-0">
                                   <Receipt className="h-4 w-4" />
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono font-black text-slate-900 dark:text-white truncate">
-                                      {inv.invoiceNo}
-                                    </span>
-                                    <Badge variant="success" className="text-[9px] py-0 px-1.5 uppercase font-mono">
-                                      {inv.paymentStatus || 'PAID'}
-                                    </Badge>
+                                  <div className="font-mono font-black text-sm text-slate-900 dark:text-white truncate">
+                                    {inv.invoiceNo}
                                   </div>
-                                  <div className="text-[11px] text-slate-500 dark:text-neutral-400 flex items-center gap-1.5 mt-0.5 truncate font-sans">
-                                    <span>{inv.customerName}</span>
-                                    {inv.customerPhone && (
-                                      <>
-                                        <span>•</span>
-                                        <span className="font-mono">{inv.customerPhone}</span>
-                                      </>
-                                    )}
-                                    <span>•</span>
-                                    <span className="font-mono text-slate-400">{formatTimeWithSeconds(inv.createdAt)}</span>
+                                  <div className="text-[11px] text-slate-500 dark:text-neutral-400 font-medium truncate font-sans">
+                                    {cleanCustomer}
                                   </div>
                                 </div>
                               </div>
 
+                              {/* 2. Center: Timestamp */}
+                              <div className="flex items-center justify-center font-mono text-xs text-slate-500 dark:text-neutral-400 gap-1.5 px-2 shrink-0">
+                                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                <span className="whitespace-nowrap">{formatTimeWithSeconds(inv.createdAt)}</span>
+                              </div>
+
+                              {/* 3. Right: Amount details for Cash & Card vertically */}
                               <div className="flex items-center gap-3 shrink-0">
-                                {/* Payment Method Badges */}
-                                <div className="hidden sm:flex items-center gap-1.5 font-mono text-[10px]">
-                                  {inv.payments?.map((p, idx) => (
-                                    <span
-                                      key={idx}
-                                      className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                                        p.isCash
-                                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
-                                          : 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/60'
-                                      }`}
-                                    >
-                                      {p.methodName}: {formatCurrency(p.amount)}
+                                <div className="flex flex-col items-end justify-center font-mono text-[11px] leading-tight">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400">Cash:</span>
+                                    <span className={`font-bold ${cashPaid > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                      {formatCurrency(cashPaid)}
                                     </span>
-                                  ))}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400">Card:</span>
+                                    <span className={`font-bold ${cardPaid > 0 ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400'}`}>
+                                      {formatCurrency(cardPaid)}
+                                    </span>
+                                  </div>
                                 </div>
 
-                                <div className="text-right font-mono">
+                                {/* Current Amount & Items */}
+                                <div className="text-right font-mono pl-3 border-l border-slate-100 dark:border-neutral-800">
                                   <div className="font-black text-sm text-slate-900 dark:text-white">
                                     {formatCurrency(inv.grandTotal)}
                                   </div>
-                                  <div className="text-[10px] text-slate-400">
+                                  <div className="text-[10px] text-slate-400 font-sans">
                                     {inv.totalItems} Item{inv.totalItems === 1 ? '' : 's'}
                                   </div>
                                 </div>
@@ -1421,15 +1777,6 @@ export default function CashSessionsPage() {
                             {/* Expandable Line Items View */}
                             {isExpanded && (
                               <div className="border-t border-slate-100 dark:border-neutral-800 pt-3 space-y-2.5">
-                                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                  <span className="flex items-center gap-1.5">
-                                    <ShoppingBag className="h-3.5 w-3.5" />
-                                    Purchased Items ({inv.items?.length || 0})
-                                  </span>
-                                  <span className="font-mono text-slate-400">
-                                    Tax: {formatCurrency(inv.totalTax)} • Discount: {formatCurrency(inv.totalDiscount)}
-                                  </span>
-                                </div>
                                 <div className="border border-slate-200 dark:border-neutral-800 rounded-xl overflow-hidden bg-slate-50/50 dark:bg-neutral-900/40">
                                   <table className="w-full text-[11px] text-left">
                                     <thead className="bg-slate-100/70 dark:bg-neutral-800/80 font-bold text-slate-500 dark:text-neutral-400">
@@ -1477,10 +1824,12 @@ export default function CashSessionsPage() {
                                     <span className="text-slate-400">Tax / VAT:</span>{' '}
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(inv.totalTax)}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-slate-400">Discount:</span>{' '}
-                                    <span className="font-bold text-amber-600">{formatCurrency(inv.totalDiscount)}</span>
-                                  </div>
+                                  {Number(inv.totalDiscount) > 0 && (
+                                    <div>
+                                      <span className="text-slate-400">Discount:</span>{' '}
+                                      <span className="font-bold text-amber-600">-{formatCurrency(inv.totalDiscount)}</span>
+                                    </div>
+                                  )}
                                   <div>
                                     <span className="text-slate-400 font-bold">Total Paid:</span>{' '}
                                     <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">
@@ -1518,42 +1867,83 @@ export default function CashSessionsPage() {
                             <td colSpan={5} className="p-8 text-center text-slate-400">
                               <Coins className="h-8 w-8 mx-auto text-slate-300 dark:text-neutral-700 mb-2" />
                               <p className="font-semibold text-xs text-slate-600 dark:text-neutral-400">
-                                No cash movements recorded for this shift.
+                                No movements recorded for this shift.
                               </p>
                               <p className="text-[11px] mt-0.5 text-slate-400">
-                                Operating movements (cash drops, payouts, float additions) will appear here.
+                                Inflow, outflow, card and cash settlement movements will appear here.
                               </p>
                             </td>
                           </tr>
                         ) : (
-                          selectedShiftDetails.movements?.map((m: any) => (
-                            <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-neutral-800/50 transition-colors">
-                              <td className="p-2.5 text-slate-400 font-mono">{formatTimeWithSeconds(m.created_at)}</td>
-                              <td className="p-2.5">
-                                <span
-                                  className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                                    m.type === 'cash_in'
-                                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60'
-                                      : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 border border-rose-200'
-                                  }`}
-                                >
-                                  {m.type === 'cash_in' ? 'CASH IN' : 'CASH OUT'}
-                                </span>
-                              </td>
-                              <td className="p-2.5 text-slate-700 dark:text-slate-300 font-sans font-semibold capitalize">
-                                {m.source || 'Operational'}
-                              </td>
-                              <td className="p-2.5 text-slate-500 dark:text-neutral-400 font-sans text-xs">
-                                {m.description || '—'}
-                              </td>
-                              <td className="p-2.5 text-right font-bold font-mono">
-                                <span className={m.type === 'cash_in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}>
-                                  {m.type === 'cash_in' ? '+' : '-'}
-                                  {formatCurrency(m.amount)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                          selectedShiftDetails.movements?.map((m: any) => {
+                            const isCard = m.type === 'card_in' || String(m.source || '').includes('card');
+                            const isOut = m.type === 'cash_out' || m.source === 'refund' || m.source === 'expense';
+                            const isCashIn = !isCard && !isOut;
+
+                            // Source Label: always clean, no hyphens or underscores
+                            let sourceDisplay = m.source_label;
+                            if (!sourceDisplay) {
+                              const s = String(m.source || '').toLowerCase().replace(/[-_]/g, ' ');
+                              if (s.includes('card')) {
+                                sourceDisplay = 'Sell by card payment';
+                              } else if (s.includes('sale') || s.includes('cash') || isCashIn) {
+                                if (s.includes('opening') || s.includes('float')) {
+                                  sourceDisplay = 'Opening Float';
+                                } else {
+                                  sourceDisplay = 'Sell by cash payment';
+                                }
+                              } else if (s.includes('expense')) {
+                                sourceDisplay = 'Cash Expense';
+                              } else if (s.includes('refund')) {
+                                sourceDisplay = 'Cash Refund';
+                              } else if (s.includes('deposit')) {
+                                sourceDisplay = 'Manual Deposit';
+                              } else if (s.includes('withdraw')) {
+                                sourceDisplay = 'Manual Withdrawal';
+                              } else {
+                                sourceDisplay = 'Sell by cash payment';
+                              }
+                            } else {
+                              sourceDisplay = sourceDisplay.replace(/[-_]/g, ' ');
+                            }
+
+                            // Clean description: omit '-' or '—'
+                            const cleanDesc = m.description && m.description !== '—' && m.description !== '-'
+                              ? m.description
+                              : '';
+
+                            return (
+                              <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-neutral-800/50 transition-colors">
+                                <td className="p-2.5 text-slate-400 font-mono">{formatTimeWithSeconds(m.created_at)}</td>
+                                <td className="p-2.5">
+                                  {isCard ? (
+                                    <span className="px-2 py-0.5 rounded-md font-bold text-[10px] bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/60">
+                                      CARD IN
+                                    </span>
+                                  ) : isCashIn ? (
+                                    <span className="px-2 py-0.5 rounded-md font-bold text-[10px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60">
+                                      CASH IN
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-md font-bold text-[10px] bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200">
+                                      CASH OUT
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 text-slate-800 dark:text-slate-200 font-sans font-semibold">
+                                  {sourceDisplay}
+                                </td>
+                                <td className="p-2.5 text-slate-500 dark:text-neutral-400 font-sans text-xs">
+                                  {cleanDesc}
+                                </td>
+                                <td className="p-2.5 text-right font-bold font-mono">
+                                  <span className={isCard ? 'text-sky-600 dark:text-sky-400' : isCashIn ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'}>
+                                    {formatCurrency(Math.abs(Number(m.amount || 0)))}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1609,133 +1999,9 @@ export default function CashSessionsPage() {
                 </div>
               )}
             </div>
-          )}
-        </Modal>
-      )}
-
-      {/* 7. Official Z-Report Certificate Modal */}
-      {zReportModalOpen && zReportData && (
-        <Modal
-          isOpen={zReportModalOpen}
-          onClose={() => setZReportModalOpen(false)}
-          title={zReportData.isRange ? 'Official Period Z-Report Certificate' : 'Official Register Z-Report Certificate'}
-          subtitle={
-            zReportData.isRange
-              ? `Consolidated cash drawer settlement for ${zReportData.periodLabel || 'selected period'}`
-              : 'Consolidated cash drawer settlement and audit record'
-          }
-          maxWidth="xl"
-          footer={
-            <div className="flex w-full items-center justify-between">
-              <span className="text-xs text-slate-500 font-mono">
-                {zReportData.isRange ? 'Consolidated Period Mode' : 'Standard Certificate Mode'}
-              </span>
-              <Button
-                variant="primary"
-                onClick={() => window.print()}
-                leftIcon={<Printer className="h-4 w-4" />}
-                className="h-10 min-h-[40px] max-h-[40px]"
-              >
-                Print / Save PDF
-              </Button>
-            </div>
-          }
-        >
-          <div
-            id="printable-report"
-            className="p-6 sm:p-8 bg-white text-black font-mono text-sm space-y-4 border border-slate-300 rounded-2xl shadow-md leading-relaxed min-h-[480px]"
-          >
-            <div className="text-center border-b-2 border-black pb-4">
-              <h3 className="font-black text-xl uppercase tracking-wider text-black">
-                {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
-              </h3>
-              <p className="text-xs font-black uppercase tracking-widest mt-1 text-slate-800">
-                {zReportData.isRange
-                  ? `OFFICIAL CONSOLIDATED PERIOD Z-REPORT`
-                  : `OFFICIAL REGISTER Z-REPORT: ${zReportData.sessionId}`}
-              </p>
-              <div className="mt-2 text-xs text-slate-700 space-y-0.5">
-                <p>Scope: <span className="font-bold">{zReportData.cashierName}</span></p>
-                <p>
-                  Audit Period:{' '}
-                  <span className="font-mono font-bold">
-                    {zReportData.periodLabel || (zReportData.openedAt ? formatDateTime(zReportData.openedAt) : 'N/A')}
-                  </span>
-                  {zReportData.openedAt && !zReportData.isRange && (
-                    <span>
-                      {' '}
-                      ({formatDateTime(zReportData.openedAt)} — {formatDateTime(zReportData.closedAt)})
-                    </span>
-                  )}
-                </p>
-                {zReportData.totalShifts !== undefined && (
-                  <p>
-                    Total Register Shifts: <span className="font-bold">{zReportData.totalShifts} Shifts</span>
-                  </p>
-                )}
-                <p>Printed: {formatDateTime(new Date())}</p>
-              </div>
-            </div>
-
-            <div className="space-y-2 py-3 border-b-2 border-dashed border-black/40 text-sm">
-              <div className="flex justify-between">
-                <span>Opening Cash Drawer Float:</span>
-                <span className="font-bold">{formatCurrency(zReportData.openingFloat)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Opening Card Float:</span>
-                <span className="font-bold">{formatCurrency(zReportData.openingCardFloat || 0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Gross Register Sales:</span>
-                <span className="font-bold text-base">{formatCurrency(zReportData.grossSales)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Direct Physical Cash Sales:</span>
-                <span className="font-bold text-emerald-800">{formatCurrency(zReportData.cashSales)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Electronic Card (Mada) Sales:</span>
-                <span className="font-bold text-sky-800">{formatCurrency(zReportData.cardSales)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>VAT Collected (15% Included):</span>
-                <span>{formatCurrency(zReportData.vatCollected)}</span>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 py-3 border-b-2 border-dashed border-black/40 bg-slate-50 p-4 rounded-xl text-sm">
-              <div className="flex justify-between text-slate-700">
-                <span>Expected Cash In Drawer:</span>
-                <span className="font-bold">{formatCurrency(zReportData.expectedCash)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-slate-900">
-                <span>Actual Counted Cash:</span>
-                <span className="font-black text-base">{formatCurrency(zReportData.actualCash)}</span>
-              </div>
-              <div className="flex justify-between font-black text-base pt-2.5 border-t border-black/20">
-                <span>Cash Variance (Difference):</span>
-                <span
-                  className={
-                    Math.abs(Number(zReportData.cashVariance)) < 0.01
-                      ? 'text-emerald-800 font-bold'
-                      : Number(zReportData.cashVariance) > 0
-                      ? 'text-blue-800 font-bold'
-                      : 'text-red-700 font-bold'
-                  }
-                >
-                  {Number(zReportData.cashVariance) > 0 ? '+' : ''}
-                  {formatCurrency(zReportData.cashVariance)}
-                </span>
-              </div>
-            </div>
-
-            <div className="text-center pt-3 text-xs text-slate-600 space-y-1">
-              <p className="font-semibold">Certified Audit Record • Point of Sale Ledger</p>
-              <p className="font-mono text-[10px] text-slate-400">HASH: SHA256-REGISTER-CLOSURE-VERIFIED</p>
-            </div>
-          </div>
-        </Modal>
+          );
+        })()}
+      </Modal>
       )}
     </div>
   );

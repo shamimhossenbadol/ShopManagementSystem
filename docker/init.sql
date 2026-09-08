@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS users (
     login_failed_attempts INT NOT NULL DEFAULT 0,
     login_locked_until TIMESTAMPTZ,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    current_session_id VARCHAR(100),
+    current_pos_session_id VARCHAR(100),
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -261,17 +263,29 @@ CREATE TABLE IF NOT EXISTS cash_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id),
     status cash_session_status_enum NOT NULL DEFAULT 'open',
+    terminal_name VARCHAR(100) DEFAULT 'Terminal-01',
+    sequence_number INT,
+    previous_session_id INT REFERENCES cash_sessions(id),
     opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     closed_at TIMESTAMPTZ,
     opening_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     closing_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     expected_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     difference DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    carry_forward_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    opening_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    carry_forward_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     terminal_card_total DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    close_type VARCHAR(20) DEFAULT 'normal',
+    force_closed_by INT REFERENCES users(id),
+    force_close_reason TEXT,
     closing_note TEXT
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_single_open_cash_session 
+    ON cash_sessions ((1)) WHERE status = 'open';
 
 CREATE TABLE IF NOT EXISTS cash_movements (
     id BIGSERIAL PRIMARY KEY,
@@ -284,12 +298,42 @@ CREATE TABLE IF NOT EXISTS cash_movements (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Session adjustments for discrepancy explanations (immutable ledger)
+CREATE TABLE IF NOT EXISTS session_adjustments (
+    id BIGSERIAL PRIMARY KEY,
+    session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE RESTRICT,
+    adjustment_type VARCHAR(20) NOT NULL CHECK (adjustment_type IN ('opening', 'closing')),
+    amount DECIMAL(15,4) NOT NULL,
+    description TEXT NOT NULL,
+    created_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_adjustments_session ON session_adjustments(session_id);
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_session_adjustments_no_update_delete') THEN
+        CREATE OR REPLACE FUNCTION prevent_adjustment_mutation()
+        RETURNS TRIGGER AS $fn$
+        BEGIN
+            RAISE EXCEPTION 'Session adjustments are immutable and cannot be modified or deleted';
+        END;
+        $fn$ LANGUAGE plpgsql;
+
+        CREATE TRIGGER trg_session_adjustments_no_update_delete
+            BEFORE UPDATE OR DELETE ON session_adjustments
+            FOR EACH ROW EXECUTE FUNCTION prevent_adjustment_mutation();
+    END IF;
+END $$;
+
 -- 6. SALES & POS CORE
 CREATE TABLE IF NOT EXISTS sales (
     id SERIAL PRIMARY KEY,
     reference_no VARCHAR(50) UNIQUE NOT NULL,
     user_id INT NOT NULL REFERENCES users(id),
     customer_id INT REFERENCES customers(id),
+    session_id INT REFERENCES cash_sessions(id) ON DELETE SET NULL,
     total_items INT NOT NULL,
     subtotal DECIMAL(15,4) NOT NULL,
     total_discount DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
@@ -309,6 +353,7 @@ CREATE TABLE IF NOT EXISTS sales (
 
 CREATE INDEX IF NOT EXISTS idx_sales_reference ON sales(reference_no);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
+CREATE INDEX IF NOT EXISTS idx_sales_session_id ON sales(session_id);
 
 CREATE TABLE IF NOT EXISTS sale_items (
     id SERIAL PRIMARY KEY,

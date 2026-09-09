@@ -243,7 +243,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const formatCurrency = (amount: number | string | undefined | null): string => {
+  const formatCurrency = useCallback((amount: number | string | undefined | null): string => {
     const val = typeof amount === 'string' ? parseFloat(amount) : Number(amount || 0);
     const symbol = settings.currency_symbol || 'SAR';
     const position = settings.currency_symbol_position || 'after';
@@ -259,9 +259,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const formatted = `${intPart}${decPart}`;
 
     return position === 'before' ? `${symbol} ${formatted}` : `${formatted} ${symbol}`;
-  };
+  }, [settings.currency_symbol, settings.currency_symbol_position, settings.currency_decimals, settings.decimal_separator, settings.thousands_separator]);
 
-  const getEffectiveTimezone = (): string => {
+  const getEffectiveTimezone = useCallback((): string => {
     if (settings.timezone && settings.timezone.trim()) {
       try {
         Intl.DateTimeFormat(undefined, { timeZone: settings.timezone });
@@ -271,9 +271,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Riyadh';
-  };
+  }, [settings.timezone]);
 
-  const formatTime = (date: Date | string | number | undefined | null): string => {
+  const formatTime = useCallback((date: Date | string | number | undefined | null): string => {
     if (!date) return '—';
     const d = new Date(date);
     if (isNaN(d.getTime())) return '—';
@@ -288,9 +288,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return d.toLocaleTimeString();
     }
-  };
+  }, [getEffectiveTimezone]);
 
-  const formatDateTime = (date: Date | string | number | undefined | null): string => {
+  const formatDateTime = useCallback((date: Date | string | number | undefined | null): string => {
     if (!date) return '—';
     const d = new Date(date);
     if (isNaN(d.getTime())) return '—';
@@ -308,7 +308,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return d.toLocaleString();
     }
-  };
+  }, [getEffectiveTimezone]);
 
   return (
     <SettingsContext.Provider

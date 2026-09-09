@@ -43,6 +43,9 @@ export function useBarcodeScanner({
     }
   };
 
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore modifier keys
@@ -58,7 +61,7 @@ export function useBarcodeScanner({
           const barcode = bufferRef.current.trim();
           bufferRef.current = '';
           playBeep();
-          onScan(barcode);
+          onScanRef.current(barcode);
         } else {
           bufferRef.current = '';
         }
@@ -75,7 +78,7 @@ export function useBarcodeScanner({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onScan, minChars, maxIntervalMs, enableAudioBeep]);
+  }, [minChars, maxIntervalMs, enableAudioBeep]);
 
   return { playBeep };
 }

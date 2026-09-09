@@ -251,9 +251,13 @@ export default function PosTerminalPage() {
   };
 
 
+  const hasLoadedRef = useRef(false);
+
   // Load User, Products & Shift Data with strict Auth Guard
-  const loadData = async () => {
-    setAuthChecking(true);
+  const loadData = async (isInitial = false) => {
+    if (isInitial) {
+      setAuthChecking(true);
+    }
     const userRes = await apiRequest('/auth/me');
     if (userRes.success && userRes.data?.user) {
       // Zero-Privilege POS Rule: Manager cannot operate POS under Manager role.
@@ -317,15 +321,18 @@ export default function PosTerminalPage() {
     if (res.success && res.data?.user) {
       setIsManagerPinUnlockOpen(false);
       setManagerUnlockPin('');
-      loadData();
+      loadData(false);
     } else {
       setManagerPinError(res.message || 'Invalid PIN code. Please try again.');
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, [router]);
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadData(true);
+    }
+  }, []);
 
   // Hardware Barcode Scanner Listener
   useBarcodeScanner({
@@ -360,13 +367,15 @@ export default function PosTerminalPage() {
       } else if (e.key === 'Escape') {
         setIsTenderOpen(false);
         setIsHeldModalOpen(false);
-        setIsOpenShiftModal(false);
-        setIsSessionSummaryOpen(false);
+        if (!isEndingShift) {
+          setIsSessionSummaryOpen(false);
+        }
+        // Mandatory opening shift modal is not dismissed by Escape
       }
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [cart]);
+  }, [cart, isEndingShift]);
 
   // Open Shift Summary Modal before logging out
   const handleOpenLogoutSummary = async () => {

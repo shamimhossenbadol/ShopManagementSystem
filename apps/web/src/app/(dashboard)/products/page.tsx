@@ -159,6 +159,9 @@ export default function ProductsPage() {
   const openCreate = () => {
     setIsEditMode(false);
     setEditingId(null);
+    if (categories.length === 0 || units.length === 0 || taxRates.length === 0) {
+      loadData();
+    }
     setForm({
       name: '',
       sku: `SKU-${Date.now().toString().slice(-6)}`,
@@ -212,8 +215,26 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    if (!form.name || !form.name.trim()) {
+      setErrorMsg('Product Name is required.');
+      return;
+    }
+    if (!form.sku || !form.sku.trim()) {
+      setErrorMsg('SKU Code is required.');
+      return;
+    }
+    if (Number(form.sellingPrice) < 0) {
+      setErrorMsg('Selling Price cannot be negative.');
+      return;
+    }
+    if (Number(form.costPrice) < 0) {
+      setErrorMsg('Cost Price cannot be negative.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
@@ -224,12 +245,16 @@ export default function ProductsPage() {
       method,
       body: JSON.stringify({
         ...form,
-        costPrice: Number(form.costPrice),
+        name: form.name.trim(),
+        sku: form.sku.trim(),
+        barcode: form.barcode?.trim() || null,
+        pluCode: form.pluCode?.trim() || null,
+        costPrice: Number(form.costPrice) || 0,
         wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : null,
-        sellingPrice: Number(form.sellingPrice),
-        minStockLevel: Number(form.minStockLevel),
-        initialStock: Number(form.initialStock),
-        packagingMultiplier: Number(form.packagingMultiplier),
+        sellingPrice: Number(form.sellingPrice) || 0,
+        minStockLevel: Number(form.minStockLevel) || 0,
+        initialStock: Number(form.initialStock) || 0,
+        packagingMultiplier: Number(form.packagingMultiplier) || 1.0,
       }),
     });
 
@@ -251,7 +276,15 @@ export default function ProductsPage() {
       setImageFile(null);
       loadData();
     } else {
-      setErrorMsg(res.message || 'Failed to save product.');
+      let detailedMsg = res.message || 'Failed to save product.';
+      if (res.errors) {
+        const fieldErrors = Object.entries(res.errors)
+          .filter(([k]) => k !== '_errors')
+          .map(([field, err]: any) => `${field}: ${Array.isArray(err?._errors) ? err._errors.join(', ') : err}`)
+          .join('; ');
+        if (fieldErrors) detailedMsg += ` (${fieldErrors})`;
+      }
+      setErrorMsg(detailedMsg);
     }
 
     setLoading(false);
@@ -326,14 +359,24 @@ export default function ProductsPage() {
         subtitle="Manage pricing, units, barcodes, and inventory"
         maxWidth="3xl"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" isLoading={loading} onClick={handleSubmit}>
-              {isEditMode ? 'Save Changes' : 'Create Product SKU'}
-            </Button>
-          </>
+          <div className="flex items-center justify-between w-full">
+            <div className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-sm">
+              {errorMsg && <span>⚠️ {errorMsg}</span>}
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="product-form"
+                variant="primary"
+                isLoading={loading}
+              >
+                {isEditMode ? 'Save Changes' : 'Create Product SKU'}
+              </Button>
+            </div>
+          </div>
         }
       >
         {errorMsg && (
@@ -343,7 +386,7 @@ export default function ProductsPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="product-form" onSubmit={handleSubmit} className="space-y-4">
           {/* Identity & Basic Info */}
           <div className="flex items-start gap-3">
             {/* Compact Image Upload Tile */}
@@ -401,9 +444,20 @@ export default function ProductsPage() {
             </div>
 
             {/* SKU Code */}
-            <div className="w-36 sm:w-48 shrink-0">
+            <div className="w-36 sm:w-48 shrink-0 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  SKU Code <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, sku: `SKU-${Date.now().toString().slice(-6)}` })}
+                  className="text-[11px] font-bold text-blue-700 dark:text-sky-400 hover:underline cursor-pointer"
+                >
+                  Auto
+                </button>
+              </div>
               <Input
-                label="SKU Code"
                 value={form.sku}
                 onChange={(e) => setForm({ ...form, sku: e.target.value })}
                 required

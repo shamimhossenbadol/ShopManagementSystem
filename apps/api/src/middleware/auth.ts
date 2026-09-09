@@ -105,7 +105,10 @@ export function requireRole(allowedRoles: Array<'manager' | 'sales_executive'>) 
       });
     }
 
-    if (!allowedRoles.includes(request.user.role)) {
+    const userRole = request.user.role;
+    const actualRole = request.user.actualRole || userRole;
+
+    if (!allowedRoles.includes(userRole) && !allowedRoles.includes(actualRole)) {
       return reply.status(403).send({
         success: false,
         message: 'Forbidden: You do not have permission to access this resource.',

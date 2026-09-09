@@ -35,6 +35,7 @@ echo [OK] Using browser engine: %BROWSER_EXE%
 REM --- 2. Determine paths ---
 set "SCRIPT_DIR=%~dp0"
 set "ICON_FILE=%SCRIPT_DIR%icon.ico"
+if not exist "%ICON_FILE%" set "ICON_FILE=%SCRIPT_DIR%apps\web\public\icon.ico"
 set "TARGET_URL=http://localhost"
 set "APP_ARGS=--app=%TARGET_URL% --window-size=1440,900"
 
@@ -43,7 +44,7 @@ set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 
 REM --- 3. Create Desktop Shortcut using PowerShell ---
 echo [INSTALL] Creating Windows Desktop Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
 
 if errorlevel 1 (
     echo [WARNING] Failed to create Desktop shortcut.
@@ -53,7 +54,7 @@ if errorlevel 1 (
 
 REM --- 4. Create Start Menu Shortcut ---
 echo [INSTALL] Creating Windows Start Menu Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%START_MENU_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%START_MENU_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
 
 if errorlevel 1 (
     echo [WARNING] Failed to create Start Menu shortcut.

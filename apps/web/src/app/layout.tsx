@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SettingsProvider } from '../hooks/useSettings';
 
@@ -6,7 +6,6 @@ export const metadata: Metadata = {
   title: 'Al-Noor Supermarket & Retail POS',
   description: 'Production Retail POS, Inventory & Management System for Saudi Arabia',
   manifest: '/manifest.json',
-  themeColor: '#1e40af',
   applicationName: 'Al-Noor POS',
   appleWebApp: {
     capable: true,
@@ -14,9 +13,19 @@ export const metadata: Metadata = {
     title: 'Al-Noor POS',
   },
   icons: {
-    icon: '/icon.svg',
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
     apple: '/icon-192.png',
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#1e40af',
 };
 
 export default function RootLayout({
@@ -28,11 +37,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#1e40af" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Al-Noor POS" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <link

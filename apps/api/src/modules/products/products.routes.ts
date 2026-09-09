@@ -228,6 +228,54 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, isScaleBarcode: false, scannedQuantity: 1.0, data: res.rows[0] });
   });
 
+  // GET /api/v1/products/categories
+  fastify.get('/categories', async (request, reply) => {
+    const res = await query(
+      `SELECT c.*, COUNT(p.id) as product_count 
+       FROM categories c 
+       LEFT JOIN products p ON p.category_id = c.id AND p.is_active = TRUE AND p.is_deleted = FALSE
+       WHERE c.is_active = TRUE AND c.is_deleted = FALSE
+       GROUP BY c.id ORDER BY c.name ASC`
+    );
+    return reply.send({ success: true, data: res.rows });
+  });
+
+  // POST /api/v1/products/categories (Manager only)
+  fastify.post('/categories', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+    const parsed = categorySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, message: 'Category name required.' });
+    }
+    const { name, parentId, description } = parsed.data;
+
+    const res = await query(
+      `INSERT INTO categories (name, parent_id, description) VALUES ($1, $2, $3) RETURNING *`,
+      [name, parentId || null, description || null]
+    );
+
+    return reply.status(201).send({ success: true, message: 'Category created.', data: res.rows[0] });
+  });
+
+  // GET /api/v1/products/brands
+  fastify.get('/brands', async (request, reply) => {
+    const res = await query(`SELECT * FROM brands WHERE is_active = TRUE AND is_deleted = FALSE ORDER BY name ASC`);
+    return reply.send({ success: true, data: res.rows });
+  });
+
+  // POST /api/v1/products/brands (Manager only)
+  fastify.post('/brands', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+    const { name, description } = request.body as any;
+    if (!name) return reply.status(400).send({ success: false, message: 'Brand name required' });
+    const res = await query(`INSERT INTO brands (name, description) VALUES ($1, $2) RETURNING *`, [name, description || null]);
+    return reply.status(201).send({ success: true, data: res.rows[0] });
+  });
+
+  // GET /api/v1/products/units
+  fastify.get('/units', async (request, reply) => {
+    const res = await query(`SELECT * FROM units ORDER BY id ASC`);
+    return reply.send({ success: true, data: res.rows });
+  });
+
   // GET /api/v1/products/:id - Single product details
   fastify.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -421,54 +469,6 @@ export async function productRoutes(fastify: FastifyInstance) {
     );
 
     return reply.send({ success: true, message: 'Product deleted successfully.' });
-  });
-
-  // GET /api/v1/products/categories
-  fastify.get('/categories', async (request, reply) => {
-    const res = await query(
-      `SELECT c.*, COUNT(p.id) as product_count 
-       FROM categories c 
-       LEFT JOIN products p ON p.category_id = c.id AND p.is_active = TRUE AND p.is_deleted = FALSE
-       WHERE c.is_active = TRUE AND c.is_deleted = FALSE
-       GROUP BY c.id ORDER BY c.name ASC`
-    );
-    return reply.send({ success: true, data: res.rows });
-  });
-
-  // POST /api/v1/products/categories (Manager only)
-  fastify.post('/categories', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
-    const parsed = categorySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ success: false, message: 'Category name required.' });
-    }
-    const { name, parentId, description } = parsed.data;
-
-    const res = await query(
-      `INSERT INTO categories (name, parent_id, description) VALUES ($1, $2, $3) RETURNING *`,
-      [name, parentId || null, description || null]
-    );
-
-    return reply.status(201).send({ success: true, message: 'Category created.', data: res.rows[0] });
-  });
-
-  // GET /api/v1/products/brands
-  fastify.get('/brands', async (request, reply) => {
-    const res = await query(`SELECT * FROM brands WHERE is_active = TRUE AND is_deleted = FALSE ORDER BY name ASC`);
-    return reply.send({ success: true, data: res.rows });
-  });
-
-  // POST /api/v1/products/brands (Manager only)
-  fastify.post('/brands', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
-    const { name, description } = request.body as any;
-    if (!name) return reply.status(400).send({ success: false, message: 'Brand name required' });
-    const res = await query(`INSERT INTO brands (name, description) VALUES ($1, $2) RETURNING *`, [name, description || null]);
-    return reply.status(201).send({ success: true, data: res.rows[0] });
-  });
-
-  // GET /api/v1/products/units
-  fastify.get('/units', async (request, reply) => {
-    const res = await query(`SELECT * FROM units ORDER BY id ASC`);
-    return reply.send({ success: true, data: res.rows });
   });
 
   // POST /api/v1/products/:id/images - Upload Product Image (Manager only)

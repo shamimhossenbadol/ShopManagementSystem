@@ -47,7 +47,7 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
     }
   }
 
-  const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+  const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'Sell & Inventory';
   const shopAddress = settings.shop_address || '';
   const shopPhone = settings.shop_phone || '';
   const vatNumber = settings.shop_vat_number || '300123456700003';

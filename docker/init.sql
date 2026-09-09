@@ -736,8 +736,8 @@ ON CONFLICT (id) DO NOTHING;
 -- 7. Default System Settings (100% UI Configurable)
 -- 1. Shop Profile
 INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public) VALUES
-('shop_name_en', 'shop', 'AL-NOOR SUPERMARKET & HYPERMARKET', 'Shop English Name', true),
-('shop_name_ar', 'shop', 'AL-NOOR RETAIL POS', 'Shop Secondary / POS Name', true),
+('shop_name_en', 'shop', 'Sell & Inventory', 'Shop English Name', true),
+('shop_name_ar', 'shop', 'Sell & Inventory POS', 'Shop Secondary / POS Name', true),
 ('shop_cr_number', 'shop', '1010123456', 'Commercial Registration Number', true),
 ('shop_vat_number', 'shop', '300123456700003', 'VAT / Tax Registration Number', true),
 ('shop_phone', 'shop', '+966 11 456 7890', 'Shop Contact Phone', true),
@@ -745,7 +745,7 @@ INSERT INTO settings (setting_key, setting_group, setting_value, description, is
 ('shop_address', 'shop', 'King Fahd Road, Riyadh, Saudi Arabia', 'Shop Physical Address', true),
 ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true),
 ('shop_logo_path', 'shop', '', 'Shop Brand Logo URL or Path', true),
-('receipt_header', 'shop', 'Welcome to Al-Noor Supermarket', 'Receipt Top Header Message', true),
+('receipt_header', 'shop', 'Welcome to our Shop', 'Receipt Top Header Message', true),
 ('receipt_footer', 'shop', 'Thank you for shopping with us! Return within 7 days with invoice.', 'Receipt Bottom Note', true)
 ON CONFLICT (setting_key) DO NOTHING;
 

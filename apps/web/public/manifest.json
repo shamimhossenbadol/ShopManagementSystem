@@ -1,7 +1,7 @@
 {
-  "name": "Al-Noor Supermarket & Retail POS",
-  "short_name": "Al-Noor POS",
-  "description": "Production Retail POS, Inventory & Management System for Saudi Arabia",
+  "name": "Sell & Inventory - Retail POS",
+  "short_name": "Sell & Inventory",
+  "description": "Retail Point of Sale & Inventory Management System",
   "start_url": "/",
   "id": "/",
   "scope": "/",

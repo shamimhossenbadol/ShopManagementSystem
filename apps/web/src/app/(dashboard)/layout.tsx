@@ -212,10 +212,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <div className="overflow-hidden">
               <h1 className="text-xs font-black tracking-tight text-slate-900 dark:text-white uppercase truncate">
-                {settings.shop_name_en || 'AL-NOOR SUPERMARKET'}
+                {settings.shop_name_en || 'Sell & Inventory'}
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold truncate">
-                {settings.shop_name_ar || 'AL-NOOR RETAIL POS'}
+                {settings.shop_name_ar || 'Sell & Inventory POS'}
               </p>
             </div>
           </Link>

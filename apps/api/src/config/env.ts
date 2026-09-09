@@ -11,7 +11,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   BACKUP_ENCRYPTION_KEY: z.string().default('shop_backup_master_key_32_chars!'),
-  SHOP_NAME: z.string().default('AL-NOOR RETAIL SHOP'),
+  SHOP_NAME: z.string().default('Sell & Inventory'),
   SHOP_VAT_NUMBER: z.string().default('300123456700003'),
   SHOP_CR_NUMBER: z.string().default('1010123456'),
   S3_ENDPOINT: z.string().optional(),

@@ -167,7 +167,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
   const handleDownloadSample = () => {
     const sample = {
       meta: {
-        description: 'Sample JSON format for importing products into Al-Noor Shop Management System',
+        description: 'Sample JSON format for importing products into Sell & Inventory System',
         version: '1.0',
       },
       products: [

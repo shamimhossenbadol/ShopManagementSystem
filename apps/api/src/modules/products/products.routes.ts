@@ -574,8 +574,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        shopName: settingsMap.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET',
-        shopNameAr: settingsMap.shop_name_ar || 'AL-NOOR RETAIL POS',
+        shopName: settingsMap.shop_name_en || 'Sell & Inventory',
+        shopNameAr: settingsMap.shop_name_ar || 'Sell & Inventory POS',
         productName: prod.name,
         sku: prod.sku,
         barcode: prod.barcode || prod.sku,

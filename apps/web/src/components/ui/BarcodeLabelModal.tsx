@@ -73,7 +73,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({
   }, [selectedSizeId]);
 
   const shopName =
-    settings.shop_name_en || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+    settings.shop_name_en || settings.shop_name_ar || 'Sell & Inventory';
 
   const barcodeValue = product?.barcode || product?.sku || '00000000';
 

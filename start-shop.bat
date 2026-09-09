@@ -1,9 +1,9 @@
 @echo off
-title Al-Noor Retail Shop POS - Starting...
+title Sell ^& Inventory - Starting...
 color 0A
 echo.
 echo ======================================================================
-echo           AL-NOOR RETAIL SHOP MANAGEMENT SYSTEM (KSA)
+echo           SELL ^& INVENTORY - RETAIL POS ^& SHOP MANAGEMENT
 echo           Production POS ^& Inventory Management
 echo ======================================================================
 echo.
@@ -77,7 +77,7 @@ echo ======================================================================
 echo.
 
 REM --- Open App in Standalone Window ---
-echo [APP] Launching Al-Noor POS Application...
+echo [APP] Launching Sell ^& Inventory Application...
 if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
     start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
 ) else if exist "C:\Program Files\Microsoft\Edge\Application\msedge.exe" (

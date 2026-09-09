@@ -60,9 +60,9 @@ export function InstallPwaButton({ className = '' }: { className?: string }) {
     if (!deferredPrompt) {
       // Fallback instruction if browser doesn't support or already prompted
       alert(
-        'To install Al-Noor POS as a Windows Desktop App:\n\n' +
+        'To install Sell & Inventory as a Windows Desktop App:\n\n' +
         '1. In Microsoft Edge or Chrome, click the App icon in the address bar (or Menu -> Apps).\n' +
-        '2. Click "Install Al-Noor Supermarket & Retail POS".\n' +
+        '2. Click "Install Sell & Inventory - Retail POS".\n' +
         '3. The app will install to your Start Menu & Taskbar and run in its own window!'
       );
       return;
@@ -94,7 +94,7 @@ export function InstallPwaButton({ className = '' }: { className?: string }) {
       type="button"
       onClick={handleInstallClick}
       className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 border bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/80 shadow-md hover:border-blue-500/50 hover:shadow-blue-500/10 ${className}`}
-      title="Install Al-Noor POS as a Windows Desktop Application"
+      title="Install Sell & Inventory as a Windows Desktop Application"
     >
       <Monitor className="h-4 w-4 text-sky-400 group-hover:scale-110 transition-transform" />
       <span>Install Windows App</span>

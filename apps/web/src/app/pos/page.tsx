@@ -530,7 +530,7 @@ export default function PosTerminalPage() {
       }
     };
 
-    const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+    const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'Sell & Inventory';
     const shopAddress = settings.shop_address || '';
     const shopPhone = settings.shop_phone || '';
     const cashierName = formatTwoWords(user?.fullName || user?.full_name || user?.username);
@@ -2100,7 +2100,7 @@ export default function PosTerminalPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                  {settings.shop_name_en || 'AL-NOOR SUPERMARKET'}
+                  {settings.shop_name_en || 'Sell & Inventory'}
                 </span>
               </div>
               <div

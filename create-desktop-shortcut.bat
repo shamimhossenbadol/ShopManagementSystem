@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
-title Al-Noor POS - Install Windows App Shortcut
+title Sell ^& Inventory - Install Windows App Shortcut
 color 0A
 
 echo.
 echo ======================================================================
-echo           AL-NOOR RETAIL SHOP MANAGEMENT SYSTEM (KSA)
+echo           SELL ^& INVENTORY - RETAIL POS ^& SHOP MANAGEMENT
 echo           Install Windows Desktop Standalone App
 echo ======================================================================
 echo.
@@ -42,33 +42,37 @@ set "APP_ARGS=--app=%TARGET_URL% --window-size=1440,900"
 set "DESKTOP_DIR=%USERPROFILE%\Desktop"
 set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 
+REM Remove obsolete legacy shortcuts if present
+if exist "%DESKTOP_DIR%\Al-Noor POS.lnk" del /f /q "%DESKTOP_DIR%\Al-Noor POS.lnk"
+if exist "%START_MENU_DIR%\Al-Noor POS.lnk" del /f /q "%START_MENU_DIR%\Al-Noor POS.lnk"
+
 REM --- 3. Create Desktop Shortcut using PowerShell ---
 echo [INSTALL] Creating Windows Desktop Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP_DIR%\Sell & Inventory.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Sell & Inventory - Retail POS & Inventory Management'; $s.Save()"
 
 if errorlevel 1 (
     echo [WARNING] Failed to create Desktop shortcut.
 ) else (
-    echo [SUCCESS] Shortcut created on Desktop: "%DESKTOP_DIR%\Al-Noor POS.lnk"
+    echo [SUCCESS] Shortcut created on Desktop: "%DESKTOP_DIR%\Sell & Inventory.lnk"
 )
 
 REM --- 4. Create Start Menu Shortcut ---
 echo [INSTALL] Creating Windows Start Menu Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%START_MENU_DIR%\Al-Noor POS.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Al-Noor Supermarket & Retail POS App'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%START_MENU_DIR%\Sell & Inventory.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Sell & Inventory - Retail POS & Inventory Management'; $s.Save()"
 
 if errorlevel 1 (
     echo [WARNING] Failed to create Start Menu shortcut.
 ) else (
-    echo [SUCCESS] Shortcut created in Start Menu: "%START_MENU_DIR%\Al-Noor POS.lnk"
+    echo [SUCCESS] Shortcut created in Start Menu: "%START_MENU_DIR%\Sell & Inventory.lnk"
 )
 
 echo.
 echo ======================================================================
 echo  [INSTALLATION COMPLETE]
 echo.
-echo  You can now open Al-Noor POS like a native Windows application:
-echo    1. From your Desktop: Double-click the "Al-Noor POS" icon.
-echo    2. From Start Menu: Search for "Al-Noor POS".
+echo  You can now open Sell & Inventory like a native Windows application:
+echo    1. From your Desktop: Double-click the "Sell & Inventory" icon.
+echo    2. From Start Menu: Search for "Sell & Inventory".
 echo.
 echo  It will launch in a dedicated, borderless standalone app window
 echo  without address bars, tabs, or browser clutter!

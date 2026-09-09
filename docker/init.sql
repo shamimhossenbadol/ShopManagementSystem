@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS product_batches (
     product_id INT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     batch_number VARCHAR(100) NOT NULL,
     expiry_date DATE NOT NULL,
-    purchase_id INT REFERENCES purchases(id) ON DELETE SET NULL,
+    purchase_id INT,
     purchase_item_id INT,
     cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000 CHECK (cost_price >= 0),
     initial_quantity DECIMAL(15,3) NOT NULL CHECK (initial_quantity >= 0),
@@ -481,6 +481,19 @@ CREATE TABLE IF NOT EXISTS purchase_payments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Link product_batches to purchases table
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'fk_product_batches_purchases'
+    ) THEN
+        ALTER TABLE product_batches 
+            ADD CONSTRAINT fk_product_batches_purchases 
+            FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
 -- 10. RETURNS
 CREATE TABLE IF NOT EXISTS sales_returns (
     id SERIAL PRIMARY KEY,
@@ -708,11 +721,10 @@ INSERT INTO categories (id, name, description) VALUES
 (5, 'Fresh Produce & Fruits', 'Fresh vegetables, fruits, and loose items')
 ON CONFLICT (id) DO NOTHING;
 
--- 5. Default Users
--- Passwords below are hashed with bcrypt for "admin123" and "sales123"
+-- 5. Default Users (Manager Only)
+-- Default Manager: username 'admin', PIN '12345', password 'admin123'
 INSERT INTO users (id, role, username, email, password_hash, full_name, phone, pin_code, is_active) VALUES
-(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE),
-(2, 'sales_executive', 'cashier1', 'cashier1@alnoorshop.com', '$2b$10$RALPUd90MJ1i2REruAjZF.BIAMOTRc.ROS718ALiptTV7ygDBhp2C', 'Rafiq Ahmed (Sales Executive)', '+966559876543', '56789', TRUE)
+(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE)
 ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 -- 6. Default Walk-in Customer

@@ -160,6 +160,7 @@ async function runAutoMigrations() {
         ALTER TABLE products ADD COLUMN IF NOT EXISTS has_expiry BOOLEAN NOT NULL DEFAULT false;
         ALTER TABLE products ADD COLUMN IF NOT EXISTS is_weighable BOOLEAN NOT NULL DEFAULT false;
         ALTER TABLE products ADD COLUMN IF NOT EXISTS is_quick_plu BOOLEAN NOT NULL DEFAULT false;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
         CREATE INDEX IF NOT EXISTS idx_products_plu ON products(plu_code);
       `,
     },

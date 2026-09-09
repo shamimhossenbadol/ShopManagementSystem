@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS products (
     has_expiry BOOLEAN NOT NULL DEFAULT FALSE, -- Perishable flag
     is_weighable BOOLEAN NOT NULL DEFAULT FALSE, -- Variable-weight scale item
     is_quick_plu BOOLEAN NOT NULL DEFAULT FALSE, -- Fast PLU produce grid item
+    image_url VARCHAR(500), -- Primary product image URL/path cache
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

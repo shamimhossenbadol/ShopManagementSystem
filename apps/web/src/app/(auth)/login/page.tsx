@@ -267,7 +267,7 @@ export default function LoginPage() {
           </div>
           <div>
             <h1 className="text-base font-black uppercase tracking-tight text-white">
-              {settings.shop_name_en || 'Sell & Inventory'}
+              {settings.shop_name_en || 'AL-NOOR SUPERMARKET'}
             </h1>
             <p className="text-[12px] font-medium text-slate-400 mt-0.5">
               Point of Sale & Retail Management

@@ -3,8 +3,11 @@ import './globals.css';
 import { SettingsProvider } from '../hooks/useSettings';
 
 export const metadata: Metadata = {
-  title: 'Sell & Inventory - Retail POS',
-  description: 'Fast, reliable Point of Sale & Inventory Management System for any retail shop',
+  title: {
+    default: 'Sell & Inventory',
+    template: '%s | Sell & Inventory',
+  },
+  description: 'Retail Point of Sale, Sales & Inventory Management System',
   manifest: '/manifest.json',
   applicationName: 'Sell & Inventory',
   appleWebApp: {

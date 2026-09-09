@@ -55,8 +55,8 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
         items: itemsRes.rows,
         payments: paymentsRes.rows,
         store: {
-          nameEn: settings.shop_name_en || settings.shop_name || 'Sell & Inventory',
-          nameAr: settings.shop_name_ar || 'Sell & Inventory POS',
+          nameEn: settings.shop_name_en || settings.shop_name || 'AL-NOOR SUPERMARKET & HYPERMARKET',
+          nameAr: settings.shop_name_ar || 'AL-NOOR RETAIL POS',
           vatNumber: settings.shop_vat_number || '300123456700003',
           crNumber: settings.shop_cr_number || '1010123456',
           address: settings.shop_address || 'King Fahd Road, Riyadh, Saudi Arabia',

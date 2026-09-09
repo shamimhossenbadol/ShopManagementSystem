@@ -80,7 +80,7 @@ services:
       RECOVERY_DATABASE_URL: postgresql://${RECOVERY_DB_USER:-recovery_admin}:${RECOVERY_DB_PASSWORD:-recovery_secure_password_2026}@postgres_recovery:5432/${RECOVERY_DB_NAME:-shop_recovery_db}
       JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_shop_management_ksa_2026_xyz}
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-shop_backup_master_key_32_chars!}
-      SHOP_NAME: ${SHOP_NAME:-Sell & Inventory}
+      SHOP_NAME: ${SHOP_NAME:-AL-NOOR RETAIL SHOP}
       SHOP_VAT_NUMBER: ${SHOP_VAT_NUMBER:-300123456700003}
       SHOP_CR_NUMBER: ${SHOP_CR_NUMBER:-1010123456}
       S3_ENDPOINT: ${S3_ENDPOINT:-}

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Download, Monitor, CheckCircle2 } from 'lucide-react';
+import { useSettings } from '@/hooks/useSettings';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -9,9 +10,12 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function InstallPwaButton({ className = '' }: { className?: string }) {
+  const { settings } = useSettings();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+
+  const appName = settings?.shop_name_en || 'Sell & Inventory';
 
   useEffect(() => {
     // Check if already running as installed standalone app
@@ -60,10 +64,10 @@ export function InstallPwaButton({ className = '' }: { className?: string }) {
     if (!deferredPrompt) {
       // Fallback instruction if browser doesn't support or already prompted
       alert(
-        'To install Sell & Inventory as a Windows Desktop App:\n\n' +
-        '1. In Microsoft Edge or Chrome, click the App icon in the address bar (or Menu -> Apps).\n' +
-        '2. Click "Install Sell & Inventory - Retail POS".\n' +
-        '3. The app will install to your Start Menu & Taskbar and run in its own window!'
+        `To install ${appName} as a Windows Desktop App:\n\n` +
+        `1. In Microsoft Edge or Chrome, click the App icon in the address bar (or Menu -> Apps).\n` +
+        `2. Click "Install ${appName}".\n` +
+        `3. The app will install to your Start Menu & Taskbar and run in its own window!`
       );
       return;
     }
@@ -94,7 +98,7 @@ export function InstallPwaButton({ className = '' }: { className?: string }) {
       type="button"
       onClick={handleInstallClick}
       className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 border bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/80 shadow-md hover:border-blue-500/50 hover:shadow-blue-500/10 ${className}`}
-      title="Install Sell & Inventory as a Windows Desktop Application"
+      title={`Install ${appName} as a Windows Desktop Application`}
     >
       <Monitor className="h-4 w-4 text-sky-400 group-hover:scale-110 transition-transform" />
       <span>Install Windows App</span>

@@ -228,20 +228,37 @@ export default function SettingsCustomizerPage() {
               Store Business Identity & ZATCA Receipt Customization
             </h2>
 
+            <div className="rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30 p-4 space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-sky-400">
+                  <Monitor className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                    App Branding: <span className="text-blue-700 dark:text-sky-400 font-mono">{formData.shop_name_en || 'Sell & Inventory'}</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Changing the Shop Name updates the POS terminal, receipts, thermal labels, and the Windows Desktop application.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 label="Shop English Name *"
                 required
                 value={formData.shop_name_en || ''}
                 onChange={(e) => handleInputChange('shop_name_en', e.target.value)}
-                placeholder="e.g. AL-NOOR SUPERMARKET"
+                placeholder="e.g. Sell & Inventory"
+                helperText="Brand name displayed across POS, Receipts, Barcode Labels, and the Windows Desktop App."
               />
 
               <Input
                 label="Shop Arabic Subtitle (POS Receipt Header)"
                 value={formData.shop_name_ar || ''}
                 onChange={(e) => handleInputChange('shop_name_ar', e.target.value)}
-                placeholder="سوبرماركت النور"
+                placeholder="e.g. نظام المبيعات والمخزون"
               />
 
               <Input

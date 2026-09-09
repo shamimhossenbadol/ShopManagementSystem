@@ -1,9 +1,9 @@
 @echo off
-title Sell ^& Inventory - Starting...
+title Retail Sales & Inventory POS - Starting...
 color 0A
 echo.
 echo ======================================================================
-echo           SELL ^& INVENTORY - RETAIL POS ^& SHOP MANAGEMENT
+echo           RETAIL SALES ^& INVENTORY MANAGEMENT SYSTEM
 echo           Production POS ^& Inventory Management
 echo ======================================================================
 echo.
@@ -77,7 +77,7 @@ echo ======================================================================
 echo.
 
 REM --- Open App in Standalone Window ---
-echo [APP] Launching Sell ^& Inventory Application...
+echo [APP] Launching Retail POS Standalone Application...
 if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
     start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
 ) else if exist "C:\Program Files\Microsoft\Edge\Application\msedge.exe" (

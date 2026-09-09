@@ -79,7 +79,7 @@ export default function DashboardPage() {
               <span className="text-xs font-mono text-blue-300/80">AST Timezone (UTC+3)</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
-              {settings.shop_name_en || 'Sell & Inventory'}
+              {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
             </h1>
             <p className="text-xs md:text-sm text-blue-100/80 max-w-2xl font-medium">
               Real-time POS transaction throughput, perpetual Weighted Average Cost (WAC) calculations, cash shift reconciliation, and ZATCA compliance.

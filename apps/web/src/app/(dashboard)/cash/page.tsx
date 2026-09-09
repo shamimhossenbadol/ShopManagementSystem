@@ -312,7 +312,7 @@ export default function CashSessionsPage() {
     const formattedEndDate = formatHumanDate(endDate);
     const periodLabel = isRange ? `${formattedStartDate} to ${formattedEndDate}` : formattedStartDate;
 
-    const shopName = settings?.shop_name_en || settings?.shop_name_ar || 'Sell & Inventory';
+    const shopName = settings?.shop_name_en || settings?.shop_name_ar || 'AL-NOOR SUPERMARKET & HYPERMARKET';
     const vatNumber = settings?.shop_vat_number || settings?.vat_number || '300123456700003';
     const crNumber = settings?.shop_cr_number || settings?.cr_number || '1010123456';
     const phone = settings?.shop_phone || settings?.phone || '+966 11 456 7890';

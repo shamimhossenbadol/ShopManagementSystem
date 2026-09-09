@@ -68,7 +68,7 @@ const defaultSettings: ShopSettings = {
   shop_phone: '+966 11 456 7890',
   shop_email: 'info@alnoorshop.com',
   shop_address: 'King Fahd Road, Riyadh, Saudi Arabia',
-  receipt_header: 'Welcome to our Shop',
+  receipt_header: 'Welcome to Sell & Inventory',
   receipt_footer: 'Thank you for shopping with us! Return within 7 days with invoice.',
   currency_code: 'SAR',
   currency_symbol: 'SAR',
@@ -203,6 +203,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshSettings();
   }, [refreshSettings]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined' && settings?.shop_name_en) {
+      document.title = settings.shop_name_en;
+    }
+  }, [settings?.shop_name_en]);
 
   useEffect(() => {
     applyThemeClass(theme);

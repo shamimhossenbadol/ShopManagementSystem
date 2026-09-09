@@ -364,7 +364,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
         );
         const settingsMap = Object.fromEntries(storeSettingsRes.rows.map((r) => [r.setting_key, r.setting_value]));
 
-        const sellerName = settingsMap.shop_name_en || settingsMap.shop_name || process.env.SHOP_NAME || 'Sell & Inventory';
+        const sellerName = settingsMap.shop_name_en || settingsMap.shop_name || process.env.SHOP_NAME || 'AL-NOOR SUPER MARKET';
         const vatNumber = settingsMap.vat_number || settingsMap.shop_vat_number || process.env.SHOP_VAT_NUMBER || '300123456700003';
 
         const prevHashRes = await client.query(

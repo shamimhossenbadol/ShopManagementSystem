@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
-title Sell ^& Inventory - Install Windows App Shortcut
+title Windows App Shortcut Installer
 color 0A
 
 echo.
 echo ======================================================================
-echo           SELL ^& INVENTORY - RETAIL POS ^& SHOP MANAGEMENT
-echo           Install Windows Desktop Standalone App
+echo           RETAIL SALES ^& INVENTORY MANAGEMENT SYSTEM
+echo           Install / Update Windows Desktop Standalone App
 echo ======================================================================
 echo.
 
@@ -32,7 +32,17 @@ if "%BROWSER_EXE%"=="" (
 
 echo [OK] Using browser engine: %BROWSER_EXE%
 
-REM --- 2. Determine paths ---
+REM --- 2. Determine App / Shop Name dynamically ---
+set "APP_NAME=%~1"
+if /i "%APP_NAME%"=="nowait" set "APP_NAME="
+if "%APP_NAME%"=="" (
+    for /f "usebackq delims=" %%N in (`powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost/api/v1/settings/public' -TimeoutSec 2; if ($r.data.shop_name_en) { $r.data.shop_name_en.Trim() } else { 'Sell & Inventory' } } catch { 'Sell & Inventory' }"`) do (
+        set "APP_NAME=%%N"
+    )
+)
+if "%APP_NAME%"=="" set "APP_NAME=Sell & Inventory"
+
+REM --- 3. Determine paths & icons ---
 set "SCRIPT_DIR=%~dp0"
 set "ICON_FILE=%SCRIPT_DIR%icon.ico"
 if not exist "%ICON_FILE%" set "ICON_FILE=%SCRIPT_DIR%apps\web\public\icon.ico"
@@ -42,40 +52,41 @@ set "APP_ARGS=--app=%TARGET_URL% --window-size=1440,900"
 set "DESKTOP_DIR=%USERPROFILE%\Desktop"
 set "START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 
-REM Remove obsolete legacy shortcuts if present
-if exist "%DESKTOP_DIR%\Al-Noor POS.lnk" del /f /q "%DESKTOP_DIR%\Al-Noor POS.lnk"
-if exist "%START_MENU_DIR%\Al-Noor POS.lnk" del /f /q "%START_MENU_DIR%\Al-Noor POS.lnk"
+REM --- 4. Clean up any obsolete/legacy shortcuts ---
+if exist "%DESKTOP_DIR%\Al-Noor POS.lnk" del /f /q "%DESKTOP_DIR%\Al-Noor POS.lnk" >nul 2>&1
+if exist "%START_MENU_DIR%\Al-Noor POS.lnk" del /f /q "%START_MENU_DIR%\Al-Noor POS.lnk" >nul 2>&1
 
-REM --- 3. Create Desktop Shortcut using PowerShell ---
-echo [INSTALL] Creating Windows Desktop Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP_DIR%\Sell & Inventory.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Sell & Inventory - Retail POS & Inventory Management'; $s.Save()"
-
-if errorlevel 1 (
-    echo [WARNING] Failed to create Desktop shortcut.
-) else (
-    echo [SUCCESS] Shortcut created on Desktop: "%DESKTOP_DIR%\Sell & Inventory.lnk"
-)
-
-REM --- 4. Create Start Menu Shortcut ---
-echo [INSTALL] Creating Windows Start Menu Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%START_MENU_DIR%\Sell & Inventory.lnk'); $s.TargetPath = '%BROWSER_EXE%'; $s.Arguments = '%APP_ARGS%'; $s.IconLocation = '%ICON_FILE%,0'; $s.Description = 'Sell & Inventory - Retail POS & Inventory Management'; $s.Save()"
-
-if errorlevel 1 (
-    echo [WARNING] Failed to create Start Menu shortcut.
-) else (
-    echo [SUCCESS] Shortcut created in Start Menu: "%START_MENU_DIR%\Sell & Inventory.lnk"
-)
+REM --- 5. Create Desktop and Start Menu Shortcuts via PowerShell ---
+echo [INSTALL] Creating Windows Shortcuts...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$appName = [System.Environment]::GetEnvironmentVariable('APP_NAME');" ^
+  "$browser = [System.Environment]::GetEnvironmentVariable('BROWSER_EXE');" ^
+  "$args = [System.Environment]::GetEnvironmentVariable('APP_ARGS');" ^
+  "$icon = [System.Environment]::GetEnvironmentVariable('ICON_FILE');" ^
+  "$desktop = [System.Environment]::GetEnvironmentVariable('DESKTOP_DIR');" ^
+  "$startMenu = [System.Environment]::GetEnvironmentVariable('START_MENU_DIR');" ^
+  "$ws = New-Object -ComObject WScript.Shell;" ^
+  "$safeName = [string]::Join('_', $appName.Split([System.IO.Path]::GetInvalidFileNameChars()));" ^
+  "$dShortcut = $ws.CreateShortcut((Join-Path $desktop ($safeName + '.lnk')));" ^
+  "$dShortcut.TargetPath = $browser;" ^
+  "$dShortcut.Arguments = $args;" ^
+  "$dShortcut.IconLocation = ($icon + ',0');" ^
+  "$dShortcut.Description = ($appName + ' Standalone App');" ^
+  "$dShortcut.Save();" ^
+  "$mShortcut = $ws.CreateShortcut((Join-Path $startMenu ($safeName + '.lnk')));" ^
+  "$mShortcut.TargetPath = $browser;" ^
+  "$mShortcut.Arguments = $args;" ^
+  "$mShortcut.IconLocation = ($icon + ',0');" ^
+  "$mShortcut.Description = ($appName + ' Standalone App');" ^
+  "$mShortcut.Save();" ^
+  "Write-Host ('[SUCCESS] Shortcuts created: ' + $safeName + '.lnk');"
 
 echo.
 echo ======================================================================
 echo  [INSTALLATION COMPLETE]
 echo.
-echo  You can now open Sell & Inventory like a native Windows application:
-echo    1. From your Desktop: Double-click the "Sell & Inventory" icon.
-echo    2. From Start Menu: Search for "Sell & Inventory".
-echo.
-echo  It will launch in a dedicated, borderless standalone app window
-echo  without address bars, tabs, or browser clutter!
+echo  You can now open the app from your Desktop or Start Menu.
+echo  It will launch in a dedicated, borderless standalone app window!
 echo ======================================================================
 echo.
-pause
+if not "%~2"=="nowait" if not "%~1"=="nowait" pause

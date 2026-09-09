@@ -215,8 +215,8 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
     if (!form.name || !form.name.trim()) {
       setErrorMsg('Product Name is required.');
@@ -226,11 +226,11 @@ export default function ProductsPage() {
       setErrorMsg('SKU Code is required.');
       return;
     }
-    if (Number(form.sellingPrice) < 0) {
+    if (Number(form.sellingPrice) < 0 || isNaN(Number(form.sellingPrice))) {
       setErrorMsg('Selling Price cannot be negative.');
       return;
     }
-    if (Number(form.costPrice) < 0) {
+    if (Number(form.costPrice) < 0 || isNaN(Number(form.costPrice))) {
       setErrorMsg('Cost Price cannot be negative.');
       return;
     }
@@ -372,6 +372,7 @@ export default function ProductsPage() {
                 form="product-form"
                 variant="primary"
                 isLoading={loading}
+                onClick={handleSubmit}
               >
                 {isEditMode ? 'Save Changes' : 'Create Product SKU'}
               </Button>

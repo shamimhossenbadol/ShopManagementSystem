@@ -141,8 +141,8 @@ export async function authRoutes(fastify: FastifyInstance) {
       userRes = await query(
         `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
          FROM users 
-         WHERE username = $1`,
-        [username]
+         WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) OR (LOWER($1) = 'manager' AND role = 'manager')`,
+        [username.trim()]
       );
 
       if (userRes.rows.length === 0) {
@@ -172,13 +172,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     // Determine session type & effective role:
+    // PIN login strictly receives executive privileges ('sales_executive').
+    // Full manager powers strictly require logging in via username and password.
     const isPinLogin = Boolean(pin && !password);
     const requestedSessionType = parseResult.data.sessionType;
     const sessionType: 'dashboard' | 'pos' = requestedSessionType
       ? requestedSessionType
       : (isPinLogin || user.role === 'sales_executive' ? 'pos' : 'dashboard');
 
-    const effectiveRole = sessionType === 'pos' && user.role === 'manager' ? 'sales_executive' : user.role;
+    const effectiveRole = isPinLogin ? 'sales_executive' : user.role;
 
     // POS Exclusive Session Check: For cashier/PIN logins, enforce single active operator on POS
     if (sessionType === 'pos') {

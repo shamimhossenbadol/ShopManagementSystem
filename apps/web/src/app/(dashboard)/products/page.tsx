@@ -9,6 +9,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { BarcodeLabelModal } from '@/components/ui/BarcodeLabelModal';
+import { ProductImportModal } from '@/components/products/ProductImportModal';
 import { DataTable } from '@/components/ui/DataTable';
 import {
   Package,
@@ -26,6 +27,8 @@ import {
   Calendar,
   Grid,
   Upload,
+  Download,
+  FileJson,
   Image as ImageIcon,
   Sparkles,
   Layers,
@@ -77,6 +80,8 @@ export default function ProductsPage() {
   const [barcodeProduct, setBarcodeProduct] = useState<any>(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Image Upload state
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -314,6 +319,65 @@ export default function ProductsPage() {
         setForm((prev) => ({ ...prev, categoryId: res.data.id }));
       }
       loadData();
+    }
+  };
+
+  const handleExportJson = async () => {
+    setExportLoading(true);
+    try {
+      const res = await apiRequest('/products/export');
+      let exportPayload: any = null;
+
+      if (res.success && res.products) {
+        exportPayload = res;
+      } else {
+        exportPayload = {
+          meta: {
+            exportedAt: new Date().toISOString(),
+            totalProducts: products.length,
+            version: '1.0',
+          },
+          products: products.map((p) => ({
+            sku: p.sku,
+            name: p.name,
+            barcode: p.barcode || null,
+            pluCode: p.plu_code || null,
+            description: p.description || null,
+            category: p.category_name || 'General',
+            categoryId: p.category_id,
+            unit: p.unit_name || 'Piece',
+            unitId: p.unit_id,
+            packagingMultiplier: Number(p.packaging_multiplier || 1.0),
+            taxRatePercent: Number(p.tax_rate || 15.0),
+            taxRateId: p.tax_rate_id,
+            taxType: p.tax_type || 'exclusive',
+            costPrice: Number(p.cost_price || 0),
+            wholesalePrice: p.wholesale_price ? Number(p.wholesale_price) : null,
+            sellingPrice: Number(p.selling_price || 0),
+            currentStock: Number(p.current_stock || 0),
+            minStockLevel: Number(p.min_stock_level || 5),
+            hasExpiry: Boolean(p.has_expiry),
+            isWeighable: Boolean(p.is_weighable),
+            isQuickPlu: Boolean(p.is_quick_plu),
+            isActive: Boolean(p.is_active),
+          })),
+        };
+      }
+
+      const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.href = url;
+      a.download = `shop-products-catalog-${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export products error:', err);
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -654,6 +718,13 @@ export default function ProductsPage() {
         </form>
       </Modal>
 
+      {/* JSON Import Modal */}
+      <ProductImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => loadData()}
+      />
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -664,7 +735,26 @@ export default function ProductsPage() {
             Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices, selling prices, and thermal shelf labels.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => setIsImportModalOpen(true)}
+            leftIcon={<Upload className="h-4 w-4" />}
+            title="Batch import or update products from a JSON file"
+          >
+            Import JSON
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleExportJson}
+            isLoading={exportLoading}
+            leftIcon={<Download className="h-4 w-4" />}
+            title="Export full catalog records as JSON"
+          >
+            Export JSON
+          </Button>
           <Button
             variant="secondary"
             size="md"

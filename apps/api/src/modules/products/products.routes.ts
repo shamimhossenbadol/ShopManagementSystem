@@ -591,4 +591,319 @@ export async function productRoutes(fastify: FastifyInstance) {
       },
     });
   });
+
+  // GET /api/v1/products/export - Export product catalog as JSON (Manager only)
+  fastify.get('/export', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+    const res = await query(
+      `SELECT 
+        p.id, p.sku, p.barcode, p.plu_code, p.name, p.description,
+        p.category_id, c.name as category_name,
+        p.unit_id, u.name as unit_name, u.short_name as unit_short,
+        p.packaging_multiplier,
+        p.tax_rate_id, t.rate as tax_rate,
+        p.tax_type,
+        p.cost_price,
+        p.wholesale_price,
+        p.selling_price,
+        p.current_stock,
+        p.min_stock_level,
+        p.has_expiry,
+        p.is_weighable,
+        p.is_quick_plu,
+        p.is_active,
+        p.created_at
+       FROM products p
+       LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN units u ON p.unit_id = u.id
+       LEFT JOIN tax_rates t ON p.tax_rate_id = t.id
+       WHERE p.is_deleted = FALSE
+       ORDER BY p.id ASC`
+    );
+
+    const products = res.rows.map((p) => ({
+      sku: p.sku,
+      name: p.name,
+      barcode: p.barcode || null,
+      pluCode: p.plu_code || null,
+      description: p.description || null,
+      category: p.category_name || 'General',
+      categoryId: p.category_id,
+      unit: p.unit_name || 'Piece',
+      unitId: p.unit_id,
+      packagingMultiplier: Number(p.packaging_multiplier || 1.0),
+      taxRatePercent: Number(p.tax_rate || 15.0),
+      taxRateId: p.tax_rate_id,
+      taxType: p.tax_type,
+      costPrice: Number(p.cost_price || 0),
+      wholesalePrice: p.wholesale_price ? Number(p.wholesale_price) : null,
+      sellingPrice: Number(p.selling_price || 0),
+      currentStock: Number(p.current_stock || 0),
+      minStockLevel: Number(p.min_stock_level || 5),
+      hasExpiry: Boolean(p.has_expiry),
+      isWeighable: Boolean(p.is_weighable),
+      isQuickPlu: Boolean(p.is_quick_plu),
+      isActive: Boolean(p.is_active),
+    }));
+
+    return reply.send({
+      success: true,
+      meta: {
+        exportedAt: new Date().toISOString(),
+        totalProducts: products.length,
+        version: '1.0',
+      },
+      products,
+    });
+  });
+
+  // POST /api/v1/products/import - Bulk Import products from JSON (Manager only)
+  fastify.post('/import', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+    const rawBody = request.body as any;
+    const items = Array.isArray(rawBody) ? rawBody : (rawBody?.products || []);
+    const conflictMode = rawBody?.conflictMode === 'skip' ? 'skip' : 'upsert';
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        message: 'No product items provided for import.',
+      });
+    }
+
+    if (items.length > 2000) {
+      return reply.status(400).send({
+        success: false,
+        message: 'Import batch exceeds maximum limit of 2,000 items per import.',
+      });
+    }
+
+    // Preload categories, units, and tax rates for quick lookup
+    const catRes = await query(`SELECT id, LOWER(name) as name FROM categories WHERE is_deleted = FALSE`);
+    const categoryMap = new Map<string, number>(catRes.rows.map((c) => [c.name, c.id]));
+
+    const unitRes = await query(`SELECT id, LOWER(name) as name, LOWER(short_name) as short_name FROM units`);
+    const unitMap = new Map<string, number>();
+    for (const u of unitRes.rows) {
+      unitMap.set(u.name, u.id);
+      unitMap.set(u.short_name, u.id);
+    }
+
+    const taxRes = await query(`SELECT id, rate FROM tax_rates WHERE is_active = TRUE`);
+    const defaultTaxId = taxRes.rows[0]?.id || 1;
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const errors: string[] = [];
+
+    await withTransaction(async (client) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const rowNum = i + 1;
+
+        const sku = String(item.sku || '').trim();
+        const name = String(item.name || '').trim();
+
+        if (!sku) {
+          errors.push(`Item #${rowNum}: SKU is required.`);
+          continue;
+        }
+        if (!name) {
+          errors.push(`Item #${rowNum} (SKU ${sku}): Name is required.`);
+          continue;
+        }
+
+        const barcode = item.barcode ? String(item.barcode).trim() : null;
+        const pluCode = item.pluCode || item.plu_code ? String(item.pluCode || item.plu_code).trim() : null;
+        const description = item.description ? String(item.description).trim() : null;
+        const sellingPrice = Math.max(0, Number(item.sellingPrice ?? item.selling_price ?? 0) || 0);
+        const costPrice = Math.max(0, Number(item.costPrice ?? item.cost_price ?? 0) || 0);
+        const wholesalePrice = (item.wholesalePrice ?? item.wholesale_price) !== undefined && (item.wholesalePrice ?? item.wholesale_price) !== null
+          ? Number(item.wholesalePrice ?? item.wholesale_price)
+          : null;
+        const minStock = Math.max(0, Number(item.minStockLevel ?? item.min_stock_level ?? 5) || 5);
+        const initialStock = Math.max(0, Number(item.initialStock ?? item.initial_stock ?? item.currentStock ?? item.current_stock ?? 0) || 0);
+        const packagingMultiplier = Number(item.packagingMultiplier ?? item.packaging_multiplier ?? 1.0) || 1.0;
+        const taxType = (item.taxType ?? item.tax_type) === 'inclusive' ? 'inclusive' : 'exclusive';
+        const hasExpiry = Boolean(item.hasExpiry ?? item.has_expiry ?? false);
+        const isWeighable = Boolean(item.isWeighable ?? item.is_weighable ?? false);
+        const isQuickPlu = Boolean(item.isQuickPlu ?? item.is_quick_plu ?? false);
+        const isActive = item.isActive !== undefined ? Boolean(item.isActive) : (item.is_active !== undefined ? Boolean(item.is_active) : true);
+
+        // Resolve Category
+        let categoryId = item.categoryId ?? item.category_id;
+        const catName = (item.category || item.categoryName || item.category_name || '').trim();
+        if (!categoryId && catName) {
+          const lowerCat = catName.toLowerCase();
+          if (categoryMap.has(lowerCat)) {
+            categoryId = categoryMap.get(lowerCat)!;
+          } else {
+            // Auto-create category
+            const newCatRes = await client.query(
+              `INSERT INTO categories (name, description) VALUES ($1, 'Auto-created during JSON import') RETURNING id`,
+              [catName]
+            );
+            categoryId = newCatRes.rows[0].id;
+            categoryMap.set(lowerCat, categoryId);
+          }
+        }
+        if (!categoryId) {
+          categoryId = categoryMap.get('groceries & staples') || 1;
+        }
+
+        // Resolve Unit
+        let unitId = item.unitId ?? item.unit_id;
+        const uName = (item.unit || item.unitName || item.unit_name || '').trim().toLowerCase();
+        if (!unitId && uName && unitMap.has(uName)) {
+          unitId = unitMap.get(uName)!;
+        }
+        if (!unitId) {
+          unitId = 1; // Default Piece
+        }
+
+        // Resolve Tax Rate
+        let taxRateId = item.taxRateId ?? item.tax_rate_id;
+        if (!taxRateId) {
+          const rateVal = item.taxRatePercent ?? item.tax_rate;
+          if (rateVal !== undefined && rateVal !== null) {
+            const matched = taxRes.rows.find((t) => Math.abs(Number(t.rate) - Number(rateVal)) < 0.01);
+            if (matched) taxRateId = matched.id;
+          }
+        }
+        if (!taxRateId) {
+          taxRateId = defaultTaxId;
+        }
+
+        // Check if SKU exists
+        const existing = await client.query(
+          `SELECT id, current_stock FROM products WHERE sku = $1 AND is_deleted = FALSE LIMIT 1`,
+          [sku]
+        );
+
+        if (existing.rows.length > 0) {
+          if (conflictMode === 'skip') {
+            skippedCount++;
+            continue;
+          }
+
+          // Update existing product
+          const existingId = existing.rows[0].id;
+          await client.query(
+            `UPDATE products SET
+              name = $1,
+              barcode = COALESCE($2, barcode),
+              plu_code = COALESCE($3, plu_code),
+              description = COALESCE($4, description),
+              category_id = $5,
+              unit_id = $6,
+              packaging_multiplier = $7,
+              tax_rate_id = $8,
+              tax_type = $9,
+              cost_price = $10,
+              wholesale_price = $11,
+              selling_price = $12,
+              min_stock_level = $13,
+              has_expiry = $14,
+              is_weighable = $15,
+              is_quick_plu = $16,
+              is_active = $17,
+              updated_at = NOW()
+             WHERE id = $18`,
+            [
+              name,
+              barcode,
+              pluCode,
+              description,
+              categoryId,
+              unitId,
+              packagingMultiplier,
+              taxRateId,
+              taxType,
+              costPrice,
+              wholesalePrice,
+              sellingPrice,
+              minStock,
+              hasExpiry,
+              isWeighable,
+              isQuickPlu,
+              isActive,
+              existingId,
+            ]
+          );
+          updatedCount++;
+        } else {
+          // Insert new product
+          const insertRes = await client.query(
+            `INSERT INTO products (
+              sku, barcode, plu_code, name, description, category_id,
+              unit_id, packaging_multiplier, tax_rate_id, tax_type,
+              cost_price, wholesale_price, selling_price, current_stock,
+              min_stock_level, has_expiry, is_weighable, is_quick_plu, is_active
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+             RETURNING id`,
+            [
+              sku,
+              barcode,
+              pluCode,
+              name,
+              description,
+              categoryId,
+              unitId,
+              packagingMultiplier,
+              taxRateId,
+              taxType,
+              costPrice,
+              wholesalePrice,
+              sellingPrice,
+              initialStock,
+              minStock,
+              hasExpiry,
+              isWeighable,
+              isQuickPlu,
+              isActive,
+            ]
+          );
+
+          const newId = insertRes.rows[0].id;
+          if (initialStock > 0) {
+            await client.query(
+              `INSERT INTO stock_movements (product_id, quantity, type, reference_type, unit_cost, user_id, notes)
+               VALUES ($1, $2, 'opening', 'opening_stock', $3, $4, 'Opening stock from JSON import')`,
+              [newId, initialStock, costPrice, request.user!.id]
+            );
+          }
+          createdCount++;
+        }
+      }
+
+      // Record audit log
+      await client.query(
+        `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+         VALUES ($1, 'PRODUCTS_BULK_IMPORT', 'products', 0, $2)`,
+        [
+          request.user!.id,
+          JSON.stringify({
+            totalItems: items.length,
+            createdCount,
+            updatedCount,
+            skippedCount,
+            errorsCount: errors.length,
+            conflictMode,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
+    });
+
+    return reply.send({
+      success: true,
+      message: `Import completed: ${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped.`,
+      data: {
+        totalProcessed: items.length,
+        createdCount,
+        updatedCount,
+        skippedCount,
+        errors,
+      },
+    });
+  });
 }

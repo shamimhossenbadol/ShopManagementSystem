@@ -732,7 +732,7 @@ export default function ProductsPage() {
             Product Master Catalog
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices, selling prices, and thermal shelf labels.
+            Manage products, pricing, inventory, and barcodes.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -754,19 +754,6 @@ export default function ProductsPage() {
             title="Export full catalog records as JSON"
           >
             Export JSON
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => {
-              if (products.length > 0) {
-                setBarcodeProduct(products[0]);
-                setIsBarcodeModalOpen(true);
-              }
-            }}
-            leftIcon={<Barcode className="h-4 w-4" />}
-          >
-            Print Barcode Labels
           </Button>
           <Button
             variant="primary"

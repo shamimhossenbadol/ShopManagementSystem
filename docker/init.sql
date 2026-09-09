@@ -71,12 +71,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     role user_role_enum NOT NULL DEFAULT 'sales_executive',
-    username VARCHAR(50) UNIQUE NOT NULL,
+    username VARCHAR(50) UNIQUE,
     email VARCHAR(100) UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),
     full_name VARCHAR(100) NOT NULL,
     phone VARCHAR(20),
-    pin_code VARCHAR(10), -- Quick authorization PIN
+    pin_code VARCHAR(255), -- Quick authorization PIN (bcrypt hash)
     pin_failed_attempts INT NOT NULL DEFAULT 0,
     pin_locked_until TIMESTAMPTZ,
     login_failed_attempts INT NOT NULL DEFAULT 0,
@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS users (
     current_session_id VARCHAR(100),
     current_pos_session_id VARCHAR(100),
     last_login_at TIMESTAMPTZ,
+    created_by INT REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

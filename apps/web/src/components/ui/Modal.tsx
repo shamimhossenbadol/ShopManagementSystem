@@ -9,6 +9,7 @@ export interface ModalProps {
   icon?: React.ReactNode;
   title?: React.ReactNode;
   subtitle?: string;
+  centerHeader?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
@@ -24,6 +25,7 @@ export const Modal: React.FC<ModalProps> = ({
   icon,
   title,
   subtitle,
+  centerHeader = false,
   children,
   footer,
   maxWidth = 'lg',
@@ -83,26 +85,42 @@ export const Modal: React.FC<ModalProps> = ({
       >
         {/* Header */}
         {(title || icon || showCloseButton) && (
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
-            <div className="flex items-center gap-3">
-              {icon && (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900/40">
-                  {icon}
-                </div>
-              )}
-              <div>
+          <div className="relative border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+            {centerHeader ? (
+              <div className="flex flex-col items-center justify-center text-center px-6">
+                {icon && (
+                  <div className="mb-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900/40 shadow-sm">
+                    {icon}
+                  </div>
+                )}
                 {typeof title === 'string' ? (
                   <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
                 ) : (
                   title
                 )}
-                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
+                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">{subtitle}</p>}
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                {icon && (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900/40">
+                    {icon}
+                  </div>
+                )}
+                <div>
+                  {typeof title === 'string' ? (
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+                  ) : (
+                    title
+                  )}
+                  {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
+                </div>
+              </div>
+            )}
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition"
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition"
               >
                 <X className="h-4 w-4" />
               </button>

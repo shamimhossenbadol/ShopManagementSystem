@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiRequest, notifyAuthLogout } from '@/lib/api';
+import { calculateLineVat, round2 } from '@/lib/financial';
 import { useSettings } from '@/hooks/useSettings';
 import { useSessionSync } from '@/hooks/useSessionSync';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
@@ -726,11 +727,16 @@ export default function PosTerminalPage() {
   // Add Item to Cart (Strict Real-Time Stock Checking Enforced)
   const addToCart = (product: any, qtyToAdd: number = 1) => {
     setErrorMsg(null);
-    const availableStock = Number(product.current_stock ?? product.stock ?? 0);
+    const availableStock = Number(product.sellable_stock ?? product.current_stock ?? product.stock ?? 0);
+    const expiredStock = Number(product.expired_stock ?? 0);
 
-    // 1. Block out-of-stock items completely
+    // 1. Block out-of-stock or fully expired items completely
     if (availableStock <= 0) {
-      setErrorMsg(`"${product.name}" is out of stock (0 available). Cannot add to cart.`);
+      if (expiredStock > 0) {
+        setErrorMsg(`"${product.name}" cannot be added to cart. All ${expiredStock} unit(s) are EXPIRED.`);
+      } else {
+        setErrorMsg(`"${product.name}" is out of stock (0 available). Cannot add to cart.`);
+      }
       return;
     }
 
@@ -742,9 +748,9 @@ export default function PosTerminalPage() {
     if (requestedQty > availableStock) {
       const remaining = Math.max(0, availableStock - currentQty);
       if (remaining === 0) {
-        setErrorMsg(`Maximum stock reached for "${product.name}" (${availableStock} in stock, ${currentQty} already in cart).`);
+        setErrorMsg(`Maximum sellable stock reached for "${product.name}" (${availableStock} sellable, ${currentQty} already in cart).`);
       } else {
-        setErrorMsg(`Cannot add ${qtyToAdd} more. Only ${remaining} more unit(s) of "${product.name}" available (${availableStock} total in stock).`);
+        setErrorMsg(`Cannot add ${qtyToAdd} more. Only ${remaining} more sellable unit(s) of "${product.name}" available (${availableStock} total sellable).`);
       }
       return;
     }
@@ -768,7 +774,7 @@ export default function PosTerminalPage() {
           unitPrice: Number(product.selling_price),
           quantity: qtyToAdd,
           discount: 0,
-          taxRate: Number(product.tax_rate || 15.0),
+          taxRate: Number(product.tax_rate ?? 15.0),
           isTaxInclusive: product.tax_type === 'inclusive',
           stock: availableStock,
           unitName: product.unit_short || product.unit_name || 'pcs',
@@ -840,7 +846,7 @@ export default function PosTerminalPage() {
               unitPrice: Number(i.unitPrice || i.unit_price),
               quantity: Number(i.quantity),
               discount: Number(i.discount || 0),
-              taxRate: Number(i.taxRate || 15),
+              taxRate: Number(i.taxRate ?? 15),
               isTaxInclusive: Boolean(i.isTaxInclusive),
               stock: Number(i.stock || 0),
             })),
@@ -964,28 +970,28 @@ export default function PosTerminalPage() {
     }
   };
 
-  // Financial Calculations (15% Taxable / Output VAT)
+  // Financial Calculations (Exact Line-by-Line VAT Matching Backend)
   const calculateTotals = () => {
-    let grossTotal = 0;
+    let subtotal = 0;
     let totalTax = 0;
 
     cart.forEach((item) => {
-      const lineNet = item.unitPrice * item.quantity;
-      if (item.isTaxInclusive) {
-        const taxable = lineNet / (1 + item.taxRate / 100);
-        const tax = lineNet - taxable;
-        totalTax += tax;
-        grossTotal += taxable;
-      } else {
-        const tax = lineNet * (item.taxRate / 100);
-        totalTax += tax;
-        grossTotal += lineNet;
-      }
+      const lineDiscount = Number(item.discount || 0);
+      const taxRate = Number(item.taxRate ?? 15.0);
+      const vatCalc = calculateLineVat(
+        item.unitPrice,
+        item.quantity,
+        taxRate,
+        Boolean(item.isTaxInclusive),
+        lineDiscount
+      );
+      subtotal += vatCalc.taxableAmount;
+      totalTax += vatCalc.taxAmount;
     });
 
-    const roundedSubtotal = Math.round(grossTotal * 100) / 100;
-    const roundedTax = Math.round(totalTax * 100) / 100;
-    const grandTotal = Math.round((roundedSubtotal + roundedTax) * 100) / 100;
+    const roundedSubtotal = round2(subtotal);
+    const roundedTax = round2(totalTax);
+    const grandTotal = round2(roundedSubtotal + roundedTax);
 
     return {
       subtotal: roundedSubtotal,
@@ -1065,10 +1071,12 @@ export default function PosTerminalPage() {
           const sold = cart.find((c) => c.productId === p.id);
           if (!sold) return p;
           const remaining = Math.max(0, Number(p.current_stock || 0) - sold.quantity);
+          const remainingSellable = Math.max(0, Number(p.sellable_stock ?? p.current_stock ?? 0) - sold.quantity);
           return {
             ...p,
             current_stock: remaining,
-            stock: remaining,
+            sellable_stock: remainingSellable,
+            stock: remainingSellable,
           };
         })
       );
@@ -2307,8 +2315,9 @@ export default function PosTerminalPage() {
         <div className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3.5">
             {filteredAndSortedProducts.map((p) => {
-              const stockVal = Number(p.current_stock ?? 100);
-              const isOutOfStock = stockVal <= 0;
+              const sellableStockVal = Number(p.sellable_stock ?? p.current_stock ?? 0);
+              const expiredStockVal = Number(p.expired_stock ?? 0);
+              const isOutOfStock = sellableStockVal <= 0;
               const unitLabel = p.unit_short || p.unit_name || 'pcs';
 
               return (
@@ -2349,14 +2358,19 @@ export default function PosTerminalPage() {
                     )}
 
                     {/* Stock Badge (Top-Right) */}
-                    <div className="absolute top-2 right-2">
+                    <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
                       {isOutOfStock ? (
                         <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[8px] font-black text-white uppercase shadow-sm">
-                          Out of Stock
+                          {expiredStockVal > 0 ? 'Expired' : 'Out of Stock'}
                         </span>
                       ) : (
                         <span className="rounded-md bg-slate-900/80 backdrop-blur-sm px-2 py-0.5 font-mono text-[9px] font-bold text-white shadow-sm">
-                          {stockVal.toFixed(0)} {unitLabel}
+                          {sellableStockVal.toFixed(0)} {unitLabel}
+                        </span>
+                      )}
+                      {expiredStockVal > 0 && !isOutOfStock && (
+                        <span className="rounded bg-amber-600/90 text-white px-1.5 py-0.2 font-mono text-[8px] font-bold shadow-sm" title={`${expiredStockVal} expired units quarantined`}>
+                          {expiredStockVal.toFixed(0)} Expired
                         </span>
                       )}
                     </div>

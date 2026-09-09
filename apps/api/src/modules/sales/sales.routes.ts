@@ -85,7 +85,12 @@ export async function salesRoutes(fastify: FastifyInstance) {
         // 2. Fetch products and lock rows for atomic stock check
         const productIds = items.map((i) => i.productId);
         const prodRes = await client.query(
-          `SELECT p.id, p.sku, p.name, p.cost_price, p.tax_type, p.has_expiry, p.current_stock, t.rate as tax_rate
+          `SELECT p.id, p.sku, p.name, p.cost_price, p.tax_type, p.has_expiry, p.current_stock, t.rate as tax_rate,
+                  COALESCE((
+                    SELECT SUM(b.current_quantity)
+                    FROM product_batches b
+                    WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+                  ), 0) as expired_stock
            FROM products p
            LEFT JOIN tax_rates t ON p.tax_rate_id = t.id
            WHERE p.id = ANY($1::int[]) AND p.is_active = TRUE AND p.is_deleted = FALSE
@@ -125,9 +130,17 @@ export async function salesRoutes(fastify: FastifyInstance) {
           }
 
           const currentStock = Number(product.current_stock);
-          if (!allowNegativeStock && currentStock < item.quantity) {
+          const expiredStock = Number(product.expired_stock || 0);
+          const sellableStock = Math.max(0, currentStock - expiredStock);
+
+          if (!allowNegativeStock && sellableStock < item.quantity) {
+            if (expiredStock > 0 && currentStock >= item.quantity) {
+              throw new Error(
+                `Cannot sell "${product.name}". Total stock is ${currentStock}, but ${expiredStock} unit(s) are EXPIRED. Only ${sellableStock} sellable unit(s) available.`
+              );
+            }
             throw new Error(
-              `Insufficient stock for "${product.name}". Available: ${currentStock}, Requested: ${item.quantity}.`
+              `Insufficient stock for "${product.name}". Available sellable: ${sellableStock}, Requested: ${item.quantity}.`
             );
           }
 
@@ -140,7 +153,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
           const totalLineDiscount = round2(item.discount + allocatedDiscount);
           const isInclusive = product.tax_type === 'inclusive';
-          const taxRate = Number(product.tax_rate || 15.00);
+          const taxRate = Number(product.tax_rate ?? 15.00);
 
           const vatCalc = calculateLineVat(
             item.unitPrice,
@@ -284,7 +297,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
             let remainingToDeduct = item.quantity;
             const batchesRes = await client.query(
               `SELECT id, current_quantity FROM product_batches 
-               WHERE product_id = $1 AND is_active = TRUE AND current_quantity > 0 
+               WHERE product_id = $1 AND is_active = TRUE AND current_quantity > 0 AND expiry_date >= CURRENT_DATE
                ORDER BY expiry_date ASC FOR UPDATE`,
               [item.productId]
             );

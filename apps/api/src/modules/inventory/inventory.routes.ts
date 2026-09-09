@@ -28,6 +28,16 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
         p.selling_price,
         p.min_stock_level,
         p.current_stock,
+        COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0) as expired_stock,
+        GREATEST(0, p.current_stock - COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0)) as sellable_stock,
         p.has_expiry,
         p.is_weighable,
         ${isManager ? 'p.current_stock * p.cost_price as stock_valuation,' : ''}

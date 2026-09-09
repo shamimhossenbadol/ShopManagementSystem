@@ -157,9 +157,14 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       }).join('')}
 
       <div class="divider"></div>
-      <div class="row"><span>Subtotal (Taxable Base):</span><span class="bold">${subtotal.toFixed(2)} SAR</span></div>
-      ${totalDiscount > 0 ? `<div class="row"><span>Discount:</span><span class="bold">-${totalDiscount.toFixed(2)} SAR</span></div>` : ''}
-      <div class="row"><span>VAT (15%):</span><span class="bold">${totalTax.toFixed(2)} SAR</span></div>
+      ${totalDiscount > 0 ? `
+        <div class="row"><span>Gross Subtotal:</span><span>${(subtotal + totalDiscount).toFixed(2)} SAR</span></div>
+        <div class="row"><span>Discount:</span><span class="bold">-${totalDiscount.toFixed(2)} SAR</span></div>
+        <div class="row"><span>Taxable Base (Net):</span><span class="bold">${subtotal.toFixed(2)} SAR</span></div>
+      ` : `
+        <div class="row"><span>Subtotal (Taxable Base):</span><span class="bold">${subtotal.toFixed(2)} SAR</span></div>
+      `}
+      <div class="row"><span>VAT:</span><span class="bold">${totalTax.toFixed(2)} SAR</span></div>
 
       <div class="double-divider"></div>
       <div class="row-bold"><span>TOTAL AMOUNT:</span><span class="bold">${grandTotal.toFixed(2)} SAR</span></div>

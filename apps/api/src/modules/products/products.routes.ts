@@ -82,6 +82,16 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.is_quick_plu,
         p.is_active,
         p.current_stock,
+        COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0) as expired_stock,
+        GREATEST(0, p.current_stock - COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0)) as sellable_stock,
         COALESCE(p.image_url, (SELECT file_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, id DESC LIMIT 1)) as image_url,
         (
           SELECT COALESCE(json_agg(json_build_object(
@@ -134,7 +144,18 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.unit_id, u.short_name as unit_short, u.allow_decimal,
         p.tax_rate_id, t.rate as tax_rate, p.tax_type,
         ${isManager ? 'p.cost_price,' : ''}
-        p.selling_price, p.current_stock, p.has_expiry, p.is_weighable,
+        p.selling_price, p.current_stock,
+        COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0) as expired_stock,
+        GREATEST(0, p.current_stock - COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0)) as sellable_stock,
+        p.has_expiry, p.is_weighable,
         p.image_url,
         (SELECT file_path FROM product_images WHERE product_id = p.id AND is_primary = TRUE LIMIT 1) as primary_image
        FROM products p
@@ -165,7 +186,18 @@ export async function productRoutes(fastify: FastifyInstance) {
           p.unit_id, u.short_name as unit_short, u.allow_decimal,
           p.tax_rate_id, t.rate as tax_rate, p.tax_type,
           ${isManager ? 'p.cost_price,' : ''}
-          p.selling_price, p.current_stock, p.has_expiry, p.is_weighable
+          p.selling_price, p.current_stock,
+          COALESCE((
+            SELECT SUM(b.current_quantity)
+            FROM product_batches b
+            WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+          ), 0) as expired_stock,
+          GREATEST(0, p.current_stock - COALESCE((
+            SELECT SUM(b.current_quantity)
+            FROM product_batches b
+            WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+          ), 0)) as sellable_stock,
+          p.has_expiry, p.is_weighable
          FROM products p
          LEFT JOIN units u ON p.unit_id = u.id
          LEFT JOIN tax_rates t ON p.tax_rate_id = t.id
@@ -206,6 +238,16 @@ export async function productRoutes(fastify: FastifyInstance) {
         ${isManager ? 'p.cost_price,' : ''}
         p.selling_price,
         p.current_stock,
+        COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0) as expired_stock,
+        GREATEST(0, p.current_stock - COALESCE((
+          SELECT SUM(b.current_quantity)
+          FROM product_batches b
+          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
+        ), 0)) as sellable_stock,
         p.has_expiry,
         p.is_weighable,
         p.is_quick_plu

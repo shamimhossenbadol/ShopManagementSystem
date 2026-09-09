@@ -126,6 +126,24 @@ export default function BatchesPage() {
       setProductSearch('');
       setIsProductSearchOpen(false);
       loadBatches();
+      loadProducts();
+    }
+  };
+
+  const handleWriteOff = async (batch: any) => {
+    if (!confirm(`Are you sure you want to write off batch "${batch.batch_number}" (${Number(batch.current_quantity).toFixed(2)} units)? This will deduct the stock from inventory and record a damage write-off movement.`)) {
+      return;
+    }
+    const res = await apiRequest(`/batches/${batch.id}/write-off`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Disposal of expired inventory via Batches Management' }),
+    });
+    if (res.success) {
+      alert(res.message || 'Batch written off successfully.');
+      loadBatches();
+      loadProducts();
+    } else {
+      alert(res.message || 'Failed to write off batch.');
     }
   };
 
@@ -819,6 +837,31 @@ export default function BatchesPage() {
               if (days < 0) return <Badge variant="danger">Expired</Badge>;
               if (days <= 30) return <Badge variant="warning">Expiring Soon</Badge>;
               return <Badge variant="success">Active</Badge>;
+            },
+          },
+          {
+            header: 'Actions',
+            align: 'right',
+            accessor: (b) => {
+              if (Number(b.current_quantity || 0) <= 0) return null;
+              const isExpired = Number(b.days_to_expiry) < 0;
+              return (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleWriteOff(b);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+                    isExpired
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200'
+                  }`}
+                  title={isExpired ? 'Dispose expired batch' : 'Write off damaged batch'}
+                >
+                  Write Off
+                </button>
+              );
             },
           },
         ]}

@@ -14,28 +14,91 @@ const loginSchema = z.object({
   forceTakeover: z.boolean().optional().default(false),
 });
 
-const createUserSchema = z.object({
-  role: z.enum(['manager', 'sales_executive']).default('sales_executive'),
-  username: z.string().min(3),
-  email: z.string().email().optional().nullable(),
-  password: z.string().min(6),
-  fullName: z.string().min(2),
-  phone: z.string().optional().nullable(),
-  pinCode: z.string().min(5).max(10).optional().nullable(),
-});
+const createUserSchema = z
+  .object({
+    role: z.enum(['manager', 'sales_executive']).default('sales_executive'),
+    username: z.string().optional().nullable().or(z.literal('')),
+    email: z.string().email().optional().nullable().or(z.literal('')),
+    password: z.string().optional().nullable().or(z.literal('')),
+    fullName: z.string().min(2, 'Full name must be at least 2 characters'),
+    phone: z.string().optional().nullable().or(z.literal('')),
+    pinCode: z.string().optional().nullable().or(z.literal('')),
+  })
+  .superRefine((data, ctx) => {
+    // For manager: Username, Password, and PIN are strictly required
+    if (data.role === 'manager') {
+      if (!data.username || data.username.trim().length < 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['username'],
+          message: 'Store Manager requires a username of at least 3 characters.',
+        });
+      }
+      if (!data.password || data.password.trim().length < 6) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['password'],
+          message: 'Store Manager requires an account password of at least 6 characters.',
+        });
+      }
+      if (!data.pinCode || data.pinCode.trim().length < 5 || data.pinCode.trim().length > 10) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pinCode'],
+          message: 'Store Manager requires a 5 to 10-digit authorization PIN.',
+        });
+      }
+    }
+
+    // For sales executive: ONLY PIN is required
+    if (data.role === 'sales_executive') {
+      if (!data.pinCode || data.pinCode.trim().length < 5 || data.pinCode.trim().length > 10) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['pinCode'],
+          message: 'Sales Executive requires a 5 to 10-digit POS unlock PIN.',
+        });
+      }
+    }
+  });
 
 const updateUserSchema = z.object({
-  role: z.enum(['manager', 'sales_executive']).optional(),
-  email: z.string().email().optional().nullable(),
-  fullName: z.string().min(2).optional(),
-  phone: z.string().optional().nullable(),
-  pinCode: z.string().min(5).max(10).optional().nullable(),
+  password: z.string().min(6).optional().nullable().or(z.literal('')),
+  pinCode: z.string().min(5).max(10).optional().nullable().or(z.literal('')),
   isActive: z.boolean().optional(),
+});
+
+const promoteUserSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50)
+    .regex(/^[a-z0-9_.-]+$/i, 'Username may only contain letters, numbers, underscores, dashes, and periods.'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  pinCode: z.string().min(5).max(10).optional().nullable().or(z.literal('')),
 });
 
 const changePasswordSchema = z.object({
   newPassword: z.string().min(6),
 });
+
+async function isUserAncestor(ancestorId: number, childId: number): Promise<boolean> {
+  let currentId: number | null = childId;
+  const visited = new Set<number>();
+  while (currentId !== null && !visited.has(currentId)) {
+    visited.add(currentId);
+    const res: any = await query(`SELECT created_by FROM users WHERE id = $1`, [currentId]);
+    if (!res || !res.rows || res.rows.length === 0 || res.rows[0].created_by === null) {
+      break;
+    }
+    const parentId: number = Number(res.rows[0].created_by);
+    if (parentId === ancestorId) {
+      return true;
+    }
+    currentId = parentId;
+  }
+  return false;
+}
 
 interface SseClient {
   sessionId: string;
@@ -93,18 +156,18 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     let userRes;
     if (pin && !password) {
-      // Secure PIN login: fetch all active users with a PIN and compare using bcrypt
+      // Secure PIN login: fetch users with a PIN and compare using bcrypt
       const candidateQuery = username
         ? await query(
             `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
              FROM users 
-             WHERE username = $1 AND pin_code IS NOT NULL AND is_active = TRUE`,
+             WHERE username = $1 AND pin_code IS NOT NULL`,
             [username]
           )
         : await query(
             `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
              FROM users 
-             WHERE pin_code IS NOT NULL AND is_active = TRUE`
+             WHERE pin_code IS NOT NULL`
           );
 
       // Iterate candidates and compare PIN hash (supports both hashed and legacy plaintext PINs)
@@ -120,6 +183,13 @@ export async function authRoutes(fastify: FastifyInstance) {
           matchedUser = candidate;
           break;
         }
+      }
+
+      if (matchedUser && !matchedUser.is_active) {
+        return reply.status(403).send({
+          success: false,
+          message: 'Account access has been revoked. You cannot access this system.',
+        });
       }
 
       userRes = { rows: matchedUser ? [matchedUser] : [] };
@@ -167,7 +237,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!user.is_active) {
       return reply.status(403).send({
         success: false,
-        message: 'Account is deactivated. Please contact the manager.',
+        message: 'Account access has been revoked. You cannot access this system.',
       });
     }
 
@@ -506,7 +576,9 @@ export async function authRoutes(fastify: FastifyInstance) {
   // GET /api/v1/auth/users - List all staff (Manager only)
   fastify.get('/users', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
     const res = await query(
-      `SELECT id, role, username, email, full_name, phone, pin_code, is_active, last_login_at, created_at 
+      `SELECT id, role, username, email, full_name, phone, 
+              CASE WHEN pin_code IS NOT NULL THEN '•••••' ELSE NULL END AS pin_code, 
+              is_active, created_by, last_login_at, created_at 
        FROM users 
        ORDER BY id ASC`
     );
@@ -526,27 +598,46 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const { role, username, email, password, fullName, phone, pinCode } = parsed.data;
 
-    // Check username conflict
-    const existRes = await query(`SELECT id FROM users WHERE username = $1`, [username]);
-    if (existRes.rows.length > 0) {
-      return reply.status(400).send({ success: false, message: 'Username already taken.' });
+    let finalUsername: string | null = null;
+    let passwordHash: string | null = null;
+
+    if (role === 'manager') {
+      finalUsername = username ? username.trim().toLowerCase() : '';
+      if (!finalUsername || finalUsername.length < 3) {
+        return reply.status(400).send({ success: false, message: 'Store Manager requires a username of at least 3 characters.' });
+      }
+      // Check username conflict (case insensitive)
+      const existRes = await query(`SELECT id FROM users WHERE LOWER(username) = LOWER($1)`, [finalUsername]);
+      if (existRes.rows.length > 0) {
+        return reply.status(400).send({ success: false, message: 'Username already taken.' });
+      }
+      passwordHash = password && password.trim().length >= 6
+        ? await bcrypt.hash(password.trim(), 10)
+        : null;
+    } else {
+      // Sales executive: username and password are strictly NULL
+      finalUsername = null;
+      passwordHash = null;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const pinHash = pinCode ? await bcrypt.hash(pinCode, 10) : null;
+    const pinHash = pinCode && pinCode.trim().length >= 5
+      ? await bcrypt.hash(pinCode.trim(), 10)
+      : null;
 
     const res = await query(
-      `INSERT INTO users (role, username, email, password_hash, full_name, phone, pin_code, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-       RETURNING id, role, username, email, full_name, phone, is_active, created_at`,
-      [role, username, email || null, passwordHash, fullName, phone || null, pinHash]
+      `INSERT INTO users (role, username, email, password_hash, full_name, phone, pin_code, is_active, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8)
+       RETURNING id, role, username, email, full_name, phone, 
+                 CASE WHEN pin_code IS NOT NULL THEN '•••••' ELSE NULL END AS pin_code, 
+                 is_active, created_by, created_at`,
+      [role, finalUsername, email ? email.trim() : null, passwordHash, fullName.trim(), phone ? phone.trim() : null, pinHash, request.user!.id]
     );
 
     // Audit log
     await query(
       `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
        VALUES ($1, 'USER_CREATED', 'users', $2, $3)`,
-      [request.user!.id, res.rows[0].id, JSON.stringify({ username, role, fullName })]
+      [request.user!.id, res.rows[0].id, JSON.stringify({ username: finalUsername, role, fullName: fullName.trim() })]
     );
 
     return reply.status(201).send({
@@ -556,12 +647,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // PUT /api/v1/auth/users/:id - Update staff details (Manager only)
+  // PUT /api/v1/auth/users/:id - Update staff credentials (PIN/OTP for both; Password for Manager; Name/Username permanent)
   fastify.put('/users/:id', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const parsed = updateUserSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ success: false, message: 'Invalid update data.' });
+      return reply.status(400).send({ success: false, message: 'Invalid update data.', errors: parsed.error.format() });
     }
 
     const updates = parsed.data;
@@ -571,19 +662,26 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     const cur = currentRes.rows[0];
-    const role = updates.role ?? cur.role;
-    const email = updates.email !== undefined ? updates.email : cur.email;
-    const fullName = updates.fullName ?? cur.full_name;
-    const phone = updates.phone !== undefined ? updates.phone : cur.phone;
-    const pinCode = updates.pinCode !== undefined ? updates.pinCode : cur.pin_code;
+    let pinCode = cur.pin_code;
+    if (updates.pinCode && updates.pinCode.trim().length >= 5) {
+      pinCode = updates.pinCode.startsWith('$2') ? updates.pinCode : await bcrypt.hash(updates.pinCode.trim(), 10);
+    }
+
+    let passwordHash = cur.password_hash;
+    if (cur.role === 'manager' && updates.password && updates.password.trim().length >= 6) {
+      passwordHash = await bcrypt.hash(updates.password.trim(), 10);
+    }
+
     const isActive = updates.isActive !== undefined ? updates.isActive : cur.is_active;
 
     const res = await query(
       `UPDATE users 
-       SET role = $1, email = $2, full_name = $3, phone = $4, pin_code = $5, is_active = $6, updated_at = NOW()
-       WHERE id = $7
-       RETURNING id, role, username, email, full_name, phone, pin_code, is_active, updated_at`,
-      [role, email, fullName, phone, pinCode, isActive, Number(id)]
+       SET pin_code = $1, password_hash = $2, is_active = $3, updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, role, username, email, full_name, phone, 
+                 CASE WHEN pin_code IS NOT NULL THEN '•••••' ELSE NULL END AS pin_code, 
+                 is_active, created_by, updated_at`,
+      [pinCode, passwordHash, isActive, Number(id)]
     );
 
     // Audit log
@@ -593,14 +691,207 @@ export async function authRoutes(fastify: FastifyInstance) {
       [
         request.user!.id,
         Number(id),
-        JSON.stringify({ role: cur.role, fullName: cur.full_name, isActive: cur.is_active }),
-        JSON.stringify({ role, fullName, isActive }),
+        JSON.stringify({ fullName: cur.full_name, isActive: cur.is_active }),
+        JSON.stringify({ fullName: cur.full_name, isActive }),
       ]
     );
 
     return reply.send({
       success: true,
-      message: 'Staff user updated successfully.',
+      message: 'Staff credentials updated successfully.',
+      data: res.rows[0],
+    });
+  });
+
+  // POST /api/v1/auth/users/:id/promote - Promote Sales Executive to Store Manager
+  fastify.post('/users/:id/promote', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = promoteUserSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        message: 'Invalid promotion credentials.',
+        errors: parsed.error.format(),
+      });
+    }
+
+    const { username, password, pinCode } = parsed.data;
+    const cleanUsername = username.trim().toLowerCase();
+
+    const targetUserRes = await query(`SELECT * FROM users WHERE id = $1`, [Number(id)]);
+    if (targetUserRes.rows.length === 0) {
+      return reply.status(404).send({ success: false, message: 'Staff member not found.' });
+    }
+
+    const targetUser = targetUserRes.rows[0];
+    if (targetUser.role === 'manager') {
+      return reply.status(400).send({ success: false, message: 'Staff member is already a Store Manager.' });
+    }
+    if (!targetUser.is_active) {
+      return reply.status(400).send({ success: false, message: 'Cannot promote a deactivated staff member. Please restore access first.' });
+    }
+
+    // Check username uniqueness against other users
+    const conflictRes = await query(`SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2`, [cleanUsername, Number(id)]);
+    if (conflictRes.rows.length > 0) {
+      return reply.status(400).send({ success: false, message: `Username '${cleanUsername}' is already taken. Please choose another.` });
+    }
+
+    const passwordHash = await bcrypt.hash(password.trim(), 10);
+    // If a new PIN was provided, update it; otherwise preserve existing PIN
+    const pinHash = pinCode && pinCode.trim().length >= 5
+      ? await bcrypt.hash(pinCode.trim(), 10)
+      : targetUser.pin_code;
+
+    const res = await query(
+      `UPDATE users 
+       SET role = 'manager', 
+           username = $1, 
+           password_hash = $2, 
+           pin_code = $3, 
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, role, username, email, full_name, phone, 
+                 CASE WHEN pin_code IS NOT NULL THEN '•••••' ELSE NULL END AS pin_code, 
+                 is_active, created_by, updated_at`,
+      [cleanUsername, passwordHash, pinHash, Number(id)]
+    );
+
+    // Audit log
+    await query(
+      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, old_values, new_values)
+       VALUES ($1, 'USER_PROMOTED_TO_MANAGER', 'users', $2, $3, $4)`,
+      [
+        request.user!.id,
+        Number(id),
+        JSON.stringify({ role: 'sales_executive', fullName: targetUser.full_name }),
+        JSON.stringify({ role: 'manager', username: cleanUsername, fullName: targetUser.full_name }),
+      ]
+    );
+
+    return reply.send({
+      success: true,
+      message: `Staff member ${targetUser.full_name} has been promoted to Store Manager.`,
+      data: res.rows[0],
+    });
+  });
+
+  // POST /api/v1/auth/users/:id/revoke - Permanently revoke a user's system access (Parent-based protection)
+  fastify.post('/users/:id/revoke', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const targetUserId = Number(id);
+    const callerId = request.user!.id;
+
+    if (targetUserId === callerId) {
+      return reply.status(400).send({ success: false, message: 'You cannot revoke your own account access.' });
+    }
+
+    const targetUserRes = await query(`SELECT id, role, username, full_name, is_active, created_by FROM users WHERE id = $1`, [targetUserId]);
+    if (targetUserRes.rows.length === 0) {
+      return reply.status(404).send({ success: false, message: 'Staff member not found.' });
+    }
+
+    const targetUser = targetUserRes.rows[0];
+
+    // Root administrator protection: target has no parent or id === 1
+    if (targetUserId === 1 || (targetUser.created_by === null && callerId !== 1)) {
+      return reply.status(403).send({ success: false, message: 'Access denied. The root administrator account cannot be revoked.' });
+    }
+
+    // Parent hierarchy check: Child can never revoke access of parent or ancestors
+    const isTargetParent = await isUserAncestor(targetUserId, callerId);
+    if (isTargetParent) {
+      return reply.status(403).send({
+        success: false,
+        message: 'Access denied. A child account cannot revoke access for a parent administrator.',
+      });
+    }
+
+    // Deactivate user and clear active session IDs
+    const res = await query(
+      `UPDATE users 
+       SET is_active = FALSE, 
+           current_session_id = NULL, 
+           current_pos_session_id = NULL, 
+           updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING id, role, username, full_name, is_active, updated_at`,
+      [targetUserId]
+    );
+
+    // Immediately kick all active SSE sessions for this user
+    broadcastSessionEvent(targetUserId, 'SESSION_TERMINATED');
+
+    // Auto-close any active cash register sessions
+    await query(
+      `UPDATE cash_sessions 
+       SET status = 'closed', closed_at = NOW(), closing_note = 'Auto-closed: Staff access revoked by manager' 
+       WHERE user_id = $1 AND status = 'open'`,
+      [targetUserId]
+    );
+
+    // Audit log
+    await query(
+      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+       VALUES ($1, 'USER_ACCESS_REVOKED', 'users', $2, $3)`,
+      [
+        callerId,
+        targetUserId,
+        JSON.stringify({ revokedUserId: targetUserId, fullName: targetUser.full_name, role: targetUser.role, timestamp: new Date().toISOString() }),
+      ]
+    );
+
+    return reply.send({
+      success: true,
+      message: `System access for ${targetUser.full_name} has been revoked.`,
+      data: res.rows[0],
+    });
+  });
+
+  // POST /api/v1/auth/users/:id/restore - Restore a user's system access
+  fastify.post('/users/:id/restore', { preHandler: [authenticate, requireRole(['manager'])] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const targetUserId = Number(id);
+    const callerId = request.user!.id;
+
+    const targetUserRes = await query(`SELECT id, role, username, full_name, is_active, created_by FROM users WHERE id = $1`, [targetUserId]);
+    if (targetUserRes.rows.length === 0) {
+      return reply.status(404).send({ success: false, message: 'Staff member not found.' });
+    }
+
+    const targetUser = targetUserRes.rows[0];
+
+    // Parent hierarchy check: Child can never modify access for parent or ancestors
+    const isTargetParent = await isUserAncestor(targetUserId, callerId);
+    if (isTargetParent) {
+      return reply.status(403).send({
+        success: false,
+        message: 'Access denied. A child account cannot modify access for a parent administrator.',
+      });
+    }
+
+    const res = await query(
+      `UPDATE users 
+       SET is_active = TRUE, updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING id, role, username, full_name, is_active, updated_at`,
+      [targetUserId]
+    );
+
+    // Audit log
+    await query(
+      `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
+       VALUES ($1, 'USER_ACCESS_RESTORED', 'users', $2, $3)`,
+      [
+        request.user!.id,
+        targetUserId,
+        JSON.stringify({ restoredUserId: targetUserId, fullName: targetUser.full_name, role: targetUser.role, timestamp: new Date().toISOString() }),
+      ]
+    );
+
+    return reply.send({
+      success: true,
+      message: `System access for ${targetUser.full_name} has been restored.`,
       data: res.rows[0],
     });
   });

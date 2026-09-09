@@ -51,9 +51,10 @@ export async function reportRoutes(fastify: FastifyInstance) {
     `, [businessDayStart]);
 
     const grossSales = Number(todayRes.rows[0].gross_sales);
+    const netSales = Number(todayRes.rows[0].net_sales);
     const cogs = Number(cogsRes.rows[0].cogs);
     const expenses = Number(expRes.rows[0].today_expenses);
-    const grossProfit = round2(grossSales - cogs);
+    const grossProfit = round2(netSales - cogs);
     const netProfit = round2(grossProfit - expenses);
 
     // 2. Inventory Stats
@@ -234,7 +235,9 @@ export async function reportRoutes(fastify: FastifyInstance) {
 
     // 2. Returns
     const retRes = await query(
-      `SELECT COALESCE(SUM(total_amount), 0) as total_returns 
+      `SELECT 
+        COALESCE(SUM(total_amount), 0) as total_returns,
+        COALESCE(SUM(total_amount - tax_amount), 0) as taxable_returns
        FROM sales_returns 
        WHERE created_at BETWEEN $1 AND $2`,
       [start, end]
@@ -260,9 +263,11 @@ export async function reportRoutes(fastify: FastifyInstance) {
     );
 
     const grossRevenue = Number(salesRes.rows[0].gross_revenue);
+    const taxableRevenue = Number(salesRes.rows[0].taxable_revenue);
     const returns = Number(retRes.rows[0].total_returns);
+    const taxableReturns = Number(retRes.rows[0].taxable_returns);
     const discounts = Number(salesRes.rows[0].total_discounts);
-    const netRevenue = round2(grossRevenue - returns);
+    const netRevenue = round2(taxableRevenue - taxableReturns);
     const cogs = round2(Number(cogsRes.rows[0].cogs));
     const grossProfit = round2(netRevenue - cogs);
     const grossMarginPercent = netRevenue > 0 ? round2((grossProfit / netRevenue) * 100) : 0;

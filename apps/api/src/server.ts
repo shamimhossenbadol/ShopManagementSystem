@@ -74,6 +74,15 @@ async function runAutoMigrations() {
       `,
     },
     {
+      name: 'Users table PIN hash column expansion and optional password hash & username',
+      critical: true,
+      sql: `
+        ALTER TABLE users ALTER COLUMN pin_code TYPE VARCHAR(255);
+        ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
+      `,
+    },
+    {
       name: 'Cash sessions columns & terminal support',
       sql: `
         ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_name VARCHAR(100) DEFAULT 'Terminal-01';

@@ -21,10 +21,9 @@ data/
 data/postgres_live/
 data/postgres_recovery/
 
-# Backups (Ignored by Git)
-backups/*.dump
-backups/*.sql
-backups/*.tar.gz
+# Backups (Ignored by Git, keeping directory structure)
+backups/*
+!backups/.gitkeep
 
 # Logs
 npm-debug.log*

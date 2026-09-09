@@ -2489,7 +2489,7 @@ export default function PosTerminalPage() {
           )}
         </div>
 
-        {/* Calculation Summary & Centered Pay Now Button per DesignSystem.html */}
+        {/* Calculation Summary & Centered Pay Now Button per DesignSystem.md */}
         <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 space-y-3">
           {/* Subtotal & 15% Output VAT Breakdown Card */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-2 text-xs shadow-sm">
@@ -2518,7 +2518,7 @@ export default function PosTerminalPage() {
             </div>
           </div>
 
-          {/* PAY NOW Button matching DesignSystem.html (Center aligned with F9 shortcut) */}
+          {/* PAY NOW Button matching DesignSystem.md (Center aligned with F9 shortcut) */}
           <button
             type="button"
             id="btn-pay-now"

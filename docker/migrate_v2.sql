@@ -1,4 +1,8 @@
--- Migration Script for Super Shop Management System V2 Enhancements
+-- ====================================================================
+-- LEGACY MIGRATION SCRIPT (CONSOLIDATED INTO docker/init.sql)
+-- NOTE: All schema definitions, tables, and settings below are now
+-- canonicalized directly in docker/init.sql for single-source-of-truth.
+-- ====================================================================
 
 -- 1. Tax Rates table updates
 ALTER TABLE tax_rates ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false;

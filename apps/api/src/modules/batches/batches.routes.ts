@@ -9,6 +9,7 @@ const batchCreateSchema = z.object({
   expiry_date: z.string().min(1, 'Expiry date is required'),
   cost_price: z.coerce.number().min(0).default(0),
   quantity: z.coerce.number().min(0.01),
+  purchase_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 export async function batchRoutes(fastify: FastifyInstance) {
@@ -18,9 +19,11 @@ export async function batchRoutes(fastify: FastifyInstance) {
 
     let sql = `
       SELECT b.*, p.name as product_name, p.sku, p.barcode,
+             po.reference_no as purchase_ref_no,
              ROUND(b.expiry_date - CURRENT_DATE) as days_to_expiry
       FROM product_batches b
       JOIN products p ON p.id = b.product_id
+      LEFT JOIN purchases po ON po.id = b.purchase_id
       WHERE b.is_active = TRUE
     `;
     const params: any[] = [];
@@ -48,9 +51,11 @@ export async function batchRoutes(fastify: FastifyInstance) {
 
     const res = await query(
       `SELECT b.*, p.name as product_name, p.sku, p.barcode,
+              po.reference_no as purchase_ref_no,
               ROUND(b.expiry_date - CURRENT_DATE) as days_to_expiry
        FROM product_batches b
        JOIN products p ON p.id = b.product_id
+       LEFT JOIN purchases po ON po.id = b.purchase_id
        WHERE b.is_active = TRUE
          AND b.current_quantity > 0
          AND b.expiry_date <= CURRENT_DATE + ($1 || ' days')::INTERVAL
@@ -71,10 +76,17 @@ export async function batchRoutes(fastify: FastifyInstance) {
     const parsed = batchCreateSchema.parse(request.body);
 
     const res = await query(
-      `INSERT INTO product_batches (product_id, batch_number, expiry_date, cost_price, initial_quantity, current_quantity)
-       VALUES ($1, $2, $3, $4, $5, $5)
+      `INSERT INTO product_batches (product_id, batch_number, expiry_date, cost_price, initial_quantity, current_quantity, purchase_id)
+       VALUES ($1, $2, $3, $4, $5, $5, $6)
        RETURNING *`,
-      [parsed.product_id, parsed.batch_number, parsed.expiry_date, parsed.cost_price, parsed.quantity]
+      [
+        parsed.product_id,
+        parsed.batch_number,
+        parsed.expiry_date,
+        parsed.cost_price,
+        parsed.quantity,
+        parsed.purchase_id || null,
+      ]
     );
 
     // Update product perishable flag if not already set

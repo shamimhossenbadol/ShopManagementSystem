@@ -136,6 +136,12 @@ graph TB
     end
 ```
 
+### Windows Standalone Client & PWA Architecture
+The frontend is configured as a fully installable Windows Progressive Web App (PWA) and standalone desktop client:
+1. **Web App Manifest (`/manifest.json`)**: Configured with `display: "standalone"`, `theme_color: "#1e40af"`, multi-size icons, and quick jump shortcuts to POS, Dashboard, Cash Shifts, and Product Catalog.
+2. **Service Worker (`/sw.js`)**: Network-first caching engine ensuring instant asset loading, offline fallback safety, and compliance with Chromium PWA install criteria.
+3. **One-Click Native Windows Launcher (`create-desktop-shortcut.bat`)**: Automated installer script using WScript.Shell to place desktop and Start Menu shortcuts invoking Edge/Chrome in borderless standalone window mode (`--app=http://localhost --window-size=1440,900`).
+
 ### Data Persistence Guarantee
 
 ```
@@ -252,33 +258,42 @@ The system strictly adheres to the rule: **LIVE DATA $\neq$ BACKUP DATA**.
 
 ## F. Detailed User Flows
 
-### 1. Zero-Privilege POS Authentication & Sales Executive Till Model
+### 1. Zero-Privilege POS Authentication, Session Takeover & Sales Executive Till Model
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Staff as Staff / Manager
+    actor Staff as Cashier / Manager
     participant Login as Login Screen (/login)
     participant POS as Next.js POS UI (/pos)
     participant API as Fastify Backend
+    participant SSE as SSE Client (Old Cashier)
     participant DB as PostgreSQL (DB 1)
 
-    Note over Staff,API: ZERO-PRIVILEGE POS: Manager never operates POS under Manager role
-    Staff->>Login: Enter 5-Digit PIN (Zero-Click)
-    Login->>API: POST /api/v1/auth/login { pin: "12345" }
-    API->>DB: Query User by pin_code & verify is_active
-    DB-->>API: User record (id, role='manager', full_name)
-    API->>API: Sign JWT with effective role='sales_executive', actualRole='manager'
+    Note over Staff,API: ZERO-PRIVILEGE POS: Managers operate POS strictly under Sales Executive till context
+    Staff->>Login: Enter 5-Digit PIN (auto-submits on 5th digit)
+    Login->>API: POST /api/v1/auth/login { pin: "12345", sessionType: "pos" }
+    API->>DB: Query User by pin_code & verify active shift in cash_sessions
+    alt Another Cashier Shift is Currently Open
+        DB-->>API: Active Shift found for Operator "Rafiq"
+        API-->>Login: 409 Conflict / { code: "POS_OCCUPIED", activeOperator: {...} }
+        Login->>Staff: Render "POS Terminal Occupied Modal" with live shift stats
+        Staff->>Login: Click "Take Over POS Terminal"
+        Login->>API: POST /api/v1/auth/login { pin: "12345", sessionType: "pos", forceTakeover: true }
+        API->>DB: UPDATE cash_sessions SET status='closed', close_type='takeover' WHERE id=old_shift_id
+        API->>SSE: Broadcast SSE event 'SESSION_SUPERSEDED' (invalidates old cashier screen)
+    end
+    API->>DB: Record new session ID in users.current_pos_session_id
+    API->>API: Sign JWT with effective role='sales_executive'
     API-->>Login: 200 OK + JWT Token + Cookie
     Login->>POS: Redirect to /pos (as Sales Executive Cashier)
-    POS->>API: GET /api/v1/auth/me
-    API-->>POS: Effective Role='sales_executive', Active Shift Status
+    POS->>API: GET /api/v1/cash/current
     alt No active cash drawer shift
-        POS->>Staff: Prompt Starting Float & Terminal Name
-        Staff->>POS: Enter Float (e.g. SAR 150.00) + Terminal "Terminal-01"
-        POS->>API: POST /api/v1/cash/open
-        API->>DB: INSERT INTO cash_sessions (status='open', user_id, opening_balance)
-        DB-->>API: Shift Registered
+        POS->>Staff: Render "Open Cash Drawer Shift Modal" (suggests carry-forward balances)
+        Staff->>POS: Enter Opening Cash Float (SAR 150) + Card Float (SAR 0)
+        POS->>API: POST /api/v1/cash/open { openingBalance: 150.00, openingCardBalance: 0.00 }
+        API->>DB: INSERT INTO cash_sessions (status='open', user_id, opening_balance, opening_card_balance)
+        DB-->>API: Shift Registered with sequence_number
     end
 ```
 
@@ -391,27 +406,37 @@ sequenceDiagram
     API-->>POS: Return Processed Successfully + Print Credit Note / Return Receipt
 ```
 
-### 4. Cash Register Shift Closing & Blind Count Flow
+### 4. Cash Register Shift Closing, Blind Settlement & Z-Report Flow
 ```mermaid
 sequenceDiagram
     autonumber
     actor Cashier as Sales Executive / Manager
-    participant UI as Next.js Cashier UI
+    participant UI as Next.js Cashier / POS UI
     participant API as Fastify Backend
     participant DB as PostgreSQL (DB 1)
+    participant Printer as 80mm ESC/POS Printer
     
-    Cashier->>UI: Click "Close Cash Register Shift"
-    UI->>Cashier: Prompt for Physical Cash Blind Count without displaying expected totals
-    Cashier->>UI: Enter Actual Counted Cash (e.g. SAR 3,450.00)
-    UI->>API: POST /api/v1/cash/close
+    Cashier->>UI: Click "End Shift / Close Cash Drawer"
+    UI->>Cashier: Prompt for Physical Cash Blind Count & Card Settlement Slip Entry
+    Cashier->>UI: Enter Actual Counted Cash (e.g. SAR 3,450.00) + Card Terminal Total (e.g. SAR 1,280.00)
+    opt Declared Discrepancy Adjustment
+        Cashier->>UI: Add Adjustment Explanation (e.g. "SAR 5.00 customer coin shortage")
+    end
+    UI->>API: POST /api/v1/cash/close { actualClosingBalance, terminalCardTotal, closingNote, adjustments }
     
-    API->>DB: Calculate Expected = OpeningFloat + CashSales + CashIn - CashOut - CashRefunds
-    API->>API: Calculate Discrepancy = Actual - Expected
-    API->>DB: UPDATE cash_sessions SET closing_balance=Actual, expected_balance=Expected, difference=Discrepancy, status='closed', closed_at=NOW()
-    API->>DB: INSERT INTO audit_logs (action='CASH_SESSION_CLOSE', discrepancy=Discrepancy)
+    API->>DB: Calculate Cash Expected = OpeningFloat + CashSales - CashRefunds - CashExpenses + CashIn
+    API->>DB: Calculate Card Expected = Sum of Card Sales during shift
+    API->>API: Calculate Cash Difference = CountedCash - CashExpected
+    API->>API: Calculate Card Difference = TerminalCardTotal - CardExpected
+    API->>DB: UPDATE cash_sessions SET closing_balance=CountedCash, expected_balance=CashExpected, difference=CashDiff, terminal_card_total=CardTotal, terminal_card_expected=CardExpected, terminal_card_discrepancy=CardDiff, carry_forward_balance=CountedCash, status='closed', closed_at=NOW()
+    opt If adjustments provided
+        API->>DB: INSERT INTO session_adjustments (session_id, adjustment_type='closing', amount, description)
+    end
+    API->>DB: INSERT INTO audit_logs (action='CASH_SESSION_CLOSE')
     
-    API-->>UI: Return Shift Summary & Z-Report
-    UI->>Cashier: Render Z-Report (Summary of Cash, Card, VAT collected, Overage/Shortage)
+    API-->>UI: Return Shift Summary, Z-Report Payload & Carry-Forward Snapshot
+    UI->>Printer: Invoke printZReportDirectly (80mm ESC/POS Thermal Z-Report)
+    UI->>Cashier: Display Shift Closed Confirmation & Logout Option
 ```
 
 ---
@@ -463,6 +488,8 @@ CREATE TABLE users (
     pin_locked_until TIMESTAMPTZ,
     login_failed_attempts INT NOT NULL DEFAULT 0,
     login_locked_until TIMESTAMPTZ,
+    current_session_id VARCHAR(100),
+    current_pos_session_id VARCHAR(100),
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -499,13 +526,14 @@ CREATE TABLE tax_rates (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL, -- e.g. Standard VAT 15%, Zero-Rated 0%, Exempt 0%
     rate DECIMAL(5,2) NOT NULL DEFAULT 15.00 CHECK (rate >= 0 AND rate <= 100),
+    tax_type VARCHAR(50) NOT NULL DEFAULT 'VAT',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO tax_rates (name, rate, is_active, is_default)
-VALUES ('Standard VAT 15%', 15.00, TRUE, TRUE);
+INSERT INTO tax_rates (name, rate, tax_type, is_active, is_default)
+VALUES ('Standard VAT 15%', 15.00, 'VAT', TRUE, TRUE);
 
 CREATE TABLE products (
     id SERIAL PRIMARY KEY,
@@ -578,12 +606,14 @@ CREATE TABLE product_batches (
     product_id INT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     batch_number VARCHAR(100) NOT NULL,
     expiry_date DATE NOT NULL,
+    purchase_id INT, -- FK to purchases(id)
     purchase_item_id INT, -- FK is added after purchase_items is created below
     cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     initial_quantity DECIMAL(18,3) NOT NULL CHECK (initial_quantity >= 0),
     current_quantity DECIMAL(18,3) NOT NULL CHECK (current_quantity >= 0),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_product_batches_expiry ON product_batches(product_id, expiry_date);
 
@@ -1275,6 +1305,14 @@ REVOKE UPDATE, DELETE ON audit_logs FROM PUBLIC;
 - Permission-aware presentation occurs in the server/API response first. For example, Sales Executive product responses omit cost/margin fields; the UI never receives and merely hides them.
 - Component stories and visual regression tests cover Light/Dark themes, both allowed scales, focus/keyboard states, long product names, large amounts, validation errors, and restricted-role views.
 
+### 5. Thermal Barcode Label Generator & Vector SVG Sub-System (`BarcodeLabelModal` & `barcodeGenerator.ts`)
+- **Mathematical Barcode Generation**: Pure client-side vector SVG rendering supporting Code 128 (with automated Subsets A/B/C code switching and numeric compaction) and EAN-13 (standard checksum modulo 10).
+- **Infinite Resolution Scalability**: Vector `<svg>` output with no pixelation, guaranteeing sharp thermal bar edges and high first-pass scan rates across 203 DPI and 300 DPI print heads.
+- **Roll Printing Layout (`@media print`)**:
+  - Exact dimension constraints (`50x25mm`, `40x30mm`, `50x30mm`, `38x25mm`, `60x40mm`) configured via CSS `@page` media queries.
+  - Silent roll separation with `break-inside: avoid; page-break-after: always;` ensuring zero label skips.
+- **Modular Toggle & Sizing Engine**: 6 modular feature toggles and 3 real-time sliders allowing dynamic composition without page reloads.
+
 ---
 
 ## I. REST API Architecture & Endpoints
@@ -1297,9 +1335,12 @@ interface ApiResponse<T> {
 | Method | Endpoint | Description | Role Required |
 | :--- | :--- | :--- | :--- |
 | **Auth** | | | |
-| `POST` | `/api/v1/auth/login` | Authenticate and establish a revocable HTTP-only session | Public |
-| `POST` | `/api/v1/auth/logout` | Clear auth token cookie | All |
-| `GET` | `/api/v1/auth/me` | Fetch active profile, role & shift session | All |
+| `POST` | `/api/v1/auth/login` | Staff authentication (5-digit PIN or Username/Password; supports sessionType, forceLogin, forceTakeover) | Public |
+| `POST` | `/api/v1/auth/logout` | Revoke session token and clear HTTP-only auth cookie | All |
+| `GET` | `/api/v1/auth/me` | Fetch active user profile, effective role & POS till status | All |
+| `GET` | `/api/v1/auth/session-stream` | Real-time SSE stream for session sync & displacement alerts (`SESSION_SUPERSEDED`) | All |
+| `POST` | `/api/v1/auth/users` | Create staff account (Manager only) | Manager |
+| `PUT` | `/api/v1/auth/users/:id` | Update staff details, PIN, or role | Manager |
 | **Products & Catalog** | | | |
 | `GET` | `/api/v1/products` | Paginated product search & catalog | All |
 | `GET` | `/api/v1/products/scan/:barcode` | High-speed barcode/scale barcode scanner endpoint | All |
@@ -1363,10 +1404,17 @@ interface ApiResponse<T> {
 | `POST` | `/api/v1/suppliers` | Register supplier | Manager |
 | `GET` | `/api/v1/suppliers/:id/ledger` | View accounts payable ledger | Manager |
 | `POST` | `/api/v1/suppliers/:id/pay` | Record payment to supplier | Manager |
-| **Cash Registers & Expenses** | | | |
-| `POST` | `/api/v1/registers/:id/shifts/open` | Open register shift with float balance | Authorized register user |
-| `POST` | `/api/v1/registers/:id/shifts/:shiftId/close` | Submit blind count, terminal slip total & close the shift | Shift owner / Manager |
-| `GET` | `/api/v1/cash/status` | Current active shift status | All |
+| **Cash Drawer Shifts & Reconciliation** | | | |
+| `GET` | `/api/v1/cash/pos-status` | Check POS till occupancy & active operator details | All |
+| `GET` | `/api/v1/cash/current` | Retrieve active cash drawer shift and live financial totals | All |
+| `POST` | `/api/v1/cash/open` | Open shift with cash float, card float, and opening adjustments | All |
+| `POST` | `/api/v1/cash/close` | Submit blind cash count, Mada card terminal slip total & close shift | Shift owner / Manager |
+| `POST` | `/api/v1/cash/force-close` | Managerial force-close of abandoned shift with audit reason | Manager |
+| `GET` | `/api/v1/cash/shifts` | Paginated chronological shifts list with sequence numbers | Manager |
+| `GET` | `/api/v1/cash/shifts/:id` | Deep inspection of specific shift with sales & payment lines | Manager |
+| `GET` | `/api/v1/cash/business-day-summary`| Aggregate financial stats for business day & Z-Report generation | Manager |
+| `POST` | `/api/v1/cash/movement` | Record petty cash movement (`cash_in` / `cash_out`) | All |
+| `POST` | `/api/v1/cash/adjustments` | Append immutable explanation record for variance | All |
 | `GET` | `/api/v1/expenses` | List operational expenses | Manager |
 | `POST` | `/api/v1/expenses` | Record expense (Till vs Bank) | Manager |
 | **Reports, Analytics & WS** | | | |

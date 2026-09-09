@@ -32,6 +32,33 @@ import {
   Filter,
 } from 'lucide-react';
 
+function ProductThumbnail({ src, alt }: { src?: string | null; alt: string }) {
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+  }, [src]);
+
+  if (!src || error) {
+    return (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700">
+        <Package className="h-5 w-5" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700">
+      <img
+        src={src}
+        alt={alt}
+        className="h-full w-full object-cover"
+        onError={() => setError(true)}
+      />
+    </div>
+  );
+}
+
 export default function ProductsPage() {
   const { formatCurrency, settings } = useSettings();
   const [products, setProducts] = useState<any[]>([]);
@@ -179,7 +206,7 @@ export default function ProductsPage() {
       isQuickPlu: p.is_quick_plu || false,
       taxType: p.tax_type || 'exclusive',
     });
-    setImagePreview(p.images?.[0]?.file_path || null);
+    setImagePreview(p.image_url || p.images?.[0]?.file_path || null);
     setImageFile(null);
     setErrorMsg(null);
     setIsModalOpen(true);
@@ -250,6 +277,9 @@ export default function ProductsPage() {
     if (res.success) {
       setNewCatName('');
       setIsCategoryModalOpen(false);
+      if (res.data?.id) {
+        setForm((prev) => ({ ...prev, categoryId: res.data.id }));
+      }
       loadData();
     }
   };
@@ -283,47 +313,17 @@ export default function ProductsPage() {
           isOpen={isBarcodeModalOpen}
           onClose={() => setIsBarcodeModalOpen(false)}
           product={barcodeProduct}
+          catalogProducts={products}
         />
       )}
-
-      {/* Quick Category Creation Modal */}
-      <Modal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        title="Add Product Category"
-        subtitle="Create a new grouping category for the master catalog"
-        maxWidth="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleCreateCategory}>
-              Create Category
-            </Button>
-          </>
-        }
-      >
-        <Input
-          label="Category Name"
-          value={newCatName}
-          onChange={(e) => setNewCatName(e.target.value)}
-          required
-          placeholder="e.g. Dairy & Eggs, Fresh Bakery, Cold Beverages"
-        />
-      </Modal>
 
       {/* Create / Edit Product Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={
-          <div className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-blue-700 dark:text-sky-400" />
-            <span>{isEditMode ? 'Edit Product Master SKU' : 'Register New Product SKU'}</span>
-          </div>
-        }
-        subtitle="Maintain unit conversions, pricing, WAC cost basis, and barcode identifiers"
+        icon={<Package className="h-5 w-5" />}
+        title={isEditMode ? 'Edit Product Master SKU' : 'Register New Product SKU'}
+        subtitle="Manage pricing, units, barcodes, and inventory"
         maxWidth="3xl"
         footer={
           <>
@@ -345,8 +345,52 @@ export default function ProductsPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Identity & Basic Info */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
+          <div className="flex items-start gap-3">
+            {/* Compact Image Upload Tile */}
+            <div className="space-y-1.5 shrink-0">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Image
+              </label>
+              <div className="relative group">
+                <label
+                  title={imagePreview ? 'Click to change image' : 'Upload product image'}
+                  className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer overflow-hidden transition group-hover:border-blue-500"
+                >
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Product"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Upload className="h-4 w-4 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-sky-400 transition" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setImagePreview(null);
+                      setImageFile(null);
+                    }}
+                    title="Remove image"
+                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-white shadow hover:bg-rose-600 transition"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Product Name */}
+            <div className="flex-1 min-w-0">
               <Input
                 label="Product Name"
                 value={form.name}
@@ -355,7 +399,9 @@ export default function ProductsPage() {
                 placeholder="e.g. Almarai Fresh Milk Full Fat 2L"
               />
             </div>
-            <div>
+
+            {/* SKU Code */}
+            <div className="w-36 sm:w-48 shrink-0">
               <Input
                 label="SKU Code"
                 value={form.sku}
@@ -413,18 +459,17 @@ export default function ProductsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
             <div>
               <Input
-                label="Cost Price (WAC)"
+                label="Cost Price"
                 type="number"
                 step="0.0001"
                 value={form.costPrice}
                 onChange={(e) => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })}
                 required
-                helperText="Perpetual weighted average"
               />
             </div>
             <div>
               <Input
-                label="Selling Price (SAR)"
+                label="Selling Price"
                 type="number"
                 step="0.01"
                 value={form.sellingPrice}
@@ -459,7 +504,7 @@ export default function ProductsPage() {
           </div>
 
           {/* Stock & Unit Settings */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-1 gap-3 items-start ${isEditMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2 md:grid-cols-4'}`}>
             <div>
               <Select
                 label="Base Inventory Unit"
@@ -493,69 +538,64 @@ export default function ProductsPage() {
                 />
               </div>
             )}
-          </div>
-
-          {/* Super Shop Capability Flags */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-              <input
-                type="checkbox"
-                checked={form.hasExpiry}
-                onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <div className="font-bold text-slate-900 dark:text-white">Batch & Expiry</div>
-                <div className="text-[10px] text-slate-400">Track perishable dates</div>
-              </div>
-            </label>
-
-            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-              <input
-                type="checkbox"
-                checked={form.isWeighable}
-                onChange={(e) => setForm({ ...form, isWeighable: e.target.checked })}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <div className="font-bold text-slate-900 dark:text-white">Scale Variable Weight</div>
-                <div className="text-[10px] text-slate-400">Prefix 20-29 barcode support</div>
-              </div>
-            </label>
-
-            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-3 text-xs font-semibold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-              <input
-                type="checkbox"
-                checked={form.isQuickPlu}
-                onChange={(e) => setForm({ ...form, isQuickPlu: e.target.checked })}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <div className="font-bold text-slate-900 dark:text-white">Quick PLU Grid</div>
-                <div className="text-[10px] text-slate-400">Touch tile on POS screen</div>
-              </div>
-            </label>
-          </div>
-
-          {/* Image Upload Input */}
-          <div className="pt-2">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Product Image (WebP / PNG / JPG)
-            </label>
-            <div className="flex items-center gap-4">
-              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition">
-                <Upload className="h-4 w-4 text-blue-600 dark:text-sky-400" />
-                <span>Choose Image</span>
-                <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+            <div className="w-full space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Batch & Expiry
               </label>
-              {imagePreview && (
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-1 bg-white dark:bg-slate-900">
-                  <img src={imagePreview} alt="Preview" className="h-10 w-10 rounded-lg object-cover" />
-                  <span className="text-[11px] font-mono text-slate-500 pr-2">Selected</span>
+              <label
+                className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition cursor-pointer select-none ${
+                  form.hasExpiry
+                    ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-500 shadow-sm'
+                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Calendar className={`h-4 w-4 shrink-0 ${form.hasExpiry ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400'}`} />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate leading-5">
+                    Track Expiry
+                  </span>
                 </div>
-              )}
+                <input
+                  type="checkbox"
+                  checked={form.hasExpiry}
+                  onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
+                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer ml-2"
+                />
+              </label>
             </div>
           </div>
+        </form>
+      </Modal>
+
+      {/* Quick Category Creation Modal (Overlaid on top of Product Modal) */}
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        zIndex={60}
+        icon={<FolderPlus className="h-5 w-5" />}
+        title="Add Product Category"
+        subtitle="Create a new catalog category"
+        maxWidth="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleCreateCategory}>
+              Create Category
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleCreateCategory} className="space-y-4">
+          <Input
+            label="Category Name"
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            required
+            placeholder="e.g. Dairy & Eggs, Fresh Bakery, Cold Beverages"
+            autoFocus
+          />
         </form>
       </Modal>
 
@@ -566,10 +606,23 @@ export default function ProductsPage() {
             Product Master Catalog
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices (WAC), selling prices, and thermal shelf labels.
+            Manage SKUs, barcodes, scale PLUs, perishable flags, cost prices, selling prices, and thermal shelf labels.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => {
+              if (products.length > 0) {
+                setBarcodeProduct(products[0]);
+                setIsBarcodeModalOpen(true);
+              }
+            }}
+            leftIcon={<Barcode className="h-4 w-4" />}
+          >
+            Print Barcode Labels
+          </Button>
           <Button
             variant="primary"
             size="md"
@@ -582,25 +635,34 @@ export default function ProductsPage() {
       </div>
 
       {/* Filters Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
         {/* Search */}
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by SKU, product name, barcode, or PLU..."
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 py-2 pl-10 pr-4 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+            className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-10 pr-9 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Category Filter */}
-        <div className="w-full sm:w-56">
+        <div className="w-full sm:w-56 shrink-0 relative">
           <select
             value={selectedCat || ''}
             onChange={(e) => setSelectedCat(e.target.value ? parseInt(e.target.value) : null)}
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+            className="h-10 w-full appearance-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-3.5 pr-8 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none cursor-pointer transition"
           >
             <option value="">All Categories ({products.length})</option>
             {categories.map((c) => (
@@ -609,36 +671,42 @@ export default function ProductsPage() {
               </option>
             ))}
           </select>
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <Filter className="h-3.5 w-3.5 opacity-60" />
+          </div>
         </div>
 
         {/* Stock Status Filter Pills */}
-        <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto">
+        <div className="flex items-center gap-1 shrink-0 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl h-10 border border-slate-200/60 dark:border-slate-700/60">
           <button
+            type="button"
             onClick={() => setStockFilter('all')}
-            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
               stockFilter === 'all'
                 ? 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             All Stock
           </button>
           <button
+            type="button"
             onClick={() => setStockFilter('low')}
-            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
               stockFilter === 'low'
                 ? 'bg-amber-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Low Stock
           </button>
           <button
+            type="button"
             onClick={() => setStockFilter('out')}
-            className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${
+            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
               stockFilter === 'out'
                 ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Out of Stock
@@ -655,25 +723,22 @@ export default function ProductsPage() {
         columns={[
           {
             header: 'Product Name / Identifiers',
-            accessor: (p) => (
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold overflow-hidden border border-slate-200 dark:border-slate-700">
-                  {p.images?.[0]?.file_path ? (
-                    <img src={p.images[0].file_path} alt={p.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <Package className="h-5 w-5 text-slate-400" />
-                  )}
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{p.name}</div>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
-                    <span>SKU: {p.sku}</span>
-                    {p.barcode && <span>• Barcode: {p.barcode}</span>}
-                    {p.plu_code && <span>• PLU: {p.plu_code}</span>}
+            accessor: (p) => {
+              const imageSrc = p.image_url || p.images?.[0]?.file_path || p.primary_image;
+              return (
+                <div className="flex items-center gap-3">
+                  <ProductThumbnail src={imageSrc} alt={p.name} />
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{p.name}</div>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                      <span>{p.sku}</span>
+                      {p.barcode && <span>• {p.barcode}</span>}
+                      {p.plu_code && <span>• {p.plu_code}</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ),
+              );
+            },
           },
           {
             header: 'Category & Unit',
@@ -711,7 +776,7 @@ export default function ProductsPage() {
             },
           },
           {
-            header: 'Cost Price (WAC)',
+            header: 'Cost Price',
             align: 'right',
             accessor: (p) => (
               <span className="font-mono font-bold text-slate-500">
@@ -720,7 +785,7 @@ export default function ProductsPage() {
             ),
           },
           {
-            header: 'Selling Price (SAR)',
+            header: 'Selling Price',
             align: 'right',
             accessor: (p) => (
               <div>

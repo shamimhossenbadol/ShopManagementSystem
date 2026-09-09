@@ -113,6 +113,13 @@ async function runAutoMigrations() {
       `,
     },
     {
+      name: 'Product batches purchase tracking',
+      sql: `
+        ALTER TABLE product_batches ADD COLUMN IF NOT EXISTS purchase_id INT REFERENCES purchases(id) ON DELETE SET NULL;
+        ALTER TABLE product_batches ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+      `,
+    },
+    {
       name: 'Session adjustments table and immutability trigger',
       sql: `
         CREATE TABLE IF NOT EXISTS session_adjustments (

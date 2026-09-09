@@ -76,9 +76,17 @@ echo    Stopping or recreating Docker containers will NOT lose data.
 echo ======================================================================
 echo.
 
-REM --- Open browser automatically ---
-echo [BROWSER] Opening POS terminal in your default browser...
-start "" "http://localhost"
+REM --- Open App in Standalone Window ---
+echo [APP] Launching Al-Noor POS Application...
+if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
+    start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
+) else if exist "C:\Program Files\Microsoft\Edge\Application\msedge.exe" (
+    start "" "C:\Program Files\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
+) else if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
+    start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=http://localhost --window-size=1440,900
+) else (
+    start "" "http://localhost"
+)
 echo.
 echo Press any key to close this window (services will keep running)...
 pause >nul

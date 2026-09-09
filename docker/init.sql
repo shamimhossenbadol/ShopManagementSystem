@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS tax_rates (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL,
     rate DECIMAL(5,2) NOT NULL DEFAULT 15.00,
+    tax_type VARCHAR(50) NOT NULL DEFAULT 'VAT',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -180,12 +181,14 @@ CREATE TABLE IF NOT EXISTS product_batches (
     product_id INT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     batch_number VARCHAR(100) NOT NULL,
     expiry_date DATE NOT NULL,
+    purchase_id INT REFERENCES purchases(id) ON DELETE SET NULL,
     purchase_item_id INT,
-    cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
-    initial_quantity DECIMAL(10,2) NOT NULL,
-    current_quantity DECIMAL(10,2) NOT NULL,
+    cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000 CHECK (cost_price >= 0),
+    initial_quantity DECIMAL(15,3) NOT NULL CHECK (initial_quantity >= 0),
+    current_quantity DECIMAL(15,3) NOT NULL CHECK (current_quantity >= 0),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_batches_expiry ON product_batches(product_id, expiry_date);
@@ -683,10 +686,10 @@ INSERT INTO units (id, name, short_name, allow_decimal) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Default Tax Rates
-INSERT INTO tax_rates (id, name, rate, is_active, is_default) VALUES
-(1, 'Standard VAT 15%', 15.00, TRUE, TRUE),
-(2, 'Zero-Rated VAT 0%', 0.00, TRUE, FALSE),
-(3, 'VAT Exempt', 0.00, TRUE, FALSE)
+INSERT INTO tax_rates (id, name, rate, tax_type, is_active, is_default) VALUES
+(1, 'Standard VAT 15%', 15.00, 'VAT', TRUE, TRUE),
+(2, 'Zero-Rated VAT 0%', 0.00, 'VAT', TRUE, FALSE),
+(3, 'VAT Exempt', 0.00, 'VAT', TRUE, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. Default Payment Methods

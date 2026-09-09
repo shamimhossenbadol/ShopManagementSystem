@@ -529,7 +529,7 @@ export default function CashSessionsPage() {
       ...metaBlock.map(row => row.join(',')),
       ...summaryKPIs.map(row => row.join(',')),
       tableHeaders.join(','),
-      ...tableRows.map(row => row.join(',')),
+      ...tableRows.map((row: any) => row.join(',')),
     ];
 
     const csvContent = '\uFEFF' + csvLines.join('\r\n');

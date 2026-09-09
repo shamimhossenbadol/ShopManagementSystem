@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { InstallPwaButton } from '@/components/ui/InstallPwaButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -420,6 +421,11 @@ export default function LoginPage() {
             </form>
           )}
         </div>
+      </div>
+
+      {/* Windows PWA Install Button */}
+      <div className="relative z-10 mt-4 flex justify-center">
+        <InstallPwaButton />
       </div>
 
 

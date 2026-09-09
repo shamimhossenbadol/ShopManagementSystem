@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
+  icon?: React.ReactNode;
   title?: React.ReactNode;
   subtitle?: string;
   children: React.ReactNode;
@@ -14,11 +15,13 @@ export interface ModalProps {
   showCloseButton?: boolean;
   bodyClassName?: string;
   className?: string;
+  zIndex?: number;
 }
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
+  icon,
   title,
   subtitle,
   children,
@@ -27,6 +30,7 @@ export const Modal: React.FC<ModalProps> = ({
   showCloseButton = true,
   bodyClassName,
   className = '',
+  zIndex = 50,
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -58,7 +62,10 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+    >
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity animate-fadeIn"
@@ -70,15 +77,22 @@ export const Modal: React.FC<ModalProps> = ({
         className={`relative w-full ${maxWidthStyles[maxWidth]} ${className} rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-10 overflow-hidden flex flex-col max-h-[90vh] transition-all transform animate-scaleIn`}
       >
         {/* Header */}
-        {(title || showCloseButton) && (
-          <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
-            <div>
-              {typeof title === 'string' ? (
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
-              ) : (
-                title
+        {(title || icon || showCloseButton) && (
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+            <div className="flex items-center gap-3">
+              {icon && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900/40">
+                  {icon}
+                </div>
               )}
-              {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
+              <div>
+                {typeof title === 'string' ? (
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+                ) : (
+                  title
+                )}
+                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
+              </div>
             </div>
             {showCloseButton && (
               <button

@@ -43,8 +43,9 @@ This document is the **single source of truth** for product scope, business rule
 **Media Processing:**
 - Sharp (for image resizing and optimization)
 
-**Deployment:**
+**Deployment & Windows Client:**
 - Docker and Docker Compose (Local/self-hosted environment)
+- **Windows Standalone App & PWA**: Web App Manifest (`manifest.json`), Service Worker (`sw.js`), and desktop launcher (`create-desktop-shortcut.bat`) allowing the application to be installed and run as a standalone Windows desktop app with its own taskbar icon and borderless window.
 
 ---
 
@@ -170,18 +171,60 @@ The manager dashboard must calculate real-time metrics based on transactional da
 
 Every product MUST support an image upload pipeline, barcode label generation, packaging conversions, batch/expiry capability, and variable-weight scale compatibility. Inventory is stored in a product's immutable **base unit** (for example, pieces or kilograms); purchase and sale package quantities are converted to that base unit and both quantities are retained on the source line for auditability.
 
-### Image Pipeline Specifications:
-- **Storage:** Host filesystem at `./data/uploads/products/` (persisted via Docker bind mount).
-- **Processing:** Use Sharp. Generate a primary resized image (max 800x800) and a thumbnail (200x200).
-- **Format:** Convert to WebP or optimized JPEG.
-- **Serving:** Serve via a fast static file route (`/static/images/products/...` or `/api/v1/uploads/...`).
-- **Data Model:** Products can have multiple images with one marked as primary (`product_images` table).
-- **UI:** Show product images in POS product cards, catalog lists, and printed invoices.
+Every product MUST support an image upload pipeline, barcode label generation, packaging conversions, batch/expiry capability, and variable-weight scale compatibility. Inventory is stored in a product's immutable **base unit** (for example, pieces or kilograms); purchase and sale package quantities are converted to that base unit and both quantities are retained on the source line for auditability.
 
-### Barcode Label Generation & Printing:
-- System provides a **Thermal Barcode Label Generator** (CODE128 standard).
-- Allows printing sticky shelf/product labels formatted for 50x25mm and 40x30mm thermal label printers (e.g., Xprinter / Zebra).
-- Label includes: Shop Name, Product Name, Selling Price (formatted in active currency with VAT indicator), Barcode vector, and SKU.
+### Product Catalog View (`/products`):
+The Product Catalog is a centralized manager master view designed for high-velocity inventory maintenance:
+- **Search & Filtering Bar**:
+  - Global text search across Product Name, SKU, Barcode, and PLU Code.
+  - Category selector dropdown with real-time record count badges.
+  - Stock Status Filter Tabs:
+    - `All Products`: Complete master catalog.
+    - `Low Stock`: Items where `current_stock <= min_stock_level` and `current_stock > 0`.
+    - `Out of Stock`: Items with `current_stock <= 0`.
+    - `Perishables & Batches`: Items flagged with `has_expiry = true`.
+- **Master Data Table**:
+  - High-density responsive table with product thumbnail, SKU / Barcode pill badges, produce scale / PLU indicator badges, Category & Brand, Current Stock (with color-coded threshold badges: emerald for healthy, amber for low stock, rose for out of stock), Base Cost Price, Selling Price (with tax indicator), and Status.
+  - Quick Action Buttons per row:
+    - **Edit (`Edit2`)**: Opens the Add/Edit Product Modal populated with product data.
+    - **Barcode Label (`Barcode` / `Printer`)**: Launches the Barcode Label Generator Modal pre-configured for this product.
+    - **Delete (`Trash2`)**: Soft-deletes product with confirmation safety gate (`is_deleted = true`).
+- **Add / Edit Product Modal**:
+  - Multi-section modal with tabbed or grouped controls:
+    - **Basic Information**: Product Name, SKU (auto-generated or custom), Barcode, Category (with inline `+ Add Category` modal), Brand, Base Unit.
+    - **Pricing & Taxation**: Cost Price (WAC), Selling Price, Wholesale Price, Tax Rate selector (15% Standard, 0% Zero-rated, Exempt), Tax Type (Inclusive / Exclusive).
+    - **Produce & Scales**: `is_weighable` toggle (variable-weight item), `plu_code` (1-5 digit produce code), `is_quick_plu` toggle (features product on POS Quick Produce grid).
+    - **Perishables & Expiry**: `has_expiry` toggle (enables FEFO batch receiving and expiration alerts).
+    - **Media & Image Upload**: Drag-and-drop or file selector supporting JPEG, PNG, WebP; client-side image preview with remove button; automatically processed via Sharp on the server.
+
+### Barcode Label Generation & Printing (`BarcodeLabelModal`):
+The system provides a production-final, hardware-tuned **Thermal Barcode Label Generator Modal** engineered for single-click shelf and sticker label printing:
+- **Supported Thermal Roll Label Sizes**:
+  1. `50mm × 25mm`: Standard Supermarket Shelf & Product Sticker (Default).
+  2. `40mm × 30mm`: Compact Retail Price Tag.
+  3. `50mm × 30mm`: Retail Tag with Store Branding Header.
+  4. `38mm × 25mm`: Small Item / Pharmacy Sticker.
+  5. `60mm × 40mm`: Large Shipping / Outer Carton Label.
+- **Dynamic Quantity Initialization**:
+  - Automatically initializes the print copy counter to the product's `current_stock` (or minimum 1 copy), allowing batch printing of shelf stickers matching physical warehouse stock in one click.
+- **6 Modular Visual Toggles (2×3 Grid)**:
+  1. `Show Title`: Product Name (English / Arabic).
+  2. `Show Barcode Number`: Human-readable barcode number below the barcode bars.
+  3. `Show Shop Name`: Store brand header (e.g. `AL-NOOR SUPERMARKET`).
+  4. `Show Price`: Formatted selling price with active currency symbol.
+  5. `Show VAT Badge`: Saudi VAT compliance label (`Incl. 15% VAT` or `Excl. VAT`).
+  6. `Show SKU`: Product unique SKU identifier.
+- **Real-Time Fine-Tuning Sliders**:
+  - **Title Font Size**: `8px` to `18px` range slider (default `10px`).
+  - **Barcode Height**: `16px` to `70px` range slider (default `30px`).
+  - **Barcode Module Width**: `0.8` to `2.2` range slider (default `1.35`).
+- **Vector SVG Engine (`barcodeGenerator.ts`)**:
+  - Generates crisp, mathematically precise vector SVG barcodes (Code128 with auto Code C compaction for numeric sequences, and native EAN-13 check-digit calculation).
+  - Infinite DPI scalability ensuring 100% first-pass barcode scanner recognition on both 203 DPI and 300 DPI thermal printers.
+- **Silent Thermal Print Optimization (`@media print`)**:
+  - Pure CSS print rules with exact millimeter page sizes (`@page { size: 50mm 25mm; margin: 0; }`).
+  - Disables browser headers, footers, margins, and page URLs.
+  - Page-break controls (`break-inside: avoid; page-break-after: always;`) for continuous roll-fed thermal label printers (Zebra, Xprinter, TSC, Bixolon).
 
 ### Super Shop Extensions:
 1. **Variable-Weight / Scale Barcode Parsing (Produce Weighing Scales):**
@@ -273,19 +316,34 @@ Calculations must be concurrency-safe using `SELECT ... FOR UPDATE` row-level lo
 > **Production UI Finalization Contract**: The visual design, layouts, animations, and component structure of the **Login Screen (`/login`)** and **POS Terminal (`/pos`)** are **final, approved, and strictly locked**. No modifications to their visual design or styling should be made.
 
 ### 8.1 Finalized Login Screen Architecture
-- **Theme & Atmosphere**: Ultra-premium Slate-950 dark background with subtle ambient blue/sky radial glow blurs.
-- **Glassmorphism Card**: 420px max-width, 110% scale card with `backdrop-blur-2xl`, subtle border, shop brand header with Store icon and subtitle.
-- **Dual Mode Role Tabs**:
+- **Theme & Atmosphere**: Ultra-premium Slate-950 dark background with ambient blue/sky radial glow blurs.
+- **Glassmorphism Card**: 420px max-width, 110% scale card with `backdrop-blur-2xl`, subtle slate-800 border, shop brand header with Store icon and subtitle.
+- **Dual Mode Role Switcher Tabs**:
   1. **Sales Executive (5-Digit Instant PIN)**:
-     - Monospace PIN digit input boxes with active glow, backspace navigation, paste handling, and shake animation on failure.
-     - **Zero-Click Auto-Authentication**: Automatically fires authentication upon entry of the 5th digit without needing a submit button.
-     - Strict numeric input with `inputMode="numeric"` and `pattern="[0-9]*"`.
+     - 5 individual square numeric input boxes (`w-14 h-14`) with mono bold typography.
+     - **Touch & Keyboard Input Mechanics**:
+       - Strict numeric filter (`inputMode="numeric"`, `pattern="[0-9]*"`).
+       - Auto-focuses the first digit box on mount or tab switch.
+       - Automatically advances to the next box upon typing a valid digit.
+       - Backspace cleanly clears the current box and navigates back to the preceding box.
+       - Clipboard paste handler automatically splits pasted 5-digit strings into individual boxes.
+       - **Zero-Click Auto-Authentication**: Submits instantly upon entering the 5th digit without requiring a button click or Enter key.
+       - **Failure Feedback**: On invalid PIN, triggers an error shake animation, clears all boxes, and refocuses the first digit box.
      - **Routes Directly to POS Terminal (`/pos`)** under the `sales_executive` operational role.
   2. **Store Manager (Credential Form)**:
      - Username and Password fields with standard spacious layout.
      - Gradient action button: "Sign In to Manager Portal".
      - **Routes Directly to Manager Portal & Dashboard (`/dashboard`)** with full management capabilities.
 - **Strict Route Protection**: Unauthenticated direct access to any protected route (`/pos`, `/dashboard`, `/cash`, etc.) is immediately redirected to `/login` with an authentication loading gate.
+- **POS Occupied Takeover Protocol & Modal**:
+  - The store operates exactly one physical POS checkout counter. If another cashier's shift is currently open, the server responds with code `POS_OCCUPIED`.
+  - Instead of blocking the cashier, the system presents an interactive **POS Terminal Occupied Modal**:
+    - Displays active operator's identity (Full Name, Username, Role badge).
+    - Pulsating emerald live status indicator.
+    - Active shift stats: Shift Started Time, Shift Elapsed Duration, Completed Sales Count, Total Sales Value, and Live Drawer Cash.
+    - Operator choices:
+      - **Take Over POS Terminal**: Submits with `forceTakeover: true`. The displaced cashier's session is automatically closed with `close_type = 'takeover'`, their token is invalidated via SSE broadcast (`SESSION_SUPERSEDED`), and the incoming cashier activates their shift.
+      - **Cancel**: Closes the dialog, clears PIN inputs, and returns to the ready state.
 
 ### 8.2 Zero-Privilege POS & Manager Cashier Identity Architecture
 > [!IMPORTANT]
@@ -300,13 +358,49 @@ Calculations must be concurrency-safe using `SELECT ... FOR UPDATE` row-level lo
 >    - If a user logged in with manager password navigates to `/pos`, the terminal enforces PIN verification to activate the Sales Executive till session.
 
 ### 8.3 Finalized POS Terminal Architecture
-- **Dense High-Volume Layout**: Designed for single-screen checkout without scrolling.
-  - **Left Header**: Shop branding, Sales Executive badge, Terminal ID, Live AST clock, and active session timer.
-  - **Left Catalog Grid**: Fast-moving items priority sort, search filter (F2), visual barcode & PLU produce badges, category chips, unit price tags, and inventory stock indicators.
-  - **Right Cart Panel**: Customer selector, cart item cards with fractional/integer quantity steppers (+ / -), item discounts, tax badges, line totals, and instant remove.
-  - **Bottom Financial Bar**: Gross Subtotal, Promo/Item Discount, 15% Included VAT, Net Grand Total, and primary action buttons (`Hold (F4)`, `Recall (F7)`, `Clear`, `PAY (F9)`).
-- **Produce Scale Barcode Parser**: Ingests prefix 20-29 barcodes to extract item PLU and fractional weight.
-- **Hardware Integration**: Instant audio beep feedback on scan, ESC/POS 80mm receipt generator with ZATCA Phase-1 TLV QR code, and optional RJ11 cash drawer pulse.
+The POS Terminal (`/pos`) is engineered for rapid high-volume retail transactions:
+- **Two-Column Fullscreen Interface**:
+  - **Collapsible / Fullscreen Header**: Shop branding, terminal status, live AST clock, dark/light theme switch, font scaling toggle, and full-screen toggle (`Maximize` / `Minimize`).
+  - **Left Panel (Product Catalog & Touch Grid)**:
+    - Barcode Search input (F2) with auto-focus and instant scan handler.
+    - Sorting options: `Fast Moving` (default), `Product Name (A-Z)`, `Price (Low to High)`, `Price (High to Low)`.
+    - Category pills with active indicator.
+    - Produce Touch Grid: Instant addition of fast PLU items (bakery, fresh fruit, loose vegetables) with distinctive visual icons and scale badges.
+    - Product cards showing name, SKU, price, stock badge, and thumbnail.
+  - **Right Panel (Interactive Cart & Checkout Summary)**:
+    - Customer selector dropdown (defaults to Walk-in Customer).
+    - Scrollable Cart Line Items:
+      - Product name, SKU/barcode, and unit price.
+      - Quantity stepper (`+`, `-`, and click-to-edit decimal input for scale items).
+      - Line discount indicator.
+      - Line tax breakdown (Inclusive/Exclusive VAT).
+      - Total line price and single-click remove (`Trash2`).
+    - Financial Summary Footer:
+      - Subtotal (Taxable Base).
+      - Discounts applied.
+      - 15% VAT breakdown.
+      - Net Grand Total (large high-contrast typography).
+    - Quick Action Buttons:
+      - `Hold Sale (F4)`: Suspends current cart with optional note.
+      - `Recall Held (F7)`: Opens held sales drawer to resume parked sales.
+      - `Clear Cart`: Resets the transaction.
+      - `TENDER / PAY (F9)`: Opens the Tender Modal.
+- **Produce Scale Barcode Parsing**:
+  - Automatically identifies weighing scale barcodes (EAN-13 prefixes `20`, `21`, `28`, `29`).
+  - Extracts 5-digit PLU code and 5-digit gram weight (e.g., `1450g -> 1.450 kg`).
+  - Populates cart with exact weight and computes fractional line totals.
+- **Complete Tender Modal (`TenderModal`)**:
+  - Payment Method Selection: `Cash`, `Mada / Card`, or `Split Payment`.
+  - Quick Tender Preset Buttons (`50 SAR`, `100 SAR`, `200 SAR`, `500 SAR`, and `Exact Amount`).
+  - Interactive touch numeric keypad for rapid cash entry.
+  - Live Change Due calculator: Disallows tendering less than grand total in cash mode.
+  - ESC/POS cash drawer kick trigger upon tender completion.
+- **Thermal Receipt Printing (`printThermalReceipt`)**:
+  - Direct 80mm thermal receipt formatted with ESC/POS styling.
+  - Includes: Store Name, CR, VAT Number, Invoice Number, Timestamp, Cashier Name, Itemized List with VAT, Subtotal, Discount, Tax, Grand Total, Tender details, Change, and Saudi ZATCA Phase 1 compliant TLV Base64 QR Code.
+- **Shift Opening & Shift Closing Flows**:
+  - If no shift is open, POS renders the **Open Cash Drawer Shift Modal**: Cash opening float + Card opening balance, carry-forward suggestion from previous shift, and interactive numpad.
+  - Shift conclusion triggers the **Close Shift & Blind Count Modal**: Cashier enters counted drawer cash, enters card settlement slip total, adds optional closing notes/adjustments, and views certified shift summary.
 
 ### 8.4 POS Keyboard Shortcuts:
 - `F2`: Focus Barcode Search / Scanner Input
@@ -346,14 +440,13 @@ In store operations:
    - Cashiers reconcile by printing the bank POS card machine batch settlement slip and entering the slip total (`terminal_card_total`). Discrepancy is $\text{terminal\_card\_total} - \text{terminal\_card\_expected}$. Electronic card balances settle with the bank, while drawer cash carries forward to the next session.
 
 3. **Single POS Counter Architecture (Single-Terminal)**:
-   - The shop operates a single physical checkout counter. There are NO multiple terminals and NO Terminal IDs.
-   - Exactly one POS counter session may be active globally (`uq_single_open_cash_session`).
+   - The shop operates a single physical checkout counter. Exactly one POS counter session may be active globally (`uq_single_open_cash_session`).
    - Sessions are linked sequentially via `sequence_number` and `previous_session_id`.
    - The verified closing cash and card totals of the preceding shift automatically serve as suggested carry-forward balances for the incoming shift.
 
 4. **POS Operator Takeover Protocol**:
    - If a cashier attempts to log in via 5-digit PIN while another cashier's session remains open, the system responds with `POS_OCCUPIED` and presents an interactive takeover confirmation showing the active operator's identity, elapsed shift time, and live drawer cash.
-   - Upon confirming takeover, the displaced session is automatically closed with `close_type = 'takeover'`, its POS session token is revoked via WebSocket broadcast (`SESSION_SUPERSEDED`), and the incoming cashier activates their shift.
+   - Upon confirming takeover, the displaced session is automatically closed with `close_type = 'takeover'`, its POS session token is revoked via WebSocket/SSE broadcast (`SESSION_SUPERSEDED`), and the incoming cashier activates their shift.
 
 5. **Discrepancy Adjustments Ledger (`session_adjustments`)**:
    - Cashiers can record declared explanations for variances during shift opening and closing.
@@ -362,6 +455,8 @@ In store operations:
 6. **Manager Cash Oversight Center (`/cash`)**:
    - In accordance with Section 8.2 (Zero-Privilege POS), the Manager does not open, operate, or terminate cashier tills from the Manager Portal. POS sessions must be closed directly at the checkout counter.
    - The `/cash` section provides managerial oversight: real-time till occupancy, store-wide daily business metrics, timeline-based chronological shift audit trails, and deep inspection modal with dynamic invoice-level view (including all sales, payments, and line items).
+   - **Direct Z-Report Printing (`printZReportDirectly`)**: Instant one-click 80mm thermal Z-Report printing directly from the shifts table or daily summary view.
+   - **Managerial Force-Close**: If an operator forgets to close their shift, the Manager can force-close the shift with a mandatory audit reason and note (`close_type = 'force_closed'`, recording `force_closed_by` and `force_close_reason`).
    - Managers can export daily business day records as **CSV** or print the consolidated **Daily Z-Report** with a single click. All toolbar buttons and controls maintain a strict uniform height (`h-10`).
 
 ---

@@ -213,6 +213,7 @@ The 8 core business metrics calculated in real-time on the manager dashboard:
 | **Ghost** | Low-emphasis inline actions: `Cancel`, `View details` | No border until hover/focus; never use for destructive confirmation. |
 | **Danger** | Confirmed destructive/corrective action: `Remove`, `Issue credit note` | Red token; require a confirmation or Manager approval where business rules require it. |
 | **Icon button** | A universally understood repeated action in a dense row | Tooltip and accessible name are required. Use only for search, clear, print, edit, or remove—not as the only wording for a critical action. |
+| **PWA Install Button** | Prompts Windows/Chromium desktop app installation (`InstallPwaButton`) | Displayed on Login screen; automatically hides when running in standalone window mode. |
 
 - Standard buttons use a `40px` minimum height; POS buttons use `48px`. Button text is an imperative verb plus object when needed: `Add product`, `Close shift`.
 - Disabled buttons explain the reason through concise adjacent helper text only when it is not obvious, for example `Open a shift to take payment`.
@@ -285,30 +286,145 @@ The 8 core business metrics calculated in real-time on the manager dashboard:
 
 ---
 
-## 11. Finalized Screen Specifications (Production Contract)
+## 11. Finalized Screen & Component Specifications (Production Locked)
 
 > [!IMPORTANT]
-> The visual presentation, styling tokens, and interaction flows for the **Login Page** and **POS Terminal** are finalized and production-locked.
+> The visual presentation, styling tokens, responsive layouts, and interaction flows for the **Login Page**, **POS Terminal**, **Cash Drawer Shift**, **Product Catalog**, and **Label Printing** are **final, approved, and production-locked**.
 
-### 11.1 Finalized Login Screen Specification
+### 11.1 Finalized Login Screen & POS Occupied Takeover Modal
 - **Canvas**: Fullscreen Slate-950 canvas with ambient `bg-blue-600/15` and `bg-sky-500/10` radial blurs.
 - **Glassmorphic Card**: 420px maximum width, `bg-slate-900/90`, `backdrop-blur-2xl`, `border-slate-800/80`, `shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)]`.
-- **Header**: Store gradient icon badge, uppercase Shop Name, subtitle "Point of Sale & Retail Management".
-- **Tabs**: Slate-950 segmented switcher for "Sales Executive" (KeyRound icon) and "Manager" (ShieldCheck icon).
-- **Sales Executive PIN Keypad**:
-  - 5 discrete monospace input boxes (`h-14 w-14`, rounded-xl, font-mono text-2xl font-black).
-  - Blue focus glow ring, shake animation on wrong entry.
+- **Header**: Store gradient icon badge (`from-blue-700 to-sky-500`), uppercase Shop Name (`text-base font-black`), subtitle "Point of Sale & Retail Management".
+- **Dual Mode Role Switcher Tabs**:
+  - Segmented switcher with Slate-950 background and Slate-800 border.
+  - "Sales Executive" tab with `KeyRound` icon; "Manager" tab with `ShieldCheck` icon.
+  - Active tab highlighted with blue gradient and drop-shadow (`from-blue-700 to-blue-600`).
+- **Sales Executive 5-Digit PIN Input**:
+  - 5 discrete square monospace input boxes (`h-14 w-14`, `rounded-xl`, `font-mono text-2xl font-black`).
+  - Active digit receives sky-blue tint (`bg-blue-950/30 text-sky-400 border-blue-500 ring-2 ring-blue-500/30`).
+  - Automatic focus on 1st digit box upon mount or tab switch.
+  - Auto-advance on valid character; Backspace clearing and retreating; Clipboard paste splitting across all 5 boxes.
   - Zero-click auto-authentication triggered immediately on the 5th digit.
+  - Error state triggers red ring (`border-rose-500 ring-rose-500/30`) and 500ms shake bounce animation.
 - **Manager Form**:
-  - Icon-prefixed input fields for Username and Password.
-  - Full-width gradient action button with `ArrowRight` icon.
+  - Icon-prefixed input fields for Username (`User`) and Password (`Lock`).
+  - Full-width gradient action button: "Sign In to Manager Portal" with `ArrowRight` icon.
+- **POS Occupied Takeover Modal (`Modal maxWidth="md"`)**:
+  - Title banner with active operator avatar and pulsating emerald live indicator (`animate-ping bg-emerald-400`).
+  - Cashier Details: Operator Full Name, Username, Role badge (`Sales Executive` vs `Manager`).
+  - Shift Metric Grid (4 cards): Started Time, Elapsed Duration, Sales Count, Live Drawer Cash.
+  - Action Footer:
+    - Secondary "Cancel" button (ghost/outline).
+    - Primary "Take Over POS Terminal" button (solid blue gradient) initiating force-takeover shift closure.
 
-### 11.2 Finalized POS Terminal Specification
-- **Layout**: High-density 2-column POS interface with fixed header and zero-scroll checkout workflow.
-- **Header Bar**: Shop branding, Sales Executive badge, Terminal ID, Live AST clock, and active shift timer.
-- **Catalog Section (Left)**: Search input with `F2` indicator, category chips, fast-moving items sorting, produce PLU badges, and unit price labels.
-- **Cart Section (Right)**: Walk-in / customer selector, cart item cards with steppers, discount indicators, and remove button.
-- **Summary Bar**: Gross Subtotal, Discounts, Included VAT, Grand Total, and quick action buttons (`Hold (F4)`, `Recall (F7)`, `Clear`, `PAY (F9)`).
+### 11.2 Finalized POS Terminal & Checkout Flow
+- **Layout Structure**: Single-screen, zero-scroll 2-column responsive layout with Fullscreen mode toggle (`Maximize` / `Minimize`).
+- **Header Bar**:
+  - Store brand icon and name.
+  - Till status badge: "Shift Active" (`bg-emerald-500/10 text-emerald-400`) or "No Shift Open" (`bg-amber-500/10 text-amber-400`).
+  - Operator identity pill with role and current shift sequence number.
+  - Live AST digital clock (`Asia/Riyadh`) and shift elapsed timer.
+  - Quick utility controls: Theme toggle (`Sun` / `Moon`), Font Scale toggle (`100%` / `110%`), and Fullscreen trigger.
+- **Left Panel: Catalog, Produce Touch Grid & Fast PLU**:
+  - Search field with `F2` keyboard shortcut pill.
+  - Category horizontal filter pills with active selection pill.
+  - Sorting pill bar: `Fast Moving` (default flame icon), `A-Z`, `Price Low-High`, `Price High-Low`.
+  - Produce Quick PLU grid: High-visibility colorful icon tiles for non-barcoded fresh items (Bananas, Tomatoes, Cucumbers, Bakery items).
+  - Product Cards: Crisp item name, SKU, price tag with SAR currency symbol, and color-coded stock level chip.
+- **Right Panel: Cart & Financial Summary**:
+  - Walk-in / Customer selector dropdown.
+  - Cart line items list:
+    - Product name, SKU / barcode, unit price.
+    - Inline stepper controls: decrement (`Minus`), decimal quantity input for scale items, increment (`Plus`), and delete (`Trash2`).
+    - Line discount tag and 15% VAT indicator badge.
+    - Computed line subtotal.
+  - Financial Summary Dock:
+    - Subtotal (taxable base).
+    - Total discounts applied.
+    - Included VAT (15%).
+    - Net Grand Total in prominent bold numerals (`text-2xl font-black text-white`).
+  - Transaction Action Row:
+    - `Hold (F4)`: Suspends current cart with optional note.
+    - `Recall (F7)`: Opens held orders drawer.
+    - `Clear`: Empties active cart.
+    - `PAY / TENDER (F9)`: Opens the Tender Modal.
+- **Tender Modal (`TenderModal`)**:
+  - Payment Method switcher tabs: `Cash`, `Mada / Card`, `Split Tender`.
+  - Quick Cash Presets: `Exact`, `50 SAR`, `100 SAR`, `200 SAR`, `500 SAR`.
+  - Interactive touch keypad for fast cashier tender entry.
+  - Change Due calculation: Real-time green callout showing change to return; blocks checkout if tender is insufficient.
+  - Action button: "Complete Sale & Print Receipt" invoking silent ESC/POS 80mm thermal receipt generator.
+
+### 11.3 Finalized Cash Drawer Shift & Reconciliation (`/cash`)
+- **Till Occupancy Banner**: Real-time status card showing current till state (Active / Closed), operator name, shift sequence number, and elapsed time.
+- **Daily Business Performance Strip**: Metric cards calculating gross sales, cash sales, card sales, expenses, and current drawer cash balance within the configured `shop_closing_hour` window.
+- **Shift Opening Modal**:
+  - Input fields for Cash Opening Float and Card Opening Float.
+  - Suggested carry-forward card from previous shift closure.
+  - Integrated touch number pad for physical till counting.
+  - Opening variance/adjustment notes with reason logging.
+- **Shift Closing & Blind Count Modal**:
+  - Blind Physical Cash Count: Cashier inputs counted drawer cash without seeing expected numbers.
+  - Card Settlement Slip Entry: Cashier inputs bank card terminal batch total.
+  - Live Discrepancy Reconciliation: Calculates Cash Overage/Shortage and Card Discrepancy.
+  - Closing adjustment ledger input for declared cashier explanations.
+  - Action: "Close Shift & Print Z-Report".
+- **Chronological Shifts Audit Table**:
+  - Columns: Sequence #, Operator, Opened At, Closed At, Opening Float, Counted Cash, Card Total, Discrepancy, Status, and Actions.
+  - Row Actions:
+    - **Inspect (`FolderOpen`)**: Opens shift inspection slide-over with full breakdown of invoices, items sold, and payment methods.
+    - **Print Z-Report (`Printer`)**: Instantly renders and prints certified 80mm thermal Z-Report via `printZReportDirectly`.
+    - **Force Close (`ShieldAlert`)**: Manager-only action to close an abandoned shift with mandatory reason logging.
+
+### 11.4 Finalized Product Catalog View (`/products`)
+- **Toolbar & Filter Bar**:
+  - Search input covering Name, SKU, Barcode, and PLU.
+  - Category selector dropdown with product count indicators.
+  - Filter Tabs: `All Products`, `Low Stock`, `Out of Stock`, `Perishables & Batches`.
+  - Primary button: `+ Add Product` (Manager only).
+- **Master Catalog Data Table**:
+  - Columns: Product (thumbnail + name), SKU / Barcode, Category & Brand, Produce Scale / PLU badge, Stock Level (emerald/amber/rose pill), Base Cost (Manager only), Selling Price, and Actions.
+  - Row Action Menu:
+    - `Edit`: Opens Add/Edit Product Modal.
+    - `Print Barcode Label`: Opens the Barcode Label Generator Modal pre-loaded with this product.
+    - `Delete`: Soft-deletes product with confirmation safety gate.
+- **Add / Edit Product Modal**:
+  - Tabbed or structured form:
+    - **Identity**: Name, SKU, Barcode, Category (with inline `+ Add Category` modal), Brand, Unit.
+    - **Pricing**: Cost Price (WAC), Selling Price, Tax Rate, Tax Type (Inclusive/Exclusive).
+    - **Super Shop Settings**: `is_weighable` toggle, `plu_code`, `is_quick_plu` toggle, `has_expiry` toggle.
+    - **Media**: Drag-and-drop image upload with live client preview and thumbnail generation.
+
+### 11.5 Finalized Barcode Label Generator Modal (`BarcodeLabelModal`)
+- **Layout Architecture**: 2-column modal layout (`Modal maxWidth="4xl"`):
+  - **Left Column: Live Thermal Sticker Preview**:
+    - Scaled live sticker container matching chosen physical label dimensions.
+    - Dynamic rendering of Store Name, Product Name, crisp vector SVG barcode, barcode numeric digits, formatted price, VAT badge, and SKU.
+    - Updates in real-time as sliders and switches are toggled.
+  - **Right Column: Hardware & Customization Controls**:
+    - **Label Size Selector**: Dropdown supporting:
+      1. `50mm × 25mm` (Standard Shelf / Sticker)
+      2. `40mm × 30mm` (Compact Price Tag)
+      3. `50mm × 30mm` (Retail Tag with Header)
+      4. `38mm × 25mm` (Small / Pharmacy Tag)
+      5. `60mm × 40mm` (Large / Carton Label)
+    - **Print Copies Counter**: Number stepper automatically defaulted to product's `current_stock`.
+    - **6 Modular Visual Toggles (2×3 Grid)**:
+      1. `Show Title`
+      2. `Show Barcode Number`
+      3. `Show Shop Name`
+      4. `Show Price`
+      5. `Show VAT Badge`
+      6. `Show SKU`
+    - **3 Real-Time Fine-Tuning Sliders**:
+      - `Title Font Size`: Range 8px to 18px (default 10px).
+      - `Barcode Height`: Range 16px to 70px (default 30px).
+      - `Barcode Width / Density`: Range 0.8 to 2.2 module width (default 1.35).
+    - **Print Action Button**: Full-width button with `Printer` icon invoking browser print dialog with roll-fed thermal CSS rules.
+- **Thermal Print Stylesheet (`@media print`)**:
+  - Strict millimeter page sizing (`@page { size: 50mm 25mm; margin: 0; }`).
+  - Hides modal backdrop, buttons, controls, and surrounding UI.
+  - Roll-separated label output (`page-break-after: always; break-inside: avoid;`).
 
 ---
 

@@ -82,7 +82,17 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.is_quick_plu,
         p.is_active,
         p.current_stock,
-        p.image_url
+        COALESCE(p.image_url, (SELECT file_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, id DESC LIMIT 1)) as image_url,
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+            'id', pi.id,
+            'file_path', pi.file_path,
+            'file_name', pi.file_name,
+            'is_primary', pi.is_primary
+          )), '[]'::json)
+          FROM product_images pi
+          WHERE pi.product_id = p.id
+        ) as images
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN brands b ON p.brand_id = b.id
@@ -470,7 +480,8 @@ export async function productRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, message: 'dataUrl and fileName are required.' });
     }
 
-    const uploadDir = path.resolve(process.cwd(), 'data/uploads/products');
+    const baseUploadDir = process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'data/uploads');
+    const uploadDir = path.join(baseUploadDir, 'products');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -488,8 +499,10 @@ export async function productRoutes(fastify: FastifyInstance) {
 
     fs.writeFileSync(targetPath, buffer);
 
+    const filePath = `/api/v1/uploads/products/${uniqueName}`;
     if (isPrimary) {
       await query(`UPDATE product_images SET is_primary = FALSE WHERE product_id = $1`, [Number(id)]);
+      await query(`UPDATE products SET image_url = $1 WHERE id = $2`, [filePath, Number(id)]);
     }
 
     const res = await query(
@@ -497,7 +510,7 @@ export async function productRoutes(fastify: FastifyInstance) {
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         Number(id),
-        `/api/v1/uploads/products/${uniqueName}`,
+        filePath,
         fileName,
         buffer.length,
         detectedMime,
@@ -519,7 +532,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     }
 
     const img = imgRes.rows[0];
-    const uploadDir = path.resolve(process.cwd(), 'data/uploads/products');
+    const baseUploadDir = process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'data/uploads');
+    const uploadDir = path.join(baseUploadDir, 'products');
     const diskPath = path.join(uploadDir, path.basename(img.file_path));
 
     try {
@@ -529,6 +543,12 @@ export async function productRoutes(fastify: FastifyInstance) {
     }
 
     await query(`DELETE FROM product_images WHERE id = $1`, [Number(imageId)]);
+    await query(
+      `UPDATE products 
+       SET image_url = (SELECT file_path FROM product_images WHERE product_id = $1 ORDER BY is_primary DESC, id DESC LIMIT 1)
+       WHERE id = $1`,
+      [img.product_id]
+    );
     return reply.send({ success: true, message: 'Image deleted successfully.' });
   });
 

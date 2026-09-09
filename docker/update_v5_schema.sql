@@ -1,8 +1,7 @@
-﻿-- ====================================================================
--- IDEMPOTENT DATABASE UPGRADE SCRIPT
--- Ensures all columns, tables, and constraints for V5 (session management,
--- cash shifts, adjustments, scales) exist.
--- Safe to run repeatedly on any existing database.
+-- ====================================================================
+-- LEGACY MIGRATION SCRIPT (CONSOLIDATED INTO docker/init.sql)
+-- NOTE: All schema definitions, tables, and constraints below are now
+-- canonicalized directly in docker/init.sql for single-source-of-truth.
 -- ====================================================================
 
 -- 1. USERS: Add session tracking columns

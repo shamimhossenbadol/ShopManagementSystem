@@ -5,6 +5,7 @@ export interface BadgeProps {
   size?: 'sm' | 'md';
   children: React.ReactNode;
   icon?: React.ReactNode;
+  title?: string;
   className?: string;
 }
 
@@ -13,6 +14,7 @@ export const Badge: React.FC<BadgeProps> = ({
   size = 'md',
   children,
   icon,
+  title,
   className = '',
 }) => {
   const variantStyles = {
@@ -36,6 +38,7 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <span
+      title={title}
       className={`inline-flex items-center font-bold border rounded-lg select-none whitespace-nowrap ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
     >
       {icon && <span className="shrink-0">{icon}</span>}

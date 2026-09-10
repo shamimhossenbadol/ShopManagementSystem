@@ -85,6 +85,32 @@
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
+
+  /* Hide number input spinners / up & down stepper buttons */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+/* Global fallback to ensure number stepper buttons are never rendered */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button,
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
 }
 
 .font-mono {

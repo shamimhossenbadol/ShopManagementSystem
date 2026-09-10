@@ -30,7 +30,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             id={inputId}
             ref={ref}
-            className={`w-full bg-transparent px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/40 rounded-xl ${
+            className={`w-full bg-transparent px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/40 rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
               leftIcon ? 'pl-1' : ''
             } ${rightIcon || rightAddon ? 'pr-2' : ''} ${className}`}
             {...props}

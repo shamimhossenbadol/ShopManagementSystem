@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS products (
     unit_id INT NOT NULL REFERENCES units(id),
     packaging_multiplier DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     tax_rate_id INT NOT NULL REFERENCES tax_rates(id),
-    tax_type tax_type_enum NOT NULL DEFAULT 'exclusive',
+    tax_type tax_type_enum NOT NULL DEFAULT 'inclusive',
     cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000, -- Weighted Average Cost
     wholesale_price DECIMAL(15,4),
     selling_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS customers (
     address TEXT,
     credit_limit DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     opening_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
+    loyalty_points INT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

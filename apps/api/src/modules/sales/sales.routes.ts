@@ -404,6 +404,19 @@ export async function salesRoutes(fastify: FastifyInstance) {
           [sale.id, invoiceNo, previousHash, currentHash, qrData]
         );
 
+        let customerInfo = null;
+        if (sale.customer_id) {
+          const custInfoRes = await client.query(
+            `SELECT id, name, phone, email, credit_limit,
+             COALESCE((SELECT balance FROM customer_ledger WHERE customer_id = $1 ORDER BY id DESC LIMIT 1), 0) as current_due
+             FROM customers WHERE id = $1`,
+            [sale.customer_id]
+          );
+          if (custInfoRes.rows.length > 0) {
+            customerInfo = custInfoRes.rows[0];
+          }
+        }
+
         return {
           sale,
           items: processedItems,
@@ -412,6 +425,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
           changeAmount,
           invoice: invoiceInsert.rows[0],
           qrData,
+          customer: customerInfo,
         };
       });
 

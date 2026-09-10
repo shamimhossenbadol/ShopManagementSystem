@@ -4,23 +4,25 @@ import { query, withTransaction } from '../../db/pool.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
 import { round2 } from '../../utils/financial.js';
 
+const emptyToNull = (val: unknown) => (typeof val === 'string' && val.trim() === '' ? null : val);
+
 const customerSchema = z.object({
   name: z.string().min(1),
   phone: z.string().min(5),
-  email: z.string().email().optional().nullable(),
-  vatNumber: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  creditLimit: z.number().min(0).default(1000),
-  openingBalance: z.number().min(0).default(0),
+  email: z.preprocess(emptyToNull, z.string().email().optional().nullable()),
+  vatNumber: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  address: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  creditLimit: z.coerce.number().min(0).default(1000),
+  openingBalance: z.coerce.number().min(0).default(0),
 });
 
 const updateCustomerSchema = z.object({
   name: z.string().min(1).optional(),
   phone: z.string().min(5).optional(),
-  email: z.string().email().optional().nullable(),
-  vatNumber: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  creditLimit: z.number().min(0).optional(),
+  email: z.preprocess(emptyToNull, z.string().email().optional().nullable()),
+  vatNumber: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  address: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  creditLimit: z.coerce.number().min(0).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -71,7 +73,8 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
 
     let sql = `
       SELECT 
-        c.id, c.name, c.phone, c.email, c.vat_number, c.credit_limit, c.loyalty_points, c.is_active,
+        c.id, c.name, c.phone, c.email, c.vat_number, c.credit_limit,
+        COALESCE(c.loyalty_points, 0) as loyalty_points, c.is_active,
         COALESCE((SELECT balance FROM customer_ledger WHERE customer_id = c.id ORDER BY id DESC LIMIT 1), 0) as current_due
       FROM customers c
       WHERE c.is_active = TRUE

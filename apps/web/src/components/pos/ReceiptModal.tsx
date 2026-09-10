@@ -35,7 +35,7 @@ export const formatReceiptDate = (date: Date | string | number | undefined | nul
 export async function printThermalReceipt(data: any, settings: any = {}) {
   if (!data) return;
 
-  const { sale, items, invoice, qrData, cashierName, payments, tenderedAmount, changeAmount } = data || {};
+  const { sale, items, invoice, qrData, cashierName, payments, tenderedAmount, changeAmount, customer } = data || {};
 
   // 1. Generate ZATCA QR Code Data URL if qrData is present
   let qrUrl = '';
@@ -112,6 +112,9 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       .double-divider { border-top: 1.5px solid #000000; border-bottom: 1.5px solid #000000; height: 2px; margin: 7px 0; }
       .row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: 12px; }
       .row-bold { display: flex; justify-content: space-between; align-items: baseline; margin: 3px 0; font-weight: 900; font-size: 13px; }
+      .row-total { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0; font-weight: 900; }
+      .row-total .total-label { font-size: 13.5px; font-weight: 900; }
+      .row-total .total-amount { font-size: 16px; font-weight: 900; }
       .item-row { margin: 4px 0; }
       .item-name { font-weight: 900; font-size: 12px; word-break: break-word; }
       .item-calc { display: flex; justify-content: space-between; font-size: 11.5px; margin-top: 1px; }
@@ -132,6 +135,10 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       <div class="row"><span>Invoice No:</span><span class="bold">${invoiceNo}</span></div>
       <div class="row"><span>Date & Time:</span><span>${invoiceDate}</span></div>
       <div class="row"><span>Cashier:</span><span class="bold">${cashier}</span></div>
+      ${customer && (customer.id !== 1 || (customer.name && !customer.name.toLowerCase().includes('walk-in'))) ? `
+      <div class="row"><span>Customer:</span><span class="bold">${customer.name}</span></div>
+      ${customer.phone ? `<div class="row"><span>Contact:</span><span>${customer.phone}</span></div>` : ''}
+      ` : ''}
 
       <div class="divider"></div>
       <div class="row bold" style="font-size: 11px; text-transform: uppercase;">
@@ -167,14 +174,19 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       <div class="row"><span>VAT:</span><span class="bold">${totalTax.toFixed(2)} SAR</span></div>
 
       <div class="double-divider"></div>
-      <div class="row-bold"><span>TOTAL AMOUNT:</span><span class="bold">${grandTotal.toFixed(2)} SAR</span></div>
+      <div class="row-total"><span class="total-label">TOTAL AMOUNT:</span><span class="total-amount">${grandTotal.toFixed(2)} SAR</span></div>
       <div class="double-divider"></div>
 
       <div class="row bold"><span>Customer Paid:</span><span class="bold">${totalTendered.toFixed(2)} SAR</span></div>
       ${cashPayment ? `<div class="row" style="font-size: 11px;"><span>- Cash Tendered:</span><span>${Number(cashPayment.amount || 0).toFixed(2)} SAR</span></div>` : ''}
       ${cardPayment ? `<div class="row" style="font-size: 11px;"><span>- Mada / Card:</span><span>${Number(cardPayment.amount || 0).toFixed(2)} SAR</span></div>` : ''}
       <div class="row-bold" style="font-size: 12.5px; margin-top: 3px; border-top: 1px dashed #000000; padding-top: 3px;"><span>Returnable / Change:</span><span class="bold">${calculatedChange.toFixed(2)} SAR</span></div>
-      ${dueAmount > 0 ? `<div class="row bold" style="font-size: 11px; color: #b91c1c;"><span>Customer Due:</span><span>${dueAmount.toFixed(2)} SAR</span></div>` : ''}
+      ${dueAmount > 0 ? `
+        <div class="row bold" style="font-size: 11.5px; color: #b91c1c; border-top: 1px dashed #000000; margin-top: 3px; padding-top: 2px;"><span>Customer Due (This Invoice):</span><span class="bold">${dueAmount.toFixed(2)} SAR</span></div>
+        ${customer?.current_due !== undefined ? `
+          <div class="row" style="font-size: 10.5px; color: #b91c1c;"><span>Total Customer Balance:</span><span class="bold">${Number(customer.current_due).toFixed(2)} SAR</span></div>
+        ` : ''}
+      ` : ''}
 
       ${qrUrl ? `
         <div class="qr-container">

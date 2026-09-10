@@ -183,6 +183,18 @@ async function runAutoMigrations() {
         ON CONFLICT (setting_key) DO NOTHING;
       `,
     },
+    {
+      name: 'Customers loyalty points column',
+      sql: `
+        ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points INT NOT NULL DEFAULT 0;
+      `,
+    },
+    {
+      name: 'Products default tax type to inclusive',
+      sql: `
+        ALTER TABLE products ALTER COLUMN tax_type SET DEFAULT 'inclusive';
+      `,
+    },
   ];
 
   for (const step of migrationSteps) {

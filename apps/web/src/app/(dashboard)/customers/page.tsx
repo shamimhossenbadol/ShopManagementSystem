@@ -59,9 +59,19 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     setTableLoading(true);
-    const res = await apiRequest('/ledgers/customers');
-    if (res.success && res.data) setCustomers(res.data);
-    setTableLoading(false);
+    setErrorMsg(null);
+    try {
+      const res = await apiRequest('/ledgers/customers');
+      if (res.success && res.data) {
+        setCustomers(res.data);
+      } else {
+        setErrorMsg(res.message || 'Failed to load customer list.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to load customer list.');
+    } finally {
+      setTableLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -77,12 +87,27 @@ export default function CustomersPage() {
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!custForm.name.trim() || !custForm.phone.trim()) {
+      setErrorMsg('Customer name and phone number are required.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
+    const payload = {
+      name: custForm.name.trim(),
+      phone: custForm.phone.trim(),
+      email: custForm.email.trim() || null,
+      vatNumber: custForm.vatNumber.trim() || null,
+      address: custForm.address.trim() || null,
+      creditLimit: Number(custForm.creditLimit || 1000),
+      openingBalance: Number(custForm.openingBalance || 0),
+    };
+
     const res = await apiRequest('/ledgers/customers', {
       method: 'POST',
-      body: JSON.stringify(custForm),
+      body: JSON.stringify(payload),
     });
 
     setLoading(false);

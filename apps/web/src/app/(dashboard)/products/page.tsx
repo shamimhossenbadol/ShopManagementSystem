@@ -108,7 +108,7 @@ export default function ProductsPage() {
     hasExpiry: false,
     isWeighable: false,
     isQuickPlu: false,
-    taxType: 'exclusive',
+    taxType: 'inclusive',
   });
 
   const loadData = async () => {
@@ -184,7 +184,7 @@ export default function ProductsPage() {
       hasExpiry: false,
       isWeighable: false,
       isQuickPlu: false,
-      taxType: 'exclusive',
+      taxType: 'inclusive',
     });
     setImagePreview(null);
     setImageFile(null);

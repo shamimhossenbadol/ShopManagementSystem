@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
-interface Customer {
+export interface Customer {
   id: number;
   name: string;
   phone?: string;
@@ -36,7 +36,7 @@ interface Customer {
   isWalkIn?: boolean;
 }
 
-const DEFAULT_WALK_IN: Customer = {
+export const DEFAULT_WALK_IN: Customer = {
   id: 1,
   name: 'Walk-in Customer',
   phone: '0000000000',
@@ -48,9 +48,12 @@ const DEFAULT_WALK_IN: Customer = {
 interface TenderModalProps {
   totalAmount: number;
   customerName?: string;
+  initialCustomer?: Customer;
+  onCustomerChange?: (customer: Customer) => void;
   onConfirm: (
     payments: Array<{ paymentMethodId: number; amount: number; reference?: string }>,
-    customerId?: number
+    customerId?: number,
+    customer?: Customer
   ) => void;
   onClose: () => void;
   loading: boolean;
@@ -99,6 +102,8 @@ function getSmartSaudiPresets(total: number): number[] {
 
 export default function TenderModal({
   totalAmount,
+  initialCustomer,
+  onCustomerChange,
   onConfirm,
   onClose,
   loading,
@@ -106,7 +111,13 @@ export default function TenderModal({
   const { settings, formatCurrency, fontSizeScale } = useSettings();
 
   // Active customer state
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(DEFAULT_WALK_IN);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(initialCustomer || DEFAULT_WALK_IN);
+
+  useEffect(() => {
+    if (initialCustomer) {
+      setSelectedCustomer(initialCustomer);
+    }
+  }, [initialCustomer]);
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
@@ -370,6 +381,7 @@ export default function TenderModal({
           isWalkIn: false,
         };
         setSelectedCustomer(newCust);
+        onCustomerChange?.(newCust);
         setIsRegistering(false);
         setIsSearchingCustomer(false);
         setRegForm({ name: '', phone: '', email: '', creditLimit: 1000 });
@@ -404,7 +416,7 @@ export default function TenderModal({
       // 100% Credit sale: payments is empty [], whole amount is due_amount
     }
 
-    onConfirm(payments, selectedCustomer.id);
+    onConfirm(payments, selectedCustomer.id, selectedCustomer);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -542,6 +554,7 @@ export default function TenderModal({
                       type="button"
                       onClick={() => {
                         setSelectedCustomer(DEFAULT_WALK_IN);
+                        onCustomerChange?.(DEFAULT_WALK_IN);
                         if (activeMethod === 'credit') {
                           handleSelectMethod('cash');
                         }
@@ -594,6 +607,7 @@ export default function TenderModal({
                         key={cust.id}
                         onClick={() => {
                           setSelectedCustomer(cust);
+                          onCustomerChange?.(cust);
                           setIsSearchingCustomer(false);
                           setSearchQuery('');
                         }}

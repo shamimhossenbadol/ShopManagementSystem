@@ -7,7 +7,6 @@ import { useSettings } from '@/hooks/useSettings';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import SwitchToPosModal from '@/components/dashboard/SwitchToPosModal';
 import {
   TrendingUp,
   Receipt,
@@ -16,26 +15,16 @@ import {
   Users,
   Building2,
   DollarSign,
-  ShoppingCart,
-  PackagePlus,
-  Truck,
-  Percent,
-  Calendar,
-  Settings as SettingsIcon,
   Flame,
-  Clock,
   ArrowRight,
   ShieldCheck,
-  RotateCcw,
-  Sparkles,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { formatCurrency, settings } = useSettings();
+  const { formatCurrency } = useSettings();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isSwitchToPosOpen, setIsSwitchToPosOpen] = useState(false);
 
   useEffect(() => {
     async function loadStats() {
@@ -67,102 +56,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 dark:from-slate-900 dark:via-blue-950 dark:to-slate-900 p-6 md:p-8 text-white shadow-xl">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/30 px-2.5 py-0.5 text-[11px] font-bold text-blue-200 backdrop-blur-sm border border-blue-400/20">
-                <Sparkles className="h-3 w-3 text-sky-300" />
-                Live Business Intelligence
-              </span>
-              <span className="text-xs font-mono text-blue-300/80">AST Timezone (UTC+3)</span>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
-              {settings.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET'}
-            </h1>
-            <p className="text-xs md:text-sm text-blue-100/80 max-w-2xl font-medium">
-              Real-time POS transaction throughput, perpetual Weighted Average Cost (WAC) calculations, cash shift reconciliation, and ZATCA compliance.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              variant="success"
-              size="pos"
-              onClick={() => setIsSwitchToPosOpen(true)}
-              leftIcon={<ShoppingCart className="h-5 w-5" />}
-              className="shadow-lg shadow-emerald-900/30"
-            >
-              Launch POS Terminal
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Launchpads */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <button
-          onClick={() => setIsSwitchToPosOpen(true)}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-blue-50 dark:bg-sky-950/50 p-2.5 text-blue-700 dark:text-sky-400 group-hover:scale-110 transition">
-            <ShoppingCart className="h-5 w-5" />
-          </div>
-          <span>POS Terminal</span>
-        </button>
-
-        <button
-          onClick={() => router.push('/products')}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-purple-50 dark:bg-purple-950/50 p-2.5 text-purple-700 dark:text-purple-400 group-hover:scale-110 transition">
-            <PackagePlus className="h-5 w-5" />
-          </div>
-          <span>Product Catalog</span>
-        </button>
-
-        <button
-          onClick={() => router.push('/batches')}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/50 p-2.5 text-amber-700 dark:text-amber-400 group-hover:scale-110 transition">
-            <Calendar className="h-5 w-5" />
-          </div>
-          <span>Batches & Expiry</span>
-        </button>
-
-        <button
-          onClick={() => router.push('/promotions')}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 text-emerald-700 dark:text-emerald-400 group-hover:scale-110 transition">
-            <Percent className="h-5 w-5" />
-          </div>
-          <span>Deals Engine</span>
-        </button>
-
-        <button
-          onClick={() => router.push('/purchases')}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950/50 p-2.5 text-cyan-700 dark:text-cyan-400 group-hover:scale-110 transition">
-            <Truck className="h-5 w-5" />
-          </div>
-          <span>Procurement</span>
-        </button>
-
-        <button
-          onClick={() => router.push('/settings')}
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover-lift hover:border-blue-500 hover:text-blue-600 dark:hover:text-sky-400 transition group"
-        >
-          <div className="rounded-xl bg-rose-50 dark:bg-rose-950/50 p-2.5 text-rose-700 dark:text-rose-400 group-hover:scale-110 transition">
-            <SettingsIcon className="h-5 w-5" />
-          </div>
-          <span>Customizer</span>
-        </button>
-      </div>
-
       {/* 8 Core Real-time KPI Matrix */}
       <div>
         <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 px-1">
@@ -386,11 +279,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-
-      <SwitchToPosModal
-        isOpen={isSwitchToPosOpen}
-        onClose={() => setIsSwitchToPosOpen(false)}
-      />
     </div>
   );
 }

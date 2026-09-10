@@ -8,7 +8,7 @@ import { calculateLineVat, round2 } from '@/lib/financial';
 import { useSettings } from '@/hooks/useSettings';
 import { useSessionSync } from '@/hooks/useSessionSync';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
-import TenderModal from '@/components/pos/TenderModal';
+import TenderModal, { Customer, DEFAULT_WALK_IN } from '@/components/pos/TenderModal';
 import { printThermalReceipt } from '@/components/pos/ReceiptModal';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -25,6 +25,8 @@ import {
   LogOut,
   LayoutDashboard,
   User,
+  Users,
+  UserCheck,
   AlertCircle,
   Clock,
   Sun,
@@ -92,6 +94,7 @@ export default function PosTerminalPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [user, setUser] = useState<any>(null);
   const [activeShift, setActiveShift] = useState<any>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer>(DEFAULT_WALK_IN);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -875,8 +878,8 @@ export default function PosTerminalPage() {
       const res = await apiRequest('/sales/hold', {
         method: 'POST',
         body: JSON.stringify({
-          customerId: 1,
-          holdNote: 'Parked Sale',
+          customerId: selectedCustomer.id || 1,
+          holdNote: selectedCustomer.isWalkIn ? 'Parked Sale' : `Parked for ${selectedCustomer.name}`,
           items: cart.map((i) => ({
             productId: i.productId,
             quantity: i.quantity,
@@ -888,6 +891,7 @@ export default function PosTerminalPage() {
 
       if (res.success) {
         setCart([]);
+        setSelectedCustomer(DEFAULT_WALK_IN);
         setErrorMsg(null);
         await fetchHeldSales();
         return;
@@ -900,12 +904,14 @@ export default function PosTerminalPage() {
       reference: holdRef,
       timestamp: new Date().toISOString(),
       userId: user?.id,
+      customer: selectedCustomer,
       cart,
     };
     const currentList = JSON.parse(localStorage.getItem('pos_held_sales') || '[]');
     currentList.push(held);
     localStorage.setItem('pos_held_sales', JSON.stringify(currentList));
     setCart([]);
+    setSelectedCustomer(DEFAULT_WALK_IN);
     setErrorMsg(null);
     await fetchHeldSales();
   };
@@ -921,6 +927,17 @@ export default function PosTerminalPage() {
     const item = heldSalesList[index];
     if (item) {
       setCart(item.cart);
+      if (item.customer) {
+        setSelectedCustomer(item.customer);
+      } else if (item.customerId && Number(item.customerId) !== 1) {
+        setSelectedCustomer({
+          id: Number(item.customerId),
+          name: item.customerName || `Customer #${item.customerId}`,
+          isWalkIn: false,
+        });
+      } else {
+        setSelectedCustomer(DEFAULT_WALK_IN);
+      }
       if (item.isServer && item.id) {
         await apiRequest(`/sales/hold/${item.id}`, { method: 'DELETE' }).catch(() => {});
       }
@@ -1032,7 +1049,8 @@ export default function PosTerminalPage() {
   // Finalize Sale Checkout
   const handleFinalizeSale = async (
     payments: Array<{ paymentMethodId: number; amount: number; reference?: string }>,
-    customerId: number = 1
+    customerId: number = 1,
+    customerObj?: Customer
   ) => {
     if (!activeShift) {
       setIsOpenShiftModal(true);
@@ -1101,6 +1119,7 @@ export default function PosTerminalPage() {
 
       const paidSum = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
       const saleGrand = Number(res.data?.sale?.grand_total ?? totals.grandTotal);
+      const activeCustomer = res.data?.customer || customerObj || (customerId === selectedCustomer.id ? selectedCustomer : undefined);
       const receiptPayload = {
         sale: res.data.sale,
         items: res.data.items || cart,
@@ -1110,11 +1129,13 @@ export default function PosTerminalPage() {
         invoice: res.data.invoice,
         qrData: res.data.qrData,
         cashierName: formatTwoWords(user?.fullName || user?.full_name || user?.username),
+        customer: activeCustomer,
       };
 
       setCompletedSaleData(receiptPayload);
       setIsTenderOpen(false);
       setCart([]);
+      setSelectedCustomer(DEFAULT_WALK_IN);
 
       // Directly open native printer dialog (no preview dialog)
       printThermalReceipt(receiptPayload, settings);
@@ -1185,7 +1206,9 @@ export default function PosTerminalPage() {
       {isTenderOpen && (
         <TenderModal
           totalAmount={totals.grandTotal}
-          onConfirm={(payments, custId) => handleFinalizeSale(payments, custId)}
+          initialCustomer={selectedCustomer}
+          onCustomerChange={(c) => setSelectedCustomer(c)}
+          onConfirm={(payments, custId, custObj) => handleFinalizeSale(payments, custId, custObj)}
           onClose={() => setIsTenderOpen(false)}
           loading={loadingPay}
         />

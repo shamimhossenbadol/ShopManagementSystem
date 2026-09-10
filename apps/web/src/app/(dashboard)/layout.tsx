@@ -7,10 +7,8 @@ import { apiRequest, notifyAuthLogout } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
 import { useSessionSync } from '@/hooks/useSessionSync';
 import { GlobalSearchPalette } from '@/components/ui/GlobalSearchPalette';
-import SwitchToPosModal from '@/components/dashboard/SwitchToPosModal';
 import {
   LayoutDashboard,
-  ShoppingCart,
   Package,
   CalendarDays,
   Percent,
@@ -51,7 +49,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupName: 'Operations',
     items: [
-      { label: 'POS Terminal', href: '/pos', icon: ShoppingCart },
       { label: 'Manager Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Cash Drawer Shifts', href: '/cash', icon: Banknote },
       { label: 'Returns & Credit Notes', href: '/returns', icon: RotateCcw },
@@ -96,7 +93,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useSessionSync();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isSwitchToPosOpen, setIsSwitchToPosOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
   const { settings, theme, toggleTheme, fontSizeScale, setFontSizeScale, formatTime } = useSettings();
 
@@ -242,12 +238,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={(e) => {
+                    onClick={() => {
                       setMobileMenuOpen(false);
-                      if (item.href === '/pos' && user?.role === 'manager') {
-                        e.preventDefault();
-                        setIsSwitchToPosOpen(true);
-                      }
                     }}
                     className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
                       isActive
@@ -301,12 +293,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main App Container */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Navbar */}
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 md:px-6 shadow-sm z-10">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-4 md:px-6 shadow-xs z-10">
           {/* Left: Mobile Menu Toggle & Global Search Trigger */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-slate-500 hover:text-slate-700 rounded-xl border border-slate-200 dark:border-slate-700"
+              className="lg:hidden flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs transition-all active:scale-95"
+              aria-label="Open mobile menu"
             >
               <Menu className="h-4 w-4" />
             </button>
@@ -314,32 +307,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {/* Quick Command Palette Button */}
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:border-blue-500 hover:text-slate-700 dark:hover:text-slate-200 transition sm:w-64"
+              className="group flex h-9 w-44 sm:w-72 md:w-80 items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 text-xs text-slate-500 dark:text-slate-400 hover:border-blue-500/50 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 shadow-2xs transition-all"
             >
-              <Search className="h-3.5 w-3.5 text-slate-400" />
-              <span className="hidden sm:inline">Search (Products, SKU, Pages)...</span>
-              <span className="sm:hidden">Search...</span>
-              <span className="ml-auto hidden rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 sm:inline">
-                Ctrl+K
+              <Search className="h-4 w-4 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-sky-400 transition-colors" />
+              <span className="hidden sm:inline font-medium text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors truncate">
+                Search products, SKUs, pages...
               </span>
+              <span className="sm:hidden font-medium text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
+                Search...
+              </span>
+              <kbd className="ml-auto hidden rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 shadow-2xs sm:inline-flex items-center gap-0.5">
+                Ctrl+K
+              </kbd>
             </button>
           </div>
 
-          {/* Right Controls: Shift Status, AST Clock, UI Scale, Theme Toggle, POS CTA */}
-          <div className="flex items-center gap-2.5">
+          {/* Right Controls: Shift Status, AST Clock, UI Scale, Theme Toggle */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Shift Status Indicator */}
             {activeShift ? (
               <Link
                 href="/cash"
-                className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 transition"
+                className="hidden sm:inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800/60 px-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/90 dark:hover:bg-emerald-900/50 shadow-2xs transition-all"
+                title="Active Cash Drawer Shift"
               >
-                <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500 animate-pulse" />
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
                 <span>Shift #{activeShift.id} Active</span>
               </Link>
             ) : (
               <Link
                 href="/cash"
-                className="hidden sm:flex items-center gap-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-1 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100 transition"
+                className="hidden sm:inline-flex h-9 items-center gap-2 rounded-xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/90 dark:border-amber-800/60 px-3 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100/90 dark:hover:bg-amber-900/50 shadow-2xs transition-all"
+                title="No Open Cash Drawer Shift"
               >
                 <Circle className="h-2 w-2 fill-amber-500 text-amber-500" />
                 <span>No Open Shift</span>
@@ -347,48 +349,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
 
             {/* AST Real-time Clock */}
-            <div className="hidden md:flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-              <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400" />
-              <span>{currentTime || '00:00:00'} AST</span>
+            <div className="hidden md:inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 shadow-2xs">
+              <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400 shrink-0" />
+              <span className="tracking-tight">{currentTime || '00:00:00'} AST</span>
             </div>
 
-            {/* UI Font Scale Switcher (100% Standard / 110% Comfortable) */}
+            {/* UI Font Scale Switcher */}
             <button
               onClick={toggleScale}
               title={`Toggle UI Scale (${fontSizeScale || '100%'} currently)`}
-              className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-800 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs transition-all active:scale-95"
             >
-              <Type className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400" />
-              <span className="font-mono text-[11px]">{fontSizeScale || '100%'}</span>
+              <Type className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400 shrink-0" />
+              <span className="font-mono text-[11px] font-bold">{fontSizeScale || '100%'}</span>
             </button>
 
             {/* Theme Toggle (Light / Dark) */}
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs transition-all active:scale-95"
             >
               {theme === 'dark' ? (
                 <Sun className="h-4 w-4 text-amber-400" />
               ) : (
                 <Moon className="h-4 w-4 text-blue-600" />
               )}
-            </button>
-
-            {/* POS Fast Terminal Launcher */}
-            <button
-              type="button"
-              onClick={() => {
-                if (user?.role === 'manager') {
-                  setIsSwitchToPosOpen(true);
-                } else {
-                  router.push('/pos');
-                }
-              }}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-700 dark:bg-sky-500 hover:bg-blue-800 dark:hover:bg-sky-400 px-3.5 py-1.5 text-xs font-bold text-white dark:text-slate-950 shadow-sm transition"
-            >
-              <ShoppingCart className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">POS Terminal</span>
             </button>
           </div>
         </header>
@@ -398,12 +384,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>
       </div>
-
-      {/* Manager -> POS Role Demotion Warning Modal */}
-      <SwitchToPosModal
-        isOpen={isSwitchToPosOpen}
-        onClose={() => setIsSwitchToPosOpen(false)}
-      />
     </div>
   );
 }

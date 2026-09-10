@@ -17,7 +17,7 @@ const productSchema = z.object({
   unitId: z.coerce.number().default(1),
   packagingMultiplier: z.coerce.number().min(0.01).default(1.00),
   taxRateId: z.coerce.number().default(1),
-  taxType: z.enum(['inclusive', 'exclusive']).default('exclusive'),
+  taxType: z.enum(['inclusive', 'exclusive']).default('inclusive'),
   costPrice: z.coerce.number().min(0).default(0),
   wholesalePrice: z.coerce.number().min(0).optional().nullable(),
   sellingPrice: z.coerce.number().min(0),

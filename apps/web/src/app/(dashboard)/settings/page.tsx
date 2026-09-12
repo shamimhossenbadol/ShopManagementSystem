@@ -578,6 +578,17 @@ export default function SettingsCustomizerPage() {
                 onChange={(e) => handleInputChange('cash_drawer_kick_code', e.target.value)}
                 placeholder="ESC/POS Pulse Command"
               />
+
+              <Select
+                label="Default POS Payment Method"
+                value={formData.pos_default_payment_method || 'card'}
+                onChange={(e) => handleInputChange('pos_default_payment_method', e.target.value)}
+                helperText="Initial active tender mode pre-selected when cashier opens POS payment dialog"
+              >
+                <option value="card">Mada / Card (Recommended Default)</option>
+                <option value="cash">Cash Tender</option>
+                <option value="split">Split Tender (50/50)</option>
+              </Select>
             </div>
           </div>
         )}

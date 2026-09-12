@@ -40,6 +40,7 @@ export interface ShopSettings {
   barcode_audio_beep?: string;
   allow_negative_stock?: string;
   quick_tender_presets?: string;
+  pos_default_payment_method?: 'card' | 'cash' | 'split';
 
   [key: string]: any;
 }
@@ -87,6 +88,7 @@ const defaultSettings: ShopSettings = {
   barcode_audio_beep: 'true',
   allow_negative_stock: 'false',
   quick_tender_presets: '50,100,200,500',
+  pos_default_payment_method: 'card',
 };
 
 const SettingsContext = createContext<SettingsContextType>({

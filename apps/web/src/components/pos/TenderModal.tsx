@@ -59,45 +59,150 @@ interface TenderModalProps {
   loading: boolean;
 }
 
+export interface QuickPreset {
+  amount: number;
+  type: 'less' | 'exact' | 'large';
+}
+
 /**
- * Smart Saudi Riyal note & round-figure presets generator
- * E.g., for 73 SAR -> [73, 75, 80, 100, 200, 500]
+ * Generates 3 clean, proportional amounts strictly less than the exact total
  */
-function getSmartSaudiPresets(total: number): number[] {
-  if (total <= 0) return [10, 20, 50, 100, 200, 500];
-  const presets = new Set<number>();
+function get3LessAmounts(exact: number): number[] {
+  if (exact <= 1) return [0.25, 0.5, 0.75];
 
-  const exact = Math.round(total * 100) / 100;
-  presets.add(exact);
+  let step = 1;
+  if (exact >= 1000) step = 100;
+  else if (exact >= 200) step = 50;
+  else if (exact >= 50) step = 10;
+  else if (exact >= 10) step = 5;
+  else if (exact >= 3) step = 1;
+  else step = 0.25;
 
-  // Next multiple of 5
-  const next5 = Math.ceil(total / 5) * 5;
-  if (next5 > total) presets.add(next5);
+  const raw25 = Math.round((exact * 0.25) / step) * step;
+  const raw50 = Math.round((exact * 0.5) / step) * step;
+  const raw75 = Math.round((exact * 0.75) / step) * step;
 
-  // Next multiple of 10
-  const next10 = Math.ceil(total / 10) * 10;
-  if (next10 > total) presets.add(next10);
+  const candidates = new Set<number>();
+  if (raw25 > 0 && raw25 < exact) candidates.add(raw25);
+  if (raw50 > 0 && raw50 < exact) candidates.add(raw50);
+  if (raw75 > 0 && raw75 < exact) candidates.add(raw75);
 
-  // Standard Saudi Banknotes
   const saudiBanknotes = [5, 10, 20, 50, 100, 200, 500];
+  for (const n of saudiBanknotes) {
+    if (n < exact) candidates.add(n);
+  }
+
+  const sorted = Array.from(candidates).filter((n) => n < exact && n > 0).sort((a, b) => a - b);
+
+  if (sorted.length >= 3) {
+    const idx1 = Math.min(sorted.length - 3, Math.floor(sorted.length * 0.25));
+    const idx2 = Math.min(sorted.length - 2, Math.max(idx1 + 1, Math.floor(sorted.length * 0.6)));
+    const idx3 = sorted.length - 1;
+    return [sorted[idx1], sorted[idx2], sorted[idx3]];
+  }
+
+  const v3 = Math.max(0.01, Math.round(exact * 0.75 * 100) / 100);
+  const v2 = Math.max(0.01, Math.round(exact * 0.5 * 100) / 100);
+  const v1 = Math.max(0.01, Math.round(exact * 0.25 * 100) / 100);
+  return [v1, v2, v3];
+}
+
+/**
+ * Generates 4 clean, ascending amounts strictly greater than the exact total
+ */
+function get4LargeAmounts(exact: number): number[] {
+  const presets = new Set<number>();
+  const saudiBanknotes = [5, 10, 20, 50, 100, 200, 500];
+
   for (const note of saudiBanknotes) {
-    if (note > total) {
-      presets.add(note);
+    if (note > exact) presets.add(note);
+  }
+
+  if (exact < 50) {
+    const next5 = Math.ceil((exact + 0.01) / 5) * 5;
+    if (next5 > exact) presets.add(next5);
+    const next10 = Math.ceil((exact + 0.01) / 10) * 10;
+    if (next10 > exact) presets.add(next10);
+    const next20 = Math.ceil((exact + 0.01) / 20) * 20;
+    if (next20 > exact) presets.add(next20);
+    const next50 = Math.ceil((exact + 0.01) / 50) * 50;
+    if (next50 > exact) presets.add(next50);
+  } else if (exact < 100) {
+    const next10 = Math.ceil((exact + 0.01) / 10) * 10;
+    if (next10 > exact) presets.add(next10);
+    const next50 = Math.ceil((exact + 0.01) / 50) * 50;
+    if (next50 > exact) presets.add(next50);
+    const next100 = Math.ceil((exact + 0.01) / 100) * 100;
+    if (next100 > exact) presets.add(next100);
+  } else if (exact < 500) {
+    const next50 = Math.ceil((exact + 0.01) / 50) * 50;
+    if (next50 > exact) presets.add(next50);
+    const next100 = Math.ceil((exact + 0.01) / 100) * 100;
+    if (next100 > exact) presets.add(next100);
+    const next200 = Math.ceil((exact + 0.01) / 200) * 200;
+    if (next200 > exact) presets.add(next200);
+    const next500 = Math.ceil((exact + 0.01) / 500) * 500;
+    if (next500 > exact) presets.add(next500);
+  } else {
+    const next100 = Math.ceil((exact + 0.01) / 100) * 100;
+    if (next100 > exact) presets.add(next100);
+    const next500 = Math.ceil((exact + 0.01) / 500) * 500;
+    if (next500 > exact) presets.add(next500);
+    const next1000 = Math.ceil((exact + 0.01) / 1000) * 1000;
+    if (next1000 > exact) presets.add(next1000);
+  }
+
+  const sortedHigher = Array.from(presets)
+    .filter((v) => v > exact)
+    .sort((a, b) => a - b);
+
+  const additional: number[] = [];
+  for (const v of sortedHigher) {
+    if (!additional.includes(v)) {
+      additional.push(v);
+      if (additional.length === 4) break;
     }
   }
 
-  // Multiples for bills larger than 500
-  if (total >= 500) {
-    const next100 = Math.ceil(total / 100) * 100;
-    if (next100 > total) presets.add(next100);
-    const next500 = Math.ceil(total / 500) * 500;
-    if (next500 > total) presets.add(next500);
+  let step = exact >= 500 ? 500 : exact >= 100 ? 100 : exact >= 20 ? 50 : 10;
+  let candidate = (additional.length > 0 ? additional[additional.length - 1] : Math.ceil(exact)) + step;
+  while (additional.length < 4) {
+    candidate = Math.ceil(candidate / step) * step;
+    if (!additional.includes(candidate) && candidate > exact) {
+      additional.push(candidate);
+    }
+    candidate += step;
   }
 
-  return Array.from(presets)
-    .filter((v) => v >= total)
-    .sort((a, b) => a - b)
-    .slice(0, 6);
+  return additional.slice(0, 4);
+}
+
+/**
+ * Smart Saudi Riyal note & round-figure presets generator
+ * Guarantees exactly 8 presets: 3 less, 1 exact, and 4 large
+ */
+function getSmart8Presets(total: number): QuickPreset[] {
+  if (total <= 0) {
+    return [
+      { amount: 1, type: 'less' },
+      { amount: 2, type: 'less' },
+      { amount: 5, type: 'less' },
+      { amount: 10, type: 'exact' },
+      { amount: 20, type: 'large' },
+      { amount: 50, type: 'large' },
+      { amount: 100, type: 'large' },
+      { amount: 200, type: 'large' },
+    ];
+  }
+  const exact = Math.round(total * 100) / 100;
+  const less = get3LessAmounts(exact);
+  const large = get4LargeAmounts(exact);
+
+  return [
+    ...less.map((amt) => ({ amount: amt, type: 'less' as const })),
+    { amount: exact, type: 'exact' as const },
+    ...large.map((amt) => ({ amount: amt, type: 'large' as const })),
+  ];
 }
 
 export default function TenderModal({
@@ -134,28 +239,58 @@ export default function TenderModal({
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
 
-  // Payment states
-  const [activeMethod, setActiveMethod] = useState<'cash' | 'card' | 'split' | 'credit'>('cash');
-  const [cashAmount, setCashAmount] = useState<number>(totalAmount);
-  const [cardAmount, setCardAmount] = useState<number>(0);
-  const [splitDueAmount, setSplitDueAmount] = useState<number>(0);
-  const [cardRef, setCardRef] = useState<string>('');
+  // Payment states - initialized from manager setting (default: card)
+  const defaultMethod = (settings.pos_default_payment_method as 'cash' | 'card' | 'split') || 'card';
+  const [activeMethod, setActiveMethod] = useState<'cash' | 'card' | 'split' | 'credit'>(defaultMethod);
+  const [cashAmount, setCashAmount] = useState<number>(() => {
+    if (defaultMethod === 'card') return 0;
+    if (defaultMethod === 'split') return Math.round((totalAmount / 2) * 100) / 100;
+    return totalAmount;
+  });
+  const [cardAmount, setCardAmount] = useState<number>(() => {
+    if (defaultMethod === 'card') return totalAmount;
+    if (defaultMethod === 'split') {
+      const half = Math.round((totalAmount / 2) * 100) / 100;
+      return Math.round((totalAmount - half) * 100) / 100;
+    }
+    return 0;
+  });
 
   // Refs for auto-focusing
   const cashInputRef = useRef<HTMLInputElement>(null);
   const cardInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Initial auto-focus on cash tender received input
+  // Synchronize payment method from settings and amount on mount or settings change
+  useEffect(() => {
+    const def = (settings.pos_default_payment_method as 'cash' | 'card' | 'split') || 'card';
+    setActiveMethod(def);
+    if (def === 'card') {
+      setCashAmount(0);
+      setCardAmount(totalAmount);
+    } else if (def === 'cash') {
+      setCashAmount(totalAmount);
+      setCardAmount(0);
+    } else if (def === 'split') {
+      const half = Math.round((totalAmount / 2) * 100) / 100;
+      setCashAmount(half);
+      setCardAmount(Math.round((totalAmount - half) * 100) / 100);
+    }
+  }, [settings.pos_default_payment_method, totalAmount]);
+
+  // Auto-focus input when activeMethod changes
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (cashInputRef.current && (activeMethod === 'cash' || activeMethod === 'split')) {
+      if (activeMethod === 'card' && cardInputRef.current) {
+        cardInputRef.current.focus();
+        cardInputRef.current.select();
+      } else if (cashInputRef.current && (activeMethod === 'cash' || activeMethod === 'split')) {
         cashInputRef.current.focus();
         cashInputRef.current.select();
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, []);
+  }, [activeMethod]);
 
   // When switching to search view, focus search input
   useEffect(() => {
@@ -166,19 +301,16 @@ export default function TenderModal({
     }
   }, [isSearchingCustomer]);
 
-  // Customer search with debounce
+  // Customer search with debounce & initial load
   useEffect(() => {
     if (!isSearchingCustomer) return;
     const q = searchQuery.trim();
-    if (!q) {
-      setSearchResults([]);
-      return;
-    }
 
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await apiRequest(`/ledgers/customers?search=${encodeURIComponent(q)}`);
+        const url = q ? `/ledgers/customers?search=${encodeURIComponent(q)}` : `/ledgers/customers`;
+        const res = await apiRequest(url);
         if (res.success && Array.isArray(res.data)) {
           // Filter out default walk-in from search list
           setSearchResults(
@@ -193,13 +325,13 @@ export default function TenderModal({
       } finally {
         setIsSearching(false);
       }
-    }, 250);
+    }, q ? 200 : 0);
 
     return () => clearTimeout(timer);
   }, [searchQuery, isSearchingCustomer]);
 
-  // Quick preset values based on total
-  const smartPresets = getSmartSaudiPresets(totalAmount);
+  // Quick preset values based on total (3 less, 1 exact, 4 large)
+  const smartPresets = getSmart8Presets(totalAmount);
 
   // Method switcher
   const handleSelectMethod = (m: 'cash' | 'card' | 'split' | 'credit') => {
@@ -212,7 +344,6 @@ export default function TenderModal({
     if (m === 'cash') {
       setCashAmount(totalAmount);
       setCardAmount(0);
-      setSplitDueAmount(0);
       setTimeout(() => {
         cashInputRef.current?.focus();
         cashInputRef.current?.select();
@@ -220,7 +351,6 @@ export default function TenderModal({
     } else if (m === 'card') {
       setCashAmount(0);
       setCardAmount(totalAmount);
-      setSplitDueAmount(0);
       setTimeout(() => {
         cardInputRef.current?.focus();
         cardInputRef.current?.select();
@@ -228,18 +358,11 @@ export default function TenderModal({
     } else if (m === 'credit') {
       setCashAmount(0);
       setCardAmount(0);
-      setSplitDueAmount(totalAmount);
     } else {
-      // Split mode: Keep existing cashAmount if already specified, fill remainder to card
-      const currentCash = Number(cashAmount || 0);
-      if (currentCash > 0 && currentCash < totalAmount) {
-        setCardAmount(Math.round((totalAmount - currentCash) * 100) / 100);
-      } else {
-        const half = Math.round((totalAmount / 2) * 100) / 100;
-        setCashAmount(half);
-        setCardAmount(Math.round((totalAmount - half) * 100) / 100);
-      }
-      setSplitDueAmount(0);
+      // Split mode: always 50/50 default
+      const half = Math.round((totalAmount / 2) * 100) / 100;
+      setCashAmount(half);
+      setCardAmount(Math.round((totalAmount - half) * 100) / 100);
       setTimeout(() => {
         cashInputRef.current?.focus();
         cashInputRef.current?.select();
@@ -251,16 +374,36 @@ export default function TenderModal({
     setActiveMethod('cash');
     setCashAmount(amt);
     setCardAmount(0);
-    setSplitDueAmount(0);
     if (cashInputRef.current) {
       cashInputRef.current.focus();
     }
   };
 
+  const handleQuickCard = (amt: number) => {
+    setActiveMethod('card');
+    setCardAmount(amt);
+    setCashAmount(0);
+    if (cardInputRef.current) {
+      cardInputRef.current.focus();
+    }
+  };
+
+  // Synchronized Split mode adjustments (maintain full payment policy at all times)
+  const handleSplitCashChange = (val: number) => {
+    setCashAmount(val);
+    const remainder = Math.max(0, Math.round((totalAmount - val) * 100) / 100);
+    setCardAmount(remainder);
+  };
+
+  const handleSplitCardChange = (val: number) => {
+    setCardAmount(val);
+    const remainder = Math.max(0, Math.round((totalAmount - val) * 100) / 100);
+    setCashAmount(remainder);
+  };
+
   // Calculations
   const numCash = Number(cashAmount || 0);
   const numCard = Number(cardAmount || 0);
-  const numDue = selectedCustomer.isWalkIn ? 0 : Number(splitDueAmount || 0);
 
   let totalTendered = 0;
   if (activeMethod === 'cash') {
@@ -268,30 +411,32 @@ export default function TenderModal({
   } else if (activeMethod === 'card') {
     totalTendered = numCard;
   } else if (activeMethod === 'split') {
-    totalTendered = numCash + numCard + numDue;
+    totalTendered = numCash + numCard;
   } else if (activeMethod === 'credit') {
-    totalTendered = totalAmount;
+    // In 100% credit (Customer Due), customer pays 0 upfront; full bill is due
+    totalTendered = 0;
   }
 
   const changeDue =
     activeMethod === 'cash'
       ? Math.max(0, Math.round((numCash - totalAmount) * 100) / 100)
+      : activeMethod === 'card'
+      ? Math.max(0, Math.round((numCard - totalAmount) * 100) / 100)
       : activeMethod === 'split'
       ? Math.max(0, Math.round((numCash + numCard - totalAmount) * 100) / 100)
       : 0;
 
   const roundedTotal = Math.round(totalAmount * 100) / 100;
-  const remainingDue = Math.max(0, Math.round((roundedTotal - totalTendered) * 100) / 100);
+  const remainingDue =
+    activeMethod === 'credit'
+      ? roundedTotal
+      : Math.max(0, Math.round((roundedTotal - totalTendered) * 100) / 100);
 
-  // Credit limit checks for registered customers
+  // Credit limit checks for registered customers (remaining due booked to customer ledger)
   const currentDueNum = Number(selectedCustomer.current_due || 0);
   const creditLimitNum = Number(selectedCustomer.credit_limit || 1000);
-  const projectedDue =
-    activeMethod === 'credit'
-      ? currentDueNum + roundedTotal
-      : activeMethod === 'split'
-      ? currentDueNum + numDue
-      : currentDueNum;
+  const dueToBook = !selectedCustomer.isWalkIn ? remainingDue : 0;
+  const projectedDue = currentDueNum + dueToBook;
   const isCreditLimitExceeded =
     !selectedCustomer.isWalkIn && creditLimitNum > 0 && projectedDue > creditLimitNum;
 
@@ -299,19 +444,25 @@ export default function TenderModal({
   const canSubmit = () => {
     if (loading) return false;
     if (activeMethod === 'cash') {
-      return numCash >= roundedTotal - 0.01;
+      if (selectedCustomer.isWalkIn) {
+        return numCash >= roundedTotal - 0.01;
+      }
+      // Registered customer: partial payment allowed, remaining booked to due
+      return numCash >= 0 && !isCreditLimitExceeded;
     }
     if (activeMethod === 'card') {
-      return numCard >= roundedTotal - 0.01;
+      if (selectedCustomer.isWalkIn) {
+        return numCard >= roundedTotal - 0.01;
+      }
+      // Registered customer: partial payment allowed, remaining booked to due
+      return numCard >= 0 && !isCreditLimitExceeded;
     }
     if (activeMethod === 'credit') {
       return !selectedCustomer.isWalkIn && !isCreditLimitExceeded;
     }
     if (activeMethod === 'split') {
-      if (selectedCustomer.isWalkIn) {
-        return numCash + numCard >= roundedTotal - 0.01;
-      }
-      return numCash + numCard + numDue >= roundedTotal - 0.01 && !isCreditLimitExceeded;
+      // Split method requires 100% full payment for BOTH walk-in and registered customers
+      return Math.abs(numCash + numCard - roundedTotal) <= 0.02;
     }
     return false;
   };
@@ -402,15 +553,19 @@ export default function TenderModal({
     const payments: Array<{ paymentMethodId: number; amount: number; reference?: string }> = [];
 
     if (activeMethod === 'cash') {
-      payments.push({ paymentMethodId: 1, amount: numCash });
+      if (numCash > 0) {
+        payments.push({ paymentMethodId: 1, amount: numCash });
+      }
     } else if (activeMethod === 'card') {
-      payments.push({ paymentMethodId: 2, amount: roundedTotal, reference: cardRef || undefined });
+      if (numCard > 0) {
+        payments.push({ paymentMethodId: 2, amount: numCard });
+      }
     } else if (activeMethod === 'split') {
       if (numCash > 0) {
         payments.push({ paymentMethodId: 1, amount: numCash });
       }
       if (numCard > 0) {
-        payments.push({ paymentMethodId: 2, amount: numCard, reference: cardRef || undefined });
+        payments.push({ paymentMethodId: 2, amount: numCard });
       }
     } else if (activeMethod === 'credit') {
       // 100% Credit sale: payments is empty [], whole amount is due_amount
@@ -422,20 +577,6 @@ export default function TenderModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     executeCommit();
-  };
-
-  // Helper to quickly fill remainder to card in split mode
-  const handleFillCardRemainder = () => {
-    const remainder = Math.max(0, Math.round((totalAmount - numCash) * 100) / 100);
-    setCardAmount(remainder);
-    setSplitDueAmount(0);
-  };
-
-  // Helper to quickly fill remainder to cash in split mode
-  const handleFillCashRemainder = () => {
-    const remainder = Math.max(0, Math.round((totalAmount - numCard) * 100) / 100);
-    setCashAmount(remainder);
-    setSplitDueAmount(0);
   };
 
   return (
@@ -570,114 +711,21 @@ export default function TenderModal({
               </div>
             </div>
 
-            {/* Inline Customer Search Panel */}
-            {isSearchingCustomer && (
-              <div className="mt-2.5 pt-2.5 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      placeholder="Search customer by name or phone..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-8 pr-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSearchingCustomer(false);
-                      setSearchQuery('');
-                    }}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-[11px] font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Cancel
-                  </button>
-                </div>
-
-                {/* Results dropdown */}
-                {isSearching ? (
-                  <div className="py-2 text-center text-xs text-slate-400">Searching customers...</div>
-                ) : searchResults.length > 0 ? (
-                  <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                    {searchResults.map((cust) => (
-                      <div
-                        key={cust.id}
-                        onClick={() => {
-                          setSelectedCustomer(cust);
-                          onCustomerChange?.(cust);
-                          setIsSearchingCustomer(false);
-                          setSearchQuery('');
-                        }}
-                        className="flex items-center justify-between p-2 rounded-xl hover:bg-blue-50 dark:hover:bg-sky-950/40 cursor-pointer border border-transparent hover:border-blue-200 dark:hover:border-sky-800 transition text-xs"
-                      >
-                        <div>
-                          <div className="font-bold text-slate-900 dark:text-white">{cust.name}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Phone: {cust.phone || 'N/A'}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                            Due: {formatCurrency(Number(cust.current_due || 0))}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Limit: {formatCurrency(Number(cust.credit_limit || 1000))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : searchQuery.trim().length > 0 ? (
-                  <div className="py-2 text-center text-xs text-slate-500">
-                    No customers found.
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsRegistering(true);
-                        setIsSearchingCustomer(false);
-                        setRegForm((prev) => ({ ...prev, name: searchQuery }));
-                      }}
-                      className="ml-1.5 font-bold text-blue-600 dark:text-sky-400 hover:underline"
-                    >
-                      Register New?
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            )}
-
             {/* Inline Customer Registration Panel */}
             {isRegistering && (
               <form
                 onSubmit={handleRegisterCustomer}
-                className="mt-2.5 pt-2.5 border-t border-slate-200 dark:border-slate-800 space-y-2.5"
+                className="mt-2.5 pt-2.5 border-t border-slate-200 dark:border-slate-800 space-y-3"
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-black uppercase text-blue-700 dark:text-sky-400 flex items-center gap-1">
-                    <UserPlus className="h-3.5 w-3.5" />
-                    <span>Quick Customer Registration</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsRegistering(false)}
-                    className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
-                  >
-                    Cancel
-                  </button>
-                </div>
-
                 {regError && (
                   <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] font-medium">
                     {regError}
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-0.5">
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">
                       Name *
                     </label>
                     <input
@@ -686,11 +734,11 @@ export default function TenderModal({
                       placeholder="e.g. Faisal Al-Harbi"
                       value={regForm.name}
                       onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none h-10 shadow-xs"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-0.5">
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">
                       Mobile *
                     </label>
                     <input
@@ -699,18 +747,25 @@ export default function TenderModal({
                       placeholder="0501234567"
                       value={regForm.phone}
                       onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none h-10 shadow-xs"
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-1.5 pt-1">
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsRegistering(false)}
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                  >
+                    Cancel
+                  </button>
                   <Button
                     type="submit"
                     size="sm"
                     variant="primary"
                     isLoading={regLoading}
-                    className="rounded-xl text-xs py-1 px-3"
+                    className="rounded-xl text-xs py-1.5 px-4"
                   >
                     Save & Select
                   </Button>
@@ -797,52 +852,65 @@ export default function TenderModal({
 
             {/* 1. Cash Only Mode */}
             {activeMethod === 'cash' && (
-              <div className="space-y-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300">
-                    Cash Received ({settings.currency_symbol || 'SAR'})
-                  </label>
-                  <span className="text-[10px] font-bold text-blue-600 dark:text-sky-400">
-                    Auto-focused &bull; Type amount or click banknote
-                  </span>
-                </div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3 space-y-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300">
+                      Cash Received ({settings.currency_symbol || 'SAR'})
+                    </label>
+                  </div>
 
-                <div className="relative">
-                  <input
-                    ref={cashInputRef}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={cashAmount === 0 ? '' : cashAmount}
-                    onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
-                    className="w-full rounded-xl border-2 border-blue-500/60 focus:border-blue-600 dark:border-sky-500/60 dark:focus:border-sky-400 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xl font-black text-slate-900 dark:text-white focus:outline-none shadow-xs"
-                  />
-                  <div className="absolute right-3 top-2.5 text-xs font-black uppercase text-slate-400">
-                    {settings.currency_symbol || 'SAR'}
+                  <div className="relative">
+                    <input
+                      ref={cashInputRef}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={cashAmount === 0 ? '' : cashAmount}
+                      onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)}
+                      placeholder="0.00"
+                      className="w-full rounded-xl border-2 border-blue-500/60 focus:border-blue-600 dark:border-sky-500/60 dark:focus:border-sky-400 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xl font-black text-slate-900 dark:text-white focus:outline-none shadow-xs"
+                    />
+                    <div className="absolute right-3 top-2.5 text-xs font-black uppercase text-slate-400">
+                      {settings.currency_symbol || 'SAR'}
+                    </div>
                   </div>
                 </div>
 
-                {/* Smart Saudi Riyal note presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase mr-1">Banknotes:</span>
-                  {smartPresets.map((amt) => {
-                    const isExact = Math.abs(amt - totalAmount) < 0.01;
-                    const isCurrent = Math.abs(amt - numCash) < 0.01;
+                {/* Quick Presets: 3 less, 1 exact, 4 large */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {smartPresets.map((preset) => {
+                    const isExact = preset.type === 'exact';
+                    const isLess = preset.type === 'less';
+                    const isCurrent = Math.abs(preset.amount - numCash) < 0.01;
+                    const isDisabled = selectedCustomer.isWalkIn && isLess;
+
                     return (
                       <button
-                        key={amt}
+                        key={`cash-${preset.type}-${preset.amount}`}
                         type="button"
-                        onClick={() => handleQuickCash(amt)}
+                        disabled={isDisabled}
+                        onClick={() => handleQuickCash(preset.amount)}
+                        title={
+                          isDisabled
+                            ? 'Walk-in customer requires full payment'
+                            : isLess
+                            ? 'Partial payment (remaining will add to Customer Due)'
+                            : undefined
+                        }
                         className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-black transition shadow-xs ${
-                          isCurrent
-                            ? 'bg-blue-600 dark:bg-sky-500 text-white'
+                          isDisabled
+                            ? 'opacity-35 cursor-not-allowed bg-slate-100 dark:bg-slate-800/40 text-slate-400 border border-dashed border-slate-300 dark:border-slate-700'
+                            : isCurrent
+                            ? 'bg-blue-600 dark:bg-sky-500 text-white shadow-sm'
                             : isExact
                             ? 'border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
+                            : isLess
+                            ? 'border border-amber-300 dark:border-amber-700/60 bg-amber-50/70 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50'
                             : 'border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-blue-500 dark:hover:border-sky-400'
                         }`}
                       >
-                        {isExact ? `Exact (${amt})` : `${amt}`}
+                        {isExact ? `Exact (${preset.amount})` : `${preset.amount}`}
                       </button>
                     );
                   })}
@@ -852,12 +920,15 @@ export default function TenderModal({
 
             {/* 2. Card Only Mode */}
             {activeMethod === 'card' && (
-              <div className="space-y-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3 space-y-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300">
                       Mada / Card Amount ({settings.currency_symbol || 'SAR'})
                     </label>
+                  </div>
+
+                  <div className="relative">
                     <input
                       ref={cardInputRef}
                       type="number"
@@ -866,150 +937,126 @@ export default function TenderModal({
                       value={cardAmount === 0 ? '' : cardAmount}
                       onChange={(e) => setCardAmount(parseFloat(e.target.value) || 0)}
                       placeholder="0.00"
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-lg font-black text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-xl border-2 border-blue-500/60 focus:border-blue-600 dark:border-sky-500/60 dark:focus:border-sky-400 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xl font-black text-slate-900 dark:text-white focus:outline-none shadow-xs"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      POS Approval Ref (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. MADA-88192"
-                      value={cardRef}
-                      onChange={(e) => setCardRef(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
-                    />
+                    <div className="absolute right-3 top-2.5 text-xs font-black uppercase text-slate-400">
+                      {settings.currency_symbol || 'SAR'}
+                    </div>
                   </div>
                 </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 pt-0.5">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span>Full {formatCurrency(totalAmount)} will be routed to electronic card payment.</span>
+
+                {/* Quick Presets: 3 less, 1 exact, 4 large */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {smartPresets.map((preset) => {
+                    const isExact = preset.type === 'exact';
+                    const isLess = preset.type === 'less';
+                    const isCurrent = Math.abs(preset.amount - numCard) < 0.01;
+                    const isDisabled = selectedCustomer.isWalkIn && isLess;
+
+                    return (
+                      <button
+                        key={`card-${preset.type}-${preset.amount}`}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() => handleQuickCard(preset.amount)}
+                        title={
+                          isDisabled
+                            ? 'Walk-in customer requires full payment'
+                            : isLess
+                            ? 'Partial payment (remaining will add to Customer Due)'
+                            : undefined
+                        }
+                        className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-black transition shadow-xs ${
+                          isDisabled
+                            ? 'opacity-35 cursor-not-allowed bg-slate-100 dark:bg-slate-800/40 text-slate-400 border border-dashed border-slate-300 dark:border-slate-700'
+                            : isCurrent
+                            ? 'bg-blue-600 dark:bg-sky-500 text-white shadow-sm'
+                            : isExact
+                            ? 'border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100'
+                            : isLess
+                            ? 'border border-amber-300 dark:border-amber-700/60 bg-amber-50/70 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                            : 'border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-blue-500 dark:hover:border-sky-400'
+                        }`}
+                      >
+                        {isExact ? `Exact (${preset.amount})` : `${preset.amount}`}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* 3. Split Tender Mode (Premium & Compact Two-Column Layout) */}
+            {/* 3. Split Tender Mode (50/50 synchronized, full payment enforced) */}
             {activeMethod === 'split' && (
-              <div className="space-y-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3">
-                {/* Visual Split Distribution Bar */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">
-                    <span>Cash: {formatCurrency(numCash)}</span>
-                    <span>Card: {formatCurrency(numCard)}</span>
-                    {!selectedCustomer.isWalkIn && numDue > 0 && (
-                      <span>Due: {formatCurrency(numDue)}</span>
-                    )}
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden flex">
-                    <div
-                      style={{ width: `${Math.min(100, (numCash / totalAmount) * 100)}%` }}
-                      className="bg-emerald-500 transition-all duration-300"
-                    />
-                    <div
-                      style={{ width: `${Math.min(100, (numCard / totalAmount) * 100)}%` }}
-                      className="bg-blue-600 dark:bg-sky-500 transition-all duration-300"
-                    />
-                    {!selectedCustomer.isWalkIn && (
-                      <div
-                        style={{ width: `${Math.min(100, (numDue / totalAmount) * 100)}%` }}
-                        className="bg-amber-500 transition-all duration-300"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* 2-Column Inputs */}
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-3 space-y-2.5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {/* Cash Split Field */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                        <Banknote className="h-3.5 w-3.5" />
-                        <span>Cash Amount</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleFillCashRemainder}
-                        className="text-[10px] font-bold text-blue-600 dark:text-sky-400 hover:underline"
-                      >
-                        Fill Remainder
-                      </button>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                      <Banknote className="h-3.5 w-3.5" />
+                      <span>Cash Amount ({settings.currency_symbol || 'SAR'})</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        ref={cashInputRef}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={cashAmount === 0 ? '' : cashAmount}
+                        onChange={(e) => handleSplitCashChange(parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                        className="w-full rounded-xl border-2 border-emerald-500/60 focus:border-emerald-600 dark:border-emerald-500/60 dark:focus:border-emerald-400 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-lg font-black text-slate-900 dark:text-white focus:outline-none shadow-xs"
+                      />
+                      <div className="absolute right-3 top-2.5 text-xs font-black uppercase text-slate-400">
+                        {settings.currency_symbol || 'SAR'}
+                      </div>
                     </div>
-                    <input
-                      ref={cashInputRef}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={cashAmount === 0 ? '' : cashAmount}
-                      onChange={(e) => setCashAmount(parseFloat(e.target.value) || 0)}
-                      placeholder="0.00"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 font-mono text-base font-black text-slate-900 dark:text-white focus:border-emerald-600 dark:focus:border-emerald-500 focus:outline-none"
-                    />
                   </div>
 
                   {/* Card Split Field */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 space-y-1.5 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-black uppercase text-blue-700 dark:text-sky-400 flex items-center gap-1">
-                        <CreditCard className="h-3.5 w-3.5" />
-                        <span>Mada / Card Amount</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleFillCardRemainder}
-                        className="text-[10px] font-bold text-blue-600 dark:text-sky-400 hover:underline"
-                      >
-                        Fill Remainder
-                      </button>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-black uppercase text-blue-700 dark:text-sky-400 flex items-center gap-1">
+                      <CreditCard className="h-3.5 w-3.5" />
+                      <span>Mada / Card Amount ({settings.currency_symbol || 'SAR'})</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        ref={cardInputRef}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={cardAmount === 0 ? '' : cardAmount}
+                        onChange={(e) => handleSplitCardChange(parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                        className="w-full rounded-xl border-2 border-blue-500/60 focus:border-blue-600 dark:border-sky-500/60 dark:focus:border-sky-400 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-lg font-black text-slate-900 dark:text-white focus:outline-none shadow-xs"
+                      />
+                      <div className="absolute right-3 top-2.5 text-xs font-black uppercase text-slate-400">
+                        {settings.currency_symbol || 'SAR'}
+                      </div>
                     </div>
-                    <input
-                      ref={cardInputRef}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={cardAmount === 0 ? '' : cardAmount}
-                      onChange={(e) => setCardAmount(parseFloat(e.target.value) || 0)}
-                      placeholder="0.00"
-                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 font-mono text-base font-black text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none"
-                    />
                   </div>
                 </div>
 
-                {/* Optional Card Ref & Due Allocation */}
-                <div className="flex flex-col sm:flex-row items-center gap-2 pt-0.5">
-                  <input
-                    type="text"
-                    placeholder="POS Approval Ref (Optional)"
-                    value={cardRef}
-                    onChange={(e) => setCardRef(e.target.value)}
-                    className="w-full sm:w-1/2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none"
-                  />
-                  {!selectedCustomer.isWalkIn && remainingDue > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setSplitDueAmount(remainingDue)}
-                      className="w-full sm:w-1/2 flex items-center justify-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 text-xs font-bold shadow-xs transition"
-                    >
-                      <Users className="h-3 w-3" />
-                      <span>Allocate {formatCurrency(remainingDue)} to Due</span>
-                    </button>
-                  )}
+                {/* Simple centered text label without box or icon */}
+                <div className="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400 pt-0.5">
+                  Full payment required across Cash and Card
                 </div>
               </div>
             )}
 
             {/* 4. Customer Due Details (when 100% credit) */}
             {activeMethod === 'credit' && (
-              <div className="rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 p-3 border border-amber-200 dark:border-amber-900/80 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
-                <div className="font-extrabold flex items-center gap-1.5 text-xs">
-                  <Users className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <span>Customer Ledger Credit Sale</span>
+              <div className="rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 p-3 border border-amber-200 dark:border-amber-900/80 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                <div>
+                  <div className="font-extrabold flex items-center gap-1.5 text-xs">
+                    <Users className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span>Customer Ledger Credit Sale</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed mt-1">
+                    Entire amount of <strong>{formatCurrency(totalAmount)}</strong> will be booked to the customer ledger of{' '}
+                    <span className="font-black text-slate-900 dark:text-white underline">{selectedCustomer.name}</span>.
+                  </p>
                 </div>
-                <p className="text-[11px] leading-relaxed">
-                  Entire amount of <strong>{formatCurrency(totalAmount)}</strong> will be booked to the customer ledger of{' '}
-                  <span className="font-black text-slate-900 dark:text-white underline">{selectedCustomer.name}</span>.
-                </p>
 
                 <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-amber-200/60 dark:border-amber-900/60 font-mono text-xs">
                   <div>
@@ -1065,23 +1112,39 @@ export default function TenderModal({
               <div
                 className={`rounded-2xl p-2.5 text-center border transition-all ${
                   remainingDue > 0
-                    ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800'
+                    ? !selectedCustomer.isWalkIn
+                      ? isCreditLimitExceeded
+                        ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800'
+                        : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800'
+                      : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800'
                     : 'bg-emerald-50/50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60'
                 }`}
               >
                 <div
                   className={`text-[10px] font-extrabold uppercase tracking-wider ${
                     remainingDue > 0.01
-                      ? 'text-amber-800 dark:text-amber-300'
+                      ? !selectedCustomer.isWalkIn
+                        ? isCreditLimitExceeded
+                          ? 'text-rose-800 dark:text-rose-300'
+                          : 'text-amber-800 dark:text-amber-300'
+                        : 'text-amber-800 dark:text-amber-300'
                       : 'text-emerald-700 dark:text-emerald-400'
                   }`}
                 >
-                  {remainingDue > 0.01 ? 'Remaining Due' : 'Payment Status'}
+                  {remainingDue > 0.01
+                    ? !selectedCustomer.isWalkIn
+                      ? 'Customer Due'
+                      : 'Remaining Due'
+                    : 'Payment Status'}
                 </div>
                 <div
                   className={`font-mono text-xl sm:text-2xl font-black mt-0.5 ${
                     remainingDue > 0.01
-                      ? 'text-amber-950 dark:text-amber-200'
+                      ? !selectedCustomer.isWalkIn
+                        ? isCreditLimitExceeded
+                          ? 'text-rose-950 dark:text-rose-200'
+                          : 'text-amber-950 dark:text-amber-200'
+                        : 'text-amber-950 dark:text-amber-200'
                       : 'text-emerald-700 dark:text-emerald-300 text-sm sm:text-base flex items-center justify-center gap-1 pt-1'
                   }`}
                 >
@@ -1094,17 +1157,21 @@ export default function TenderModal({
                     </>
                   )}
                 </div>
+                {!selectedCustomer.isWalkIn && remainingDue > 0.01 && (
+                  <div
+                    className={`text-[10px] font-bold mt-0.5 truncate ${
+                      isCreditLimitExceeded
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-amber-700 dark:text-amber-400'
+                    }`}
+                  >
+                    {isCreditLimitExceeded
+                      ? `Exceeds limit (${formatCurrency(creditLimitNum)})`
+                      : `New Due: ${formatCurrency(projectedDue)}`}
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Walk-in warning if tendered is less than total */}
-            {selectedCustomer.isWalkIn && remainingDue > 0.01 && (
-              <div className="flex items-center gap-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-2 border border-rose-200 dark:border-rose-900 text-[11px] text-rose-700 dark:text-rose-300 font-medium">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                <span>Walk-in Customer requires full payment ({formatCurrency(remainingDue)} remaining).</span>
-              </div>
-            )}
-
             {/* Action Buttons */}
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -1141,6 +1208,196 @@ export default function TenderModal({
           </form>
         </div>
       </div>
+
+      {/* Modern Customer Search & Selection Dialog */}
+      {isSearchingCustomer && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/80 p-3 sm:p-5 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4 py-3 bg-slate-50/80 dark:bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 dark:bg-sky-500 text-white shadow-xs">
+                  <Search className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                    Select Customer
+                  </h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Search customer account or register new
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchingCustomer(false);
+                  setSearchQuery('');
+                }}
+                className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Search Input Bar */}
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search by customer name, phone, or email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950 pl-9 pr-8 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:border-blue-600 dark:focus:border-sky-500 focus:outline-none shadow-xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Informative Customer List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 divide-y-0">
+              {isSearching ? (
+                <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent dark:border-sky-400" />
+                  <span>Searching customers...</span>
+                </div>
+              ) : searchResults.length > 0 ? (
+                <>
+                  <div className="flex items-center justify-between px-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    <span>Customer &bull; {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}</span>
+                    <span>Due / Limit</span>
+                  </div>
+                  {searchResults.map((cust) => {
+                    const due = Number(cust.current_due || 0);
+                    const limit = Number(cust.credit_limit || 0);
+                    const isSelected = selectedCustomer.id === cust.id;
+
+                    return (
+                      <div
+                        key={cust.id}
+                        onClick={() => {
+                          setSelectedCustomer(cust);
+                          onCustomerChange?.(cust);
+                          setIsSearchingCustomer(false);
+                          setSearchQuery('');
+                        }}
+                        className={`flex items-center justify-between p-2.5 rounded-2xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50/80 dark:bg-sky-950/50 shadow-xs'
+                            : 'border-slate-200/80 dark:border-slate-800/80 hover:border-blue-300 dark:hover:border-sky-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
+                              isSelected
+                                ? 'bg-blue-600 text-white dark:bg-sky-500'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            <UserCheck className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                              {cust.name}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              {cust.phone ? (
+                                <span className="flex items-center gap-0.5">
+                                  <Phone className="h-2.5 w-2.5" />
+                                  <span>{cust.phone}</span>
+                                </span>
+                              ) : null}
+                              {cust.email ? (
+                                <span className="flex items-center gap-0.5 truncate max-w-[120px]">
+                                  <Mail className="h-2.5 w-2.5" />
+                                  <span className="truncate">{cust.email}</span>
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div
+                            className={`font-mono text-xs font-black ${
+                              due > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'
+                            }`}
+                          >
+                            {formatCurrency(due)}
+                          </div>
+                          <div className="text-[9px] text-slate-400 mt-0.5 font-medium">
+                            Limit: {formatCurrency(limit || 1000)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-500 space-y-2">
+                  <p>No customer found matching &quot;{searchQuery}&quot;.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSearchingCustomer(false);
+                      setIsRegistering(true);
+                      setRegForm((prev) => ({ ...prev, name: searchQuery }));
+                    }}
+                    className="inline-flex items-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 text-xs font-bold shadow-xs transition"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>Register New Customer</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-2.5 bg-slate-50/80 dark:bg-slate-950/60 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCustomer(DEFAULT_WALK_IN);
+                  onCustomerChange?.(DEFAULT_WALK_IN);
+                  if (activeMethod === 'credit') {
+                    handleSelectMethod('cash');
+                  }
+                  setIsSearchingCustomer(false);
+                  setSearchQuery('');
+                }}
+                className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Reset to Walk-in</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchingCustomer(false);
+                  setIsRegistering(true);
+                  setRegForm((prev) => ({ ...prev, name: searchQuery }));
+                }}
+                className="flex items-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 text-[11px] font-bold shadow-xs transition"
+              >
+                <UserPlus className="h-3 w-3" />
+                <span>+ Register New</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

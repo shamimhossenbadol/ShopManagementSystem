@@ -179,7 +179,9 @@ async function runAutoMigrations() {
         ALTER TABLE settings ADD COLUMN IF NOT EXISTS setting_group VARCHAR(50) DEFAULT 'shop';
         CREATE INDEX IF NOT EXISTS idx_settings_group ON settings(setting_group);
         INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public)
-        VALUES ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true)
+        VALUES 
+          ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true),
+          ('pos_default_payment_method', 'hardware', 'card', 'Default POS Payment Method (card, cash, split)', true)
         ON CONFLICT (setting_key) DO NOTHING;
       `,
     },

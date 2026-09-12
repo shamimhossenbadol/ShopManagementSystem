@@ -8,7 +8,7 @@ import { parseScaleBarcode } from '../../utils/scaleBarcode.js';
 
 const productSchema = z.object({
   sku: z.string().min(1),
-  barcode: z.string().optional().nullable(),
+  barcode: z.string().min(1, 'Barcode is mandatory.'),
   pluCode: z.string().optional().nullable(),
   name: z.string().min(1),
   description: z.string().optional().nullable(),
@@ -282,8 +282,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data: res.rows });
   });
 
-  // POST /api/v1/products/categories (Manager only)
-  fastify.post('/categories', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+  // POST /api/v1/products/categories (Manager and Sales Executive)
+  fastify.post('/categories', { preHandler: [requireRole(['manager', 'sales_executive'])] }, async (request, reply) => {
     const parsed = categorySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ success: false, message: 'Category name required.' });
@@ -355,9 +355,24 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data: row });
   });
 
-  // POST /api/v1/products - Create Product (Manager only)
-  fastify.post('/', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
-    const parsed = productSchema.safeParse(request.body);
+  // POST /api/v1/products - Create Product (Manager and Sales Executive)
+  fastify.post('/', { preHandler: [requireRole(['manager', 'sales_executive'])] }, async (request, reply) => {
+    // If SKU is omitted or empty, auto-generate a unique SKU
+    const rawBody: any = { ...((request.body as any) || {}) };
+    if (!rawBody.sku || String(rawBody.sku).trim() === '') {
+      rawBody.sku = `SKU-${Date.now().toString().slice(-6)}`;
+    }
+    
+    // Barcode is strictly mandatory
+    if (!rawBody.barcode || String(rawBody.barcode).trim() === '') {
+      return reply.status(400).send({
+        success: false,
+        message: 'Barcode is mandatory. Please enter or scan a valid product barcode.',
+      });
+    }
+    rawBody.barcode = String(rawBody.barcode).trim();
+
+    const parsed = productSchema.safeParse(rawBody);
     if (!parsed.success) {
       return reply.status(400).send({
         success: false,
@@ -369,9 +384,18 @@ export async function productRoutes(fastify: FastifyInstance) {
     const data = parsed.data;
 
     // Check SKU conflict
-    const existing = await query(`SELECT id FROM products WHERE sku = $1 AND is_deleted = FALSE`, [data.sku]);
-    if (existing.rows.length > 0) {
+    const existingSku = await query(`SELECT id FROM products WHERE sku = $1 AND is_deleted = FALSE`, [data.sku]);
+    if (existingSku.rows.length > 0) {
       return reply.status(400).send({ success: false, message: 'SKU already exists.' });
+    }
+
+    // Check Barcode conflict
+    const existingBarcode = await query(`SELECT id, name FROM products WHERE barcode = $1 AND is_deleted = FALSE`, [data.barcode]);
+    if (existingBarcode.rows.length > 0) {
+      return reply.status(400).send({
+        success: false,
+        message: `Barcode "${data.barcode}" already exists for product "${existingBarcode.rows[0].name}".`,
+      });
     }
 
     const product = await withTransaction(async (client) => {
@@ -513,8 +537,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, message: 'Product deleted successfully.' });
   });
 
-  // POST /api/v1/products/:id/images - Upload Product Image (Manager only)
-  fastify.post('/:id/images', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
+  // POST /api/v1/products/:id/images - Upload Product Image (Manager and Sales Executive)
+  fastify.post('/:id/images', { preHandler: [requireRole(['manager', 'sales_executive'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { fileName, dataUrl, isPrimary, mimeType } = request.body as any;
 

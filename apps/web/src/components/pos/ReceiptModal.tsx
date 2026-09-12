@@ -204,30 +204,128 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
   </body>
 </html>`;
 
-  // Direct print via isolated hidden iframe
-  let printFrame = document.getElementById('receipt-print-frame') as HTMLIFrameElement | null;
-  if (!printFrame) {
-    printFrame = document.createElement('iframe');
+  return printViaOffscreenFrame(printContent, `Invoice_${invoiceNo}`);
+}
+
+/**
+ * Executes a clean, isolated, reliable offscreen print job for 80mm thermal receipt printers.
+ * Eliminates browser 0x0 canvas optimization drops, document reuse locks, and restores focus to main window.
+ */
+export async function printViaOffscreenFrame(printHtml: string, title: string = 'Receipt'): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  return new Promise<boolean>((resolve) => {
+    // 1. Remove any previous print iframe to prevent document reuse locks
+    const oldFrame = document.getElementById('receipt-print-frame');
+    if (oldFrame && oldFrame.parentNode) {
+      oldFrame.parentNode.removeChild(oldFrame);
+    }
+
+    // 2. Create fresh offscreen iframe with standard non-zero physical print dimensions (80mm width)
+    const printFrame = document.createElement('iframe');
     printFrame.id = 'receipt-print-frame';
     printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
+    printFrame.style.left = '-9999px';
+    printFrame.style.top = '-9999px';
+    printFrame.style.width = '80mm';
+    printFrame.style.height = '600px';
     printFrame.style.border = '0';
-    document.body.appendChild(printFrame);
-  }
+    printFrame.style.opacity = '0';
+    printFrame.style.pointerEvents = 'none';
 
-  const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
-  if (doc) {
+    document.body.appendChild(printFrame);
+
+    const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
+    if (!doc || !printFrame.contentWindow) {
+      if (printFrame.parentNode) printFrame.parentNode.removeChild(printFrame);
+      resolve(false);
+      return;
+    }
+
+    const cleanup = () => {
+      // Restore focus to main window so barcode scanner and keyboard continue working immediately
+      try {
+        window.focus();
+        const searchBox = document.querySelector('input[type="text"]') as HTMLInputElement | null;
+        searchBox?.focus();
+      } catch {}
+
+      setTimeout(() => {
+        if (printFrame.parentNode) {
+          printFrame.parentNode.removeChild(printFrame);
+        }
+      }, 500);
+    };
+
     doc.open();
-    doc.write(printContent);
+    doc.write(printHtml);
     doc.close();
-    setTimeout(() => {
-      printFrame?.contentWindow?.focus();
-      printFrame?.contentWindow?.print();
-    }, 200);
-  }
+
+    // 3. Ensure fonts and images (QR code) are fully decoded and rendered before triggering print
+    const triggerPrint = async () => {
+      try {
+        // Wait for all images in the iframe to decode
+        const images = Array.from(doc.images);
+        await Promise.all(
+          images.map((img) => {
+            if (img.complete) return Promise.resolve();
+            return new Promise((res) => {
+              img.onload = () => res(true);
+              img.onerror = () => res(false);
+              setTimeout(res, 300); // 300ms max safety timeout
+            });
+          })
+        );
+
+        // Wait for fonts if supported
+        if (doc.fonts && doc.fonts.ready) {
+          try {
+            await doc.fonts.ready;
+          } catch {}
+        }
+
+        // Slight render tick for browser layout engine
+        await new Promise((r) => setTimeout(r, 60));
+
+        const frameWin = printFrame.contentWindow;
+        if (!frameWin) {
+          cleanup();
+          resolve(false);
+          return;
+        }
+
+        frameWin.onafterprint = () => {
+          cleanup();
+          resolve(true);
+        };
+
+        frameWin.focus();
+        frameWin.print();
+
+        // Safety cleanup if onafterprint doesn't fire (some browsers/dialogs)
+        setTimeout(() => {
+          cleanup();
+          resolve(true);
+        }, 1500);
+      } catch (err) {
+        console.error('Offscreen print error:', err);
+        cleanup();
+        // Fallback to window.print if iframe printing throws
+        try {
+          window.print();
+        } catch {}
+        resolve(false);
+      }
+    };
+
+    // Execute once iframe is ready
+    if (doc.readyState === 'complete') {
+      triggerPrint();
+    } else {
+      printFrame.onload = triggerPrint;
+      setTimeout(triggerPrint, 250); // Fallback timeout
+    }
+  });
 }
 
 // Default export returns null (preview modal removed)

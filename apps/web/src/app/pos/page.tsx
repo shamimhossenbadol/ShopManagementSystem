@@ -9,7 +9,8 @@ import { useSettings } from '@/hooks/useSettings';
 import { useSessionSync } from '@/hooks/useSessionSync';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import TenderModal, { Customer, DEFAULT_WALK_IN } from '@/components/pos/TenderModal';
-import { printThermalReceipt } from '@/components/pos/ReceiptModal';
+import { printThermalReceipt, printViaOffscreenFrame } from '@/components/pos/ReceiptModal';
+import QuickAddProductModal from '@/components/pos/QuickAddProductModal';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -28,6 +29,7 @@ import {
   Users,
   UserCheck,
   AlertCircle,
+  PackagePlus,
   Clock,
   Sun,
   Moon,
@@ -193,6 +195,17 @@ export default function PosTerminalPage() {
   const [managerPinError, setManagerPinError] = useState<string | null>(null);
   const [managerPinLoading, setManagerPinLoading] = useState(false);
 
+  // Quick Add Product to Catalog State (Sales Executive POS Access)
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddInitialBarcode, setQuickAddInitialBarcode] = useState('');
+
+  const handleProductCreated = (newProduct: any, autoAddToCart = true) => {
+    setProducts((prev) => [newProduct, ...prev]);
+    if (autoAddToCart) {
+      addToCart(newProduct, 1);
+    }
+  };
+
   // Synchronized Live Clock & Session Duration
   const [currentTime, setCurrentTime] = useState<string>('');
   const [sessionDuration, setSessionDuration] = useState<string>('00:00:00');
@@ -338,27 +351,51 @@ export default function PosTerminalPage() {
     }
   }, []);
 
-  // Hardware Barcode Scanner Listener
+  // Hardware Barcode Scanner Listener with In-Memory Instant Match & Quick Add Option
   useBarcodeScanner({
     enableAudioBeep: settings.barcode_audio_beep !== 'false',
     onScan: async (barcode) => {
       setErrorMsg(null);
-      const res = await apiRequest(`/products/scan/${barcode}`);
+      const clean = barcode.trim();
+      if (!clean) return;
+
+      // 1. Instant match against local memory products (zero network latency)
+      const localMatch = products.find(
+        (p) =>
+          (p.barcode && p.barcode.trim().toLowerCase() === clean.toLowerCase()) ||
+          (p.sku && p.sku.trim().toLowerCase() === clean.toLowerCase()) ||
+          (p.plu_code && p.plu_code.trim() === clean)
+      );
+
+      if (localMatch) {
+        addToCart(localMatch, 1.0);
+        setSearchQuery('');
+        return;
+      }
+
+      // 2. Server lookup fallback (e.g. scale barcodes or un-cached items)
+      const res = await apiRequest(`/products/scan/${clean}`);
       if (res.success && res.data) {
         const itemQty = res.scannedQuantity || 1.0;
         addToCart(res.data, itemQty);
+        setSearchQuery('');
       } else {
-        setErrorMsg(`Item with barcode "${barcode}" not found in catalog.`);
+        setQuickAddInitialBarcode(clean);
+        setErrorMsg(`Item with barcode "${clean}" not found in catalog.`);
       }
     },
   });
 
-  // Global Keyboard Shortcuts (F2 search, F4 park, F7 recall, F9/Space tender, Esc cancel)
+  // Global Keyboard Shortcuts (F2 search, F3 quick add, F4 park, F7 recall, F9/Space tender, Esc cancel)
   useEffect(() => {
     const handleGlobalKeys = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
         searchInputRef.current?.focus();
+      } else if (e.key === 'F3') {
+        e.preventDefault();
+        setQuickAddInitialBarcode(searchQuery.trim() || '');
+        setIsQuickAddOpen(true);
       } else if (e.key === 'F4') {
         e.preventDefault();
         handleHoldCart();
@@ -371,6 +408,7 @@ export default function PosTerminalPage() {
       } else if (e.key === 'Escape') {
         setIsTenderOpen(false);
         setIsHeldModalOpen(false);
+        setIsQuickAddOpen(false);
         if (!isEndingShift) {
           setIsSessionSummaryOpen(false);
         }
@@ -379,7 +417,7 @@ export default function PosTerminalPage() {
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [cart, isEndingShift]);
+  }, [cart, isEndingShift, searchQuery]);
 
   // Open Shift Summary Modal before logging out
   const handleOpenLogoutSummary = async () => {
@@ -701,30 +739,8 @@ export default function PosTerminalPage() {
   </body>
 </html>`;
 
-    // Direct Print via hidden iframe (no preview window or extra click required)
-    let printFrame = document.getElementById('shift-summary-print-frame') as HTMLIFrameElement | null;
-    if (!printFrame) {
-      printFrame = document.createElement('iframe');
-      printFrame.id = 'shift-summary-print-frame';
-      printFrame.style.position = 'fixed';
-      printFrame.style.right = '0';
-      printFrame.style.bottom = '0';
-      printFrame.style.width = '0';
-      printFrame.style.height = '0';
-      printFrame.style.border = '0';
-      document.body.appendChild(printFrame);
-    }
-
-    const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
-    if (doc) {
-      doc.open();
-      doc.write(printContent);
-      doc.close();
-      setTimeout(() => {
-        printFrame?.contentWindow?.focus();
-        printFrame?.contentWindow?.print();
-      }, 150);
-    }
+    // Direct Print via offscreen 80mm print engine
+    printViaOffscreenFrame(printContent, 'Shift_Summary');
   };
 
   // Add Item to Cart (Strict Real-Time Stock Checking Enforced)
@@ -1139,6 +1155,14 @@ export default function PosTerminalPage() {
 
       // Directly open native printer dialog (no preview dialog)
       printThermalReceipt(receiptPayload, settings);
+
+      // Focus Guard: immediately return focus to main POS window / search box
+      setTimeout(() => {
+        try {
+          window.focus();
+          searchInputRef.current?.focus();
+        } catch {}
+      }, 300);
     } else {
       setErrorMsg(res.message || 'Sale checkout failed.');
     }
@@ -2250,12 +2274,28 @@ export default function PosTerminalPage() {
 
         {/* Error / Alert Banner */}
         {errorMsg && (
-          <div className="flex items-center justify-between bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-bold shadow-md animate-fade-in">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold shadow-md animate-fade-in gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{errorMsg}</span>
+              {quickAddInitialBarcode && (
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddOpen(true)}
+                  className="ml-2 inline-flex items-center gap-1 rounded-lg bg-slate-950 text-amber-300 hover:text-white px-2.5 py-1 text-[11px] font-black uppercase tracking-wider hover:bg-slate-900 transition shadow"
+                >
+                  <PackagePlus className="h-3.5 w-3.5" />
+                  <span>+ Add to Catalog Now</span>
+                </button>
+              )}
             </div>
-            <button onClick={() => setErrorMsg(null)} className="p-0.5 hover:bg-amber-600 rounded">
+            <button
+              onClick={() => {
+                setErrorMsg(null);
+                setQuickAddInitialBarcode('');
+              }}
+              className="p-0.5 hover:bg-amber-600 rounded"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -2263,6 +2303,23 @@ export default function PosTerminalPage() {
 
         {/* Search Box & Sorting Toolbar */}
         <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 flex flex-wrap sm:flex-nowrap items-center gap-3">
+          {/* Dedicated Sales Executive Quick Add Product Button (Touch + Keyboard/Mouse Friendly) */}
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddInitialBarcode(searchQuery.trim() || '');
+              setIsQuickAddOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-600 hover:to-blue-500 active:scale-95 text-white px-3.5 py-2.5 text-xs font-black uppercase tracking-wider shadow-md shadow-blue-700/25 transition shrink-0"
+            title="Add New Product to Catalog (F3)"
+          >
+            <PackagePlus className="h-4 w-4" />
+            <span>+ Add Product</span>
+            <span className="hidden sm:inline-block rounded bg-white/20 px-1 py-0.2 text-[9px] font-mono font-bold ml-0.5">
+              F3
+            </span>
+          </button>
+
           {/* Search Box */}
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
@@ -2271,6 +2328,35 @@ export default function PosTerminalPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const q = searchQuery.trim();
+                  if (!q) return;
+
+                  // 1. Exact match on barcode / SKU / PLU
+                  const exactMatch = products.find(
+                    (p) =>
+                      (p.barcode && p.barcode.toLowerCase() === q.toLowerCase()) ||
+                      (p.sku && p.sku.toLowerCase() === q.toLowerCase()) ||
+                      (p.plu_code && p.plu_code === q)
+                  );
+
+                  if (exactMatch) {
+                    e.preventDefault();
+                    addToCart(exactMatch, 1);
+                    setSearchQuery('');
+                    return;
+                  }
+
+                  // 2. If single filtered product matches
+                  if (filteredAndSortedProducts.length === 1) {
+                    e.preventDefault();
+                    addToCart(filteredAndSortedProducts[0], 1);
+                    setSearchQuery('');
+                    return;
+                  }
+                }
+              }}
               placeholder="Scan barcode gun or search product name / SKU / PLU (F2)..."
               className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 py-2.5 pl-10 pr-16 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-500 dark:focus:border-sky-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition shadow-inner"
             />
@@ -2604,6 +2690,18 @@ export default function PosTerminalPage() {
           </div>
         </div>
       </div>
+
+      {/* Sales Executive Quick Add Product to Catalog Modal */}
+      <QuickAddProductModal
+        isOpen={isQuickAddOpen}
+        onClose={() => {
+          setIsQuickAddOpen(false);
+          setQuickAddInitialBarcode('');
+          setTimeout(() => searchInputRef.current?.focus(), 100);
+        }}
+        initialBarcode={quickAddInitialBarcode}
+        onProductCreated={handleProductCreated}
+      />
     </div>
   );
 }

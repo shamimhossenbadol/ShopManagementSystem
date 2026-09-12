@@ -9,11 +9,12 @@ interface BarcodeScannerOptions {
 
 /**
  * High-speed hardware barcode scanner listener with Web Audio API instant beep feedback
+ * Optimized for both physical keyboard/mouse and touch-based POS terminals.
  */
 export function useBarcodeScanner({
   onScan,
   minChars = 3,
-  maxIntervalMs = 50,
+  maxIntervalMs = 85,
   enableAudioBeep = true,
 }: BarcodeScannerOptions) {
   const bufferRef = useRef<string>('');
@@ -50,16 +51,18 @@ export function useBarcodeScanner({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore modifier keys
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key.length > 1 && e.key !== 'Enter') return;
+      if (e.key.length > 1 && e.key !== 'Enter' && e.key !== 'Tab') return;
 
       const now = Date.now();
       const interval = now - lastKeyTimeRef.current;
       lastKeyTimeRef.current = now;
 
-      if (e.key === 'Enter') {
+      // Handle barcode termination keys (Enter or Tab from scanner suffix)
+      if (e.key === 'Enter' || e.key === 'Tab') {
         if (bufferRef.current.length >= minChars) {
           const barcode = bufferRef.current.trim();
           bufferRef.current = '';
+          e.preventDefault();
           playBeep();
           onScanRef.current(barcode);
         } else {
@@ -68,7 +71,7 @@ export function useBarcodeScanner({
         return;
       }
 
-      // If typed manually with long delay (>50ms), reset buffer
+      // If typed manually with long delay (>maxIntervalMs), reset buffer
       if (interval > maxIntervalMs) {
         bufferRef.current = '';
       }
@@ -76,8 +79,8 @@ export function useBarcodeScanner({
       bufferRef.current += e.key;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [minChars, maxIntervalMs, enableAudioBeep]);
 
   return { playBeep };

@@ -13,12 +13,10 @@ import {
   ShieldCheck,
   KeyRound,
   Loader2,
-  Sparkles,
+  Delete,
+  Eye,
+  EyeOff,
   PowerOff,
-  MonitorX,
-  Radio,
-  ShieldAlert,
-  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -30,13 +28,14 @@ export default function LoginPage() {
 
   const [activeTab, setActiveTab] = useState<'sales_executive' | 'manager'>('sales_executive');
 
-  // 5-Digit PIN State
+  // 5-Digit PIN State (Sales Executive)
   const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '', '']);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Manager Form State
+  // Manager Password Form State
   const [managerUsername, setManagerUsername] = useState('admin');
   const [managerPassword, setManagerPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,20 +73,49 @@ export default function LoginPage() {
     } catch {}
   }, []);
 
-  // Auto-focus first PIN box on mount or tab change
+  // Check URL query parameters for default tab
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('role');
+      if (tabParam === 'manager') {
+        setActiveTab('manager');
+      }
+    }
+  }, []);
+
+  // Auto-focus inputs on tab change
+  useEffect(() => {
+    setError(null);
     if (activeTab === 'sales_executive') {
       setPinDigits(['', '', '', '', '']);
-      setError(null);
       setTimeout(() => {
         pinInputRefs.current[0]?.focus();
       }, 100);
-    } else {
-      setError(null);
     }
   }, [activeTab]);
 
-  // Submit 5-Digit PIN (Zero-click instant login)
+  // Global physical keyboard listener for Sales Executive PIN
+  useEffect(() => {
+    if (activeTab !== 'sales_executive') return;
+    const handlePhysicalKeys = (e: KeyboardEvent) => {
+      if (isPosOccupiedOpen || loading) return;
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        handleNumpadDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleNumpadBackspace();
+      } else if (e.key === 'Escape' || e.key === 'Delete') {
+        e.preventDefault();
+        handleNumpadClear();
+      }
+    };
+    window.addEventListener('keydown', handlePhysicalKeys);
+    return () => window.removeEventListener('keydown', handlePhysicalKeys);
+  }, [activeTab, isPosOccupiedOpen, loading, pinDigits]);
+
+  // Submit Sales Executive 5-Digit PIN
   const submitPin = async (fullPin: string) => {
     setError(null);
     setLoading(true);
@@ -121,7 +149,7 @@ export default function LoginPage() {
     }
   };
 
-  // Handle individual digit input (number only)
+  // Handle Sales Executive PIN input
   const handleDigitChange = (index: number, value: string) => {
     const cleaned = value.replace(/\D/g, '');
     if (!cleaned && value !== '') return;
@@ -131,19 +159,17 @@ export default function LoginPage() {
     newDigits[index] = char;
     setPinDigits(newDigits);
 
-    // Auto-advance to next input box
     if (char && index < 4) {
       pinInputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-authenticate upon 5th digit
     const fullPin = newDigits.join('');
     if (fullPin.length === 5 && !newDigits.includes('')) {
       submitPin(fullPin);
     }
   };
 
-  // Handle KeyDown Navigation (Backspace, Arrow keys)
+  // Handle KeyDown Navigation
   const handleDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace') {
       if (!pinDigits[index] && index > 0) {
@@ -174,7 +200,6 @@ export default function LoginPage() {
       newDigits[i] = pasted[i];
     }
     setPinDigits(newDigits);
-
     if (pasted.length === 5) {
       submitPin(pasted);
     } else {
@@ -182,9 +207,52 @@ export default function LoginPage() {
     }
   };
 
+  // Touch Screen Numpad Handlers
+  const handleNumpadDigit = (digit: string) => {
+    if (loading) return;
+    const firstEmptyIndex = pinDigits.findIndex((d) => d === '');
+    if (firstEmptyIndex === -1) return;
+    const newDigits = [...pinDigits];
+    newDigits[firstEmptyIndex] = digit;
+    setPinDigits(newDigits);
+
+    if (firstEmptyIndex < 4) {
+      pinInputRefs.current[firstEmptyIndex + 1]?.focus();
+    }
+
+    const fullPin = newDigits.join('');
+    if (fullPin.length === 5 && !newDigits.includes('')) {
+      submitPin(fullPin);
+    }
+  };
+
+  const handleNumpadClear = () => {
+    if (loading) return;
+    setPinDigits(['', '', '', '', '']);
+    setError(null);
+    pinInputRefs.current[0]?.focus();
+  };
+
+  const handleNumpadBackspace = () => {
+    if (loading) return;
+    const lastFilledIndex = [...pinDigits].reverse().findIndex((d) => d !== '');
+    if (lastFilledIndex !== -1) {
+      const actualIndex = 4 - lastFilledIndex;
+      const newDigits = [...pinDigits];
+      newDigits[actualIndex] = '';
+      setPinDigits(newDigits);
+      pinInputRefs.current[actualIndex]?.focus();
+    }
+  };
+
   // Manager Password Login
-  const handleManagerLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleManagerLogin = async (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (!managerUsername || !managerPassword) {
+      setError('Please enter both username and password.');
+      return;
+    }
+
     setError(null);
     setLoading(true);
 
@@ -194,9 +262,10 @@ export default function LoginPage() {
         username: managerUsername,
         password: managerPassword,
         sessionType: 'dashboard',
-        forceLogin: true,
       }),
     });
+
+    setLoading(false);
 
     if (res.success && res.data?.user) {
       if (res.data.token) {
@@ -206,12 +275,13 @@ export default function LoginPage() {
       }
       window.location.replace('/dashboard');
     } else {
-      setLoading(false);
       setError(res.message || 'Invalid manager username or password.');
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
     }
   };
 
-  // POS Takeover: Force close the current operator's session and log in
+  // POS Takeover
   const handlePosTakeover = async () => {
     if (!pendingCredentials?.pin) return;
     setIsTakingOver(true);
@@ -254,16 +324,16 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4 relative overflow-hidden select-none">
-      {/* Subtle Ambient Background Glows */}
+      {/* Background Glows */}
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-blue-600/15 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
 
-      {/* 110% Scale Ultra-Premium Glassmorphism Card with Soft Height Animation */}
-      <div className="relative z-10 w-full max-w-[420px] rounded-2xl bg-slate-900/90 backdrop-blur-2xl border border-slate-800/80 p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] text-white transition-all duration-300 ease-in-out">
-        {/* Brand Header with Subtitle */}
-        <div className="mb-6 text-center space-y-2">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-700 to-sky-500 text-white shadow-lg shadow-blue-600/25 ring-4 ring-blue-500/10 transition-transform duration-300 hover:scale-105">
-            <Store className="h-7 w-7" />
+      {/* Main Glassmorphism Card */}
+      <div className="relative z-10 w-full max-w-[440px] rounded-2xl bg-slate-900/95 backdrop-blur-2xl border border-slate-800/80 p-5 sm:p-7 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] text-white transition-all duration-300 ease-in-out">
+        {/* Brand Header */}
+        <div className="mb-5 text-center space-y-2">
+          <div className="mx-auto flex h-13 w-13 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-700 to-sky-500 text-white shadow-lg shadow-blue-600/25 ring-4 ring-blue-500/10 transition-transform duration-300 hover:scale-105">
+            <Store className="h-6 w-6 sm:h-7 sm:w-7" />
           </div>
           <div>
             <h1 className="text-base font-black uppercase tracking-tight text-white">
@@ -275,16 +345,16 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Session Invalidation Notice */}
+        {/* Session Notice */}
         {sessionNotice && (
-          <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs font-semibold text-amber-200">
+          <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-semibold text-amber-200">
             <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
             <span>{sessionNotice}</span>
           </div>
         )}
 
         {/* Role Switcher Tabs */}
-        <div className="mb-6 flex rounded-xl bg-slate-950/90 p-1.5 border border-slate-800/80 shadow-inner">
+        <div className="mb-5 flex rounded-xl bg-slate-950/90 p-1.5 border border-slate-800/80 shadow-inner w-full">
           <button
             type="button"
             onClick={() => setActiveTab('sales_executive')}
@@ -312,14 +382,14 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Dynamic Content Container */}
-        <div className="transition-all duration-300 ease-in-out">
-          {/* TAB 1: SALES EXECUTIVE (5-Digit Number-Only Auto-Verifying PIN) */}
+        {/* Content Container */}
+        <div className="transition-all duration-300 ease-in-out w-full">
+          {/* TAB 1: SALES EXECUTIVE PIN */}
           {activeTab === 'sales_executive' && (
-            <div className="py-2 animate-fade-in text-center space-y-4">
-              {/* 5 PIN Square Boxes with 110% Scale */}
+            <div className="py-1 animate-fade-in text-center space-y-3.5 w-full">
+              {/* 5 PIN Boxes - Full Available Width */}
               <div
-                className={`flex justify-center gap-3 transition-transform ${
+                className={`w-full grid grid-cols-5 gap-2.5 sm:gap-3 transition-transform ${
                   shake ? 'animate-bounce' : ''
                 }`}
                 onPaste={handleDigitPaste}
@@ -331,14 +401,14 @@ export default function LoginPage() {
                       pinInputRefs.current[idx] = el;
                     }}
                     type="password"
-                    inputMode="numeric"
+                    inputMode="none"
                     pattern="[0-9]*"
                     maxLength={1}
                     value={pinDigits[idx]}
                     disabled={loading}
                     onChange={(e) => handleDigitChange(idx, e.target.value)}
                     onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                    className={`h-14 w-14 rounded-xl border bg-slate-950/90 text-center font-mono text-2xl font-black text-white focus:outline-none transition-all duration-200 shadow-inner ${
+                    className={`h-14 sm:h-16 w-full rounded-xl border bg-slate-950/90 text-center font-mono text-2xl sm:text-3xl font-black text-white focus:outline-none transition-all duration-200 shadow-inner ${
                       error
                         ? 'border-rose-500 ring-2 ring-rose-500/30'
                         : pinDigits[idx]
@@ -349,28 +419,69 @@ export default function LoginPage() {
                 ))}
               </div>
 
-              {/* Status / Error Message */}
+              {/* Status / Error */}
               {loading ? (
                 <div className="flex items-center justify-center gap-2 text-xs text-sky-400 font-bold py-1 animate-pulse">
                   <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
                   <span>Auto-authenticating user...</span>
                 </div>
               ) : error ? (
-                <div className="flex items-center justify-center gap-1.5 text-xs text-rose-400 font-bold py-1 animate-fade-in">
+                <div className="flex items-center justify-center gap-1.5 text-xs text-rose-400 font-bold py-0.5 animate-fade-in">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{error}</span>
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-400 font-medium py-1">
-                  Auto-authenticates upon 5th digit
+                <p className="text-[11px] text-slate-400 font-medium py-0.5">
+                  Type on keyboard or tap 5-digit PIN
                 </p>
               )}
+
+              {/* On-Screen Touch Numpad - Full Available Width */}
+              <div className="pt-1 w-full grid grid-cols-3 gap-2 sm:gap-2.5 select-none">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleNumpadDigit(String(n))}
+                    className="h-12 sm:h-14 w-full rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-blue-600 active:text-white border border-slate-700/60 text-slate-100 font-mono text-xl sm:text-2xl font-bold transition shadow-sm flex items-center justify-center disabled:opacity-50"
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleNumpadClear}
+                  className="h-12 sm:h-14 w-full rounded-xl bg-slate-800/50 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/60 text-rose-400 hover:text-rose-300 font-bold text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center disabled:opacity-50"
+                  title="Clear PIN"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleNumpadDigit('0')}
+                  className="h-12 sm:h-14 w-full rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-blue-600 active:text-white border border-slate-700/60 text-slate-100 font-mono text-xl sm:text-2xl font-bold transition shadow-sm flex items-center justify-center disabled:opacity-50"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleNumpadBackspace}
+                  className="h-12 sm:h-14 w-full rounded-xl bg-slate-800/50 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/60 text-amber-400 hover:text-amber-300 transition shadow-sm flex items-center justify-center disabled:opacity-50"
+                  title="Backspace"
+                >
+                  <Delete className="h-5 w-5 sm:h-6 sm:w-6" />
+                </button>
+              </div>
             </div>
           )}
 
-          {/* TAB 2: MANAGER (Username & Password with Standard Spacing) */}
+          {/* TAB 2: MANAGER (Username & Password Only) */}
           {activeTab === 'manager' && (
-            <form onSubmit={handleManagerLogin} className="space-y-4 animate-fade-in py-1">
+            <form onSubmit={handleManagerLogin} className="space-y-4 animate-fade-in py-1 w-full">
               {error && (
                 <div className="flex items-center gap-2 rounded-xl bg-rose-950/60 p-3 text-xs text-rose-300 border border-rose-900 animate-fade-in">
                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -395,17 +506,24 @@ export default function LoginPage() {
               <div className="relative">
                 <Lock className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   autoFocus
                   value={managerPassword}
                   onChange={(e) => setManagerPassword(e.target.value)}
                   placeholder="Password"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950/90 py-3 pl-11 pr-4 text-xs font-semibold text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none shadow-inner transition"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950/90 py-3 pl-11 pr-11 text-xs font-semibold text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none shadow-inner transition"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-200"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
 
-              {/* Sign In Button with standard spacious gap */}
+              {/* Sign In Button */}
               <div className="pt-2">
                 <Button
                   type="submit"
@@ -428,9 +546,7 @@ export default function LoginPage() {
         <InstallPwaButton />
       </div>
 
-
-
-      {/* POS Occupied - Direct Active Cashier Takeover Dialog */}
+      {/* POS Occupied Takeover Dialog */}
       <Modal
         isOpen={isPosOccupiedOpen}
         onClose={handleCancelPosTakeover}
@@ -527,7 +643,7 @@ export default function LoginPage() {
               <span>Shift Takeover Notice</span>
             </p>
             <p className="text-slate-600 dark:text-slate-300">
-              Only one cashier can operate the terminal. Clicking <strong>Force Close & Take Over</strong> will close <span className="font-bold text-slate-900 dark:text-white">{posOccupiedData?.activeOperator?.fullName || 'the cashier'}</span>'s shift and automatically carry forward the drawer balance ({Number(posOccupiedData?.activeOperator?.cashInDrawer || 0).toFixed(2)} SAR) to your new session.
+              Only one cashier can operate the terminal. Clicking <strong>Force Close & Take Over</strong> will close <span className="font-bold text-slate-900 dark:text-white">{posOccupiedData?.activeOperator?.fullName || 'the cashier'}</span>&apos;s shift and automatically carry forward the drawer balance ({Number(posOccupiedData?.activeOperator?.cashInDrawer || 0).toFixed(2)} SAR) to your new session.
             </p>
           </div>
 

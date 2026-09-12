@@ -1,7 +1,6 @@
-// Service Worker for Al-Noor POS Windows PWA
-const CACHE_NAME = 'alnoor-pos-v1';
+// Service Worker for POS Windows PWA & Touch Terminal
+const CACHE_NAME = 'shop-pos-v2';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
   '/icon.svg',
   '/icon-192.png',
@@ -58,9 +57,6 @@ self.addEventListener('fetch', (event) => {
         return caches.match(event.request).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
-          }
-          if (event.request.mode === 'navigate') {
-            return caches.match('/');
           }
         });
       })

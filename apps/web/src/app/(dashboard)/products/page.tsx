@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { BarcodeLabelModal } from '@/components/ui/BarcodeLabelModal';
 import { ProductImportModal } from '@/components/products/ProductImportModal';
+import { ProductFormModal } from '@/components/products/ProductFormModal';
 import { DataTable } from '@/components/ui/DataTable';
 import {
   Package,
@@ -161,62 +162,17 @@ export default function ProductsPage() {
     reader.readAsDataURL(file);
   };
 
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+
   const openCreate = () => {
     setIsEditMode(false);
-    setEditingId(null);
-    if (categories.length === 0 || units.length === 0 || taxRates.length === 0) {
-      loadData();
-    }
-    setForm({
-      name: '',
-      sku: `SKU-${Date.now().toString().slice(-6)}`,
-      barcode: '',
-      pluCode: '',
-      categoryId: categories[0]?.id || 1,
-      unitId: units[0]?.id || 1,
-      packagingMultiplier: 1.0,
-      taxRateId: taxRates.find((t) => t.is_default)?.id || taxRates[0]?.id || 1,
-      costPrice: 0,
-      wholesalePrice: 0,
-      sellingPrice: 0,
-      minStockLevel: 5,
-      initialStock: 0,
-      hasExpiry: false,
-      isWeighable: false,
-      isQuickPlu: false,
-      taxType: 'inclusive',
-    });
-    setImagePreview(null);
-    setImageFile(null);
-    setErrorMsg(null);
+    setEditingProduct(null);
     setIsModalOpen(true);
   };
 
   const openEdit = (p: any) => {
     setIsEditMode(true);
-    setEditingId(p.id);
-    setForm({
-      name: p.name,
-      sku: p.sku,
-      barcode: p.barcode || '',
-      pluCode: p.plu_code || '',
-      categoryId: p.category_id || 1,
-      unitId: p.unit_id || 1,
-      packagingMultiplier: Number(p.packaging_multiplier || 1.0),
-      taxRateId: p.tax_rate_id || 1,
-      costPrice: Number(p.cost_price || 0),
-      wholesalePrice: Number(p.wholesale_price || 0),
-      sellingPrice: Number(p.selling_price || 0),
-      minStockLevel: Number(p.min_stock_level || 5),
-      initialStock: 0,
-      hasExpiry: p.has_expiry || false,
-      isWeighable: p.is_weighable || false,
-      isQuickPlu: p.is_quick_plu || false,
-      taxType: p.tax_type || 'exclusive',
-    });
-    setImagePreview(p.image_url || p.images?.[0]?.file_path || null);
-    setImageFile(null);
-    setErrorMsg(null);
+    setEditingProduct(p);
     setIsModalOpen(true);
   };
 
@@ -229,6 +185,10 @@ export default function ProductsPage() {
     }
     if (!form.sku || !form.sku.trim()) {
       setErrorMsg('SKU Code is required.');
+      return;
+    }
+    if (!form.barcode || !form.barcode.trim()) {
+      setErrorMsg('Barcode is mandatory. Please enter or scan a barcode.');
       return;
     }
     if (Number(form.sellingPrice) < 0 || isNaN(Number(form.sellingPrice))) {
@@ -415,308 +375,18 @@ export default function ProductsPage() {
       )}
 
       {/* Create / Edit Product Modal */}
-      <Modal
+      <ProductFormModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        icon={<Package className="h-5 w-5" />}
-        title={isEditMode ? 'Edit Product Master SKU' : 'Register New Product SKU'}
-        subtitle="Manage pricing, units, barcodes, and inventory"
-        maxWidth="3xl"
-        footer={
-          <div className="flex items-center justify-between w-full">
-            <div className="text-xs text-rose-600 dark:text-rose-400 font-medium truncate max-w-sm">
-              {errorMsg && <span>⚠️ {errorMsg}</span>}
-            </div>
-            <div className="flex items-center gap-2.5 shrink-0">
-              <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="product-form"
-                variant="primary"
-                isLoading={loading}
-                onClick={handleSubmit}
-              >
-                {isEditMode ? 'Save Changes' : 'Create Product SKU'}
-              </Button>
-            </div>
-          </div>
-        }
-      >
-        {errorMsg && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        <form id="product-form" onSubmit={handleSubmit} className="space-y-4">
-          {/* Identity & Basic Info */}
-          <div className="flex items-start gap-3">
-            {/* Compact Image Upload Tile */}
-            <div className="space-y-1.5 shrink-0">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Image
-              </label>
-              <div className="relative group">
-                <label
-                  title={imagePreview ? 'Click to change image' : 'Upload product image'}
-                  className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer overflow-hidden transition group-hover:border-blue-500"
-                >
-                  {imagePreview ? (
-                    <img
-                      src={imagePreview}
-                      alt="Product"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Upload className="h-4 w-4 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-sky-400 transition" />
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
-                </label>
-                {imagePreview && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setImagePreview(null);
-                      setImageFile(null);
-                    }}
-                    title="Remove image"
-                    className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-white shadow hover:bg-rose-600 transition"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Product Name */}
-            <div className="flex-1 min-w-0">
-              <Input
-                label="Product Name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-                placeholder="e.g. Almarai Fresh Milk Full Fat 2L"
-              />
-            </div>
-
-            {/* SKU Code */}
-            <div className="w-36 sm:w-48 shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  SKU Code <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, sku: `SKU-${Date.now().toString().slice(-6)}` })}
-                  className="text-[11px] font-bold text-blue-700 dark:text-sky-400 hover:underline cursor-pointer"
-                >
-                  Auto
-                </button>
-              </div>
-              <Input
-                value={form.sku}
-                onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                required
-                placeholder="SKU-10029"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <Input
-                label="Barcode (EAN-13 / UPC / Code128)"
-                value={form.barcode}
-                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                placeholder="6281007001234"
-              />
-            </div>
-            <div>
-              <Input
-                label="Produce Scale PLU Code"
-                value={form.pluCode}
-                onChange={(e) => setForm({ ...form, pluCode: e.target.value })}
-                placeholder="e.g. 1042"
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Category
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsCategoryModalOpen(true)}
-                  className="text-[11px] font-bold text-blue-700 dark:text-sky-400 hover:underline"
-                >
-                  + New
-                </button>
-              </div>
-              <Select
-                value={form.categoryId}
-                onChange={(e) => setForm({ ...form, categoryId: parseInt(e.target.value) })}
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          {/* Pricing & VAT */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
-            <div>
-              <Input
-                label="Cost Price"
-                type="number"
-                step="0.0001"
-                value={form.costPrice}
-                onChange={(e) => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })}
-                required
-              />
-            </div>
-            <div>
-              <Input
-                label="Selling Price"
-                type="number"
-                step="0.01"
-                value={form.sellingPrice}
-                onChange={(e) => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })}
-                required
-                className="font-bold text-blue-700 dark:text-sky-400"
-              />
-            </div>
-            <div>
-              <Select
-                label="Tax Rate"
-                value={form.taxRateId}
-                onChange={(e) => setForm({ ...form, taxRateId: parseInt(e.target.value) })}
-              >
-                {taxRates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.rate}%)
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Select
-                label="Tax Mode"
-                value={form.taxType}
-                onChange={(e) => setForm({ ...form, taxType: e.target.value })}
-              >
-                <option value="exclusive">Tax-Exclusive (VAT added)</option>
-                <option value="inclusive">Tax-Inclusive (Price has VAT)</option>
-              </Select>
-            </div>
-          </div>
-
-          {/* Stock & Unit Settings */}
-          <div className={`grid grid-cols-1 gap-3 items-start ${isEditMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2 md:grid-cols-4'}`}>
-            <div>
-              <Select
-                label="Base Inventory Unit"
-                value={form.unitId}
-                onChange={(e) => setForm({ ...form, unitId: parseInt(e.target.value) })}
-              >
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.short_name})
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Input
-                label="Min Stock Warning Level"
-                type="number"
-                step="1"
-                value={form.minStockLevel}
-                onChange={(e) => setForm({ ...form, minStockLevel: parseFloat(e.target.value) || 0 })}
-              />
-            </div>
-            {!isEditMode && (
-              <div>
-                <Input
-                  label="Initial Opening Stock"
-                  type="number"
-                  step="1"
-                  value={form.initialStock}
-                  onChange={(e) => setForm({ ...form, initialStock: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-            )}
-            <div className="w-full space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Batch & Expiry
-              </label>
-              <label
-                className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition cursor-pointer select-none ${
-                  form.hasExpiry
-                    ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-500 shadow-sm'
-                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Calendar className={`h-4 w-4 shrink-0 ${form.hasExpiry ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400'}`} />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate leading-5">
-                    Track Expiry
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={form.hasExpiry}
-                  onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
-                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer ml-2"
-                />
-              </label>
-            </div>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Quick Category Creation Modal (Overlaid on top of Product Modal) */}
-      <Modal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        zIndex={60}
-        icon={<FolderPlus className="h-5 w-5" />}
-        title="Add Product Category"
-        subtitle="Create a new catalog category"
-        maxWidth="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleCreateCategory}>
-              Create Category
-            </Button>
-          </>
-        }
-      >
-        <form onSubmit={handleCreateCategory} className="space-y-4">
-          <Input
-            label="Category Name"
-            value={newCatName}
-            onChange={(e) => setNewCatName(e.target.value)}
-            required
-            placeholder="e.g. Dairy & Eggs, Fresh Bakery, Cold Beverages"
-            autoFocus
-          />
-        </form>
-      </Modal>
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingProduct(null);
+        }}
+        onSuccess={() => {
+          loadData();
+        }}
+        isEditMode={isEditMode}
+        productToEdit={editingProduct}
+      />
 
       {/* JSON Import Modal */}
       <ProductImportModal

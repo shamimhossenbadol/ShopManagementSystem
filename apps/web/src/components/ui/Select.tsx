@@ -35,7 +35,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <select
             id={selectId}
             ref={ref}
-            className={`w-full appearance-none bg-transparent px-3.5 py-2.5 pr-9 text-sm text-slate-900 dark:text-slate-100 focus:outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/40 rounded-xl cursor-pointer ${
+            className={`w-full appearance-none bg-transparent px-3.5 py-2.5 pr-9 text-sm text-slate-900 dark:text-slate-100 focus:outline-none disabled:opacity-50 disabled:bg-slate-50 dark:disabled:bg-slate-800/40 rounded-xl cursor-pointer dark:[color-scheme:dark] [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100 ${
               leftIcon ? 'pl-1' : ''
             } ${className}`}
             {...props}

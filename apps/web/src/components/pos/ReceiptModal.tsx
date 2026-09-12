@@ -1,7 +1,5 @@
 'use client';
 
-import QRCode from 'qrcode';
-
 // Date formatting matching session report style: "17 Aug, 12:46PM"
 export const formatReceiptDate = (date: Date | string | number | undefined | null, timezone?: string): string => {
   if (!date) return 'N/A';
@@ -35,17 +33,7 @@ export const formatReceiptDate = (date: Date | string | number | undefined | nul
 export async function printThermalReceipt(data: any, settings: any = {}) {
   if (!data) return;
 
-  const { sale, items, invoice, qrData, cashierName, payments, tenderedAmount, changeAmount, customer } = data || {};
-
-  // 1. Generate ZATCA QR Code Data URL if qrData is present
-  let qrUrl = '';
-  if (qrData) {
-    try {
-      qrUrl = await QRCode.toDataURL(qrData, { width: 140, margin: 1 });
-    } catch (e) {
-      console.warn('Failed to generate ZATCA QR Code for receipt:', e);
-    }
-  }
+  const { sale, items, invoice, cashierName, payments, tenderedAmount, changeAmount, customer } = data || {};
 
   const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
   const shopAddress = settings.shop_address || '';
@@ -118,8 +106,6 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       .item-row { margin: 4px 0; }
       .item-name { font-weight: 900; font-size: 12px; word-break: break-word; }
       .item-calc { display: flex; justify-content: space-between; font-size: 11.5px; margin-top: 1px; }
-      .qr-container { text-align: center; margin-top: 10px; margin-bottom: 4px; }
-      .qr-image { width: 130px; height: 130px; margin: 0 auto; display: block; }
     </style>
   </head>
   <body>
@@ -188,17 +174,13 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
         ` : ''}
       ` : ''}
 
-      ${qrUrl ? `
-        <div class="qr-container">
-          <img src="${qrUrl}" alt="ZATCA QR" class="qr-image" />
-          <div style="font-size: 9px; margin-top: 3px; color: #444;">Scan via ZATCA E-Invoice App</div>
-        </div>
-      ` : ''}
-
       <div class="divider"></div>
-      <div class="text-center" style="font-size: 10px; color: #333; margin-top: 6px;">
-        <div>${settings.receipt_footer || 'Thank you for shopping with us!'}</div>
-        <div style="margin-top: 4px; font-weight: bold;">*** END OF INVOICE ***</div>
+      <div class="text-center" style="margin-top: 10px; margin-bottom: 6px;">
+        <div class="bold" style="font-size: 11px; line-height: 1.4; letter-spacing: 0.2px;">
+          Thank you for shopping with us!<br/>
+          We look forward to serving you again.
+        </div>
+        <div style="margin-top: 8px; font-weight: 900; font-size: 10px; color: #444;">*** END OF INVOICE ***</div>
       </div>
     </div>
   </body>

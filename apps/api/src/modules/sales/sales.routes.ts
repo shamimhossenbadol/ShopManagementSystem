@@ -306,9 +306,12 @@ export async function salesRoutes(fastify: FastifyInstance) {
               if (remainingToDeduct <= 0) break;
               const batchQty = Number(batch.current_quantity);
               const deduct = Math.min(batchQty, remainingToDeduct);
+              const newBatchQty = batchQty - deduct;
               await client.query(
-                `UPDATE product_batches SET current_quantity = current_quantity - $1 WHERE id = $2`,
-                [deduct, batch.id]
+                `UPDATE product_batches 
+                 SET current_quantity = $1, is_active = ($1 > 0), updated_at = NOW() 
+                 WHERE id = $2`,
+                [newBatchQty, batch.id]
               );
               remainingToDeduct -= deduct;
             }

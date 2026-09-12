@@ -7,10 +7,10 @@ import { authenticate, requireRole } from '../../middleware/auth.js';
 import { parseScaleBarcode } from '../../utils/scaleBarcode.js';
 
 const productSchema = z.object({
-  sku: z.string().min(1),
+  sku: z.string().min(1, 'SKU is mandatory.'),
   barcode: z.string().min(1, 'Barcode is mandatory.'),
   pluCode: z.string().optional().nullable(),
-  name: z.string().min(1),
+  name: z.string().min(1, 'Product Name is mandatory.'),
   description: z.string().optional().nullable(),
   categoryId: z.coerce.number().optional().nullable(),
   brandId: z.coerce.number().optional().nullable(),
@@ -20,9 +20,9 @@ const productSchema = z.object({
   taxType: z.enum(['inclusive', 'exclusive']).default('inclusive'),
   costPrice: z.coerce.number().min(0).default(0),
   wholesalePrice: z.coerce.number().min(0).optional().nullable(),
-  sellingPrice: z.coerce.number().min(0),
+  sellingPrice: z.coerce.number().gt(0, 'Selling Price is mandatory.'),
   minStockLevel: z.coerce.number().min(0).default(5),
-  initialStock: z.coerce.number().min(0).default(0),
+  initialStock: z.coerce.number().min(0).default(10000),
   hasExpiry: z.boolean().default(false),
   isWeighable: z.boolean().default(false),
   isQuickPlu: z.boolean().default(false),
@@ -363,14 +363,30 @@ export async function productRoutes(fastify: FastifyInstance) {
       rawBody.sku = `SKU-${Date.now().toString().slice(-6)}`;
     }
     
+    // Name is strictly mandatory
+    if (!rawBody.name || String(rawBody.name).trim() === '') {
+      return reply.status(400).send({
+        success: false,
+        message: 'Product Name is mandatory.',
+      });
+    }
+
     // Barcode is strictly mandatory
     if (!rawBody.barcode || String(rawBody.barcode).trim() === '') {
       return reply.status(400).send({
         success: false,
-        message: 'Barcode is mandatory. Please enter or scan a valid product barcode.',
+        message: 'Barcode is mandatory.',
       });
     }
     rawBody.barcode = String(rawBody.barcode).trim();
+
+    // Selling Price is strictly mandatory and must be > 0
+    if (rawBody.sellingPrice === undefined || rawBody.sellingPrice === null || rawBody.sellingPrice === '' || Number(rawBody.sellingPrice) <= 0 || isNaN(Number(rawBody.sellingPrice))) {
+      return reply.status(400).send({
+        success: false,
+        message: 'Selling Price is mandatory.',
+      });
+    }
 
     const parsed = productSchema.safeParse(rawBody);
     if (!parsed.success) {

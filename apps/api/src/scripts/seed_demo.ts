@@ -106,15 +106,15 @@ INSERT INTO products (id, sku, barcode, plu_code, name, category_id, brand_id, u
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, cost_price = EXCLUDED.cost_price, selling_price = EXCLUDED.selling_price, current_stock = EXCLUDED.current_stock;
 
 -- 6. SEED PRODUCT BATCHES WITH EXPIRY DATES (PERISHABLES & FEFO)
-INSERT INTO product_batches (id, product_id, batch_number, expiry_date, cost_price, initial_quantity, current_quantity, is_active) VALUES
-(1, 11, 'BAT-ALM-260905', CURRENT_DATE + INTERVAL '5 days', 9.2000, 40.00, 35.00, true),
-(2, 11, 'BAT-ALM-260912', CURRENT_DATE + INTERVAL '12 days', 9.2000, 40.00, 40.00, true),
-(3, 12, 'BAT-ALMLF-260907', CURRENT_DATE + INTERVAL '7 days', 9.2000, 50.00, 50.00, true),
-(4, 13, 'BAT-ALAB-260908', CURRENT_DATE + INTERVAL '8 days', 7.5000, 60.00, 60.00, true),
-(5, 14, 'BAT-CHSE-261230', CURRENT_DATE + INTERVAL '120 days', 14.0000, 90.00, 90.00, true),
-(6, 18, 'BAT-RAB-261015', CURRENT_DATE + INTERVAL '45 days', 6.4000, 85.00, 85.00, true),
-(7, 21, 'BAT-LAY-261130', CURRENT_DATE + INTERVAL '90 days', 4.5000, 130.00, 130.00, true),
-(8, 23, 'BAT-KIT-270228', CURRENT_DATE + INTERVAL '180 days', 2.5000, 240.00, 240.00, true)
+INSERT INTO product_batches (id, product_id, batch_number, expiry_date, initial_quantity, current_quantity, is_active) VALUES
+(1, 11, 'BAT-ALM-260905', CURRENT_DATE + INTERVAL '5 days', 40.00, 35.00, true),
+(2, 11, 'BAT-ALM-260912', CURRENT_DATE + INTERVAL '12 days', 40.00, 40.00, true),
+(3, 12, 'BAT-ALMLF-260907', CURRENT_DATE + INTERVAL '7 days', 50.00, 50.00, true),
+(4, 13, 'BAT-ALAB-260908', CURRENT_DATE + INTERVAL '8 days', 60.00, 60.00, true),
+(5, 14, 'BAT-CHSE-261230', CURRENT_DATE + INTERVAL '120 days', 90.00, 90.00, true),
+(6, 18, 'BAT-RAB-261015', CURRENT_DATE + INTERVAL '45 days', 85.00, 85.00, true),
+(7, 21, 'BAT-LAY-261130', CURRENT_DATE + INTERVAL '90 days', 130.00, 130.00, true),
+(8, 23, 'BAT-KIT-270228', CURRENT_DATE + INTERVAL '180 days', 240.00, 240.00, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 7. SEED PROMOTIONS & DEALS

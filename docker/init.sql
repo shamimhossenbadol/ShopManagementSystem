@@ -185,7 +185,6 @@ CREATE TABLE IF NOT EXISTS product_batches (
     expiry_date DATE NOT NULL,
     purchase_id INT,
     purchase_item_id INT,
-    cost_price DECIMAL(15,4) NOT NULL DEFAULT 0.0000 CHECK (cost_price >= 0),
     initial_quantity DECIMAL(15,3) NOT NULL CHECK (initial_quantity >= 0),
     current_quantity DECIMAL(15,3) NOT NULL CHECK (current_quantity >= 0),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,

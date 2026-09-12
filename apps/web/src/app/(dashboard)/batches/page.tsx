@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -24,10 +24,15 @@ import {
   RotateCw,
   Truck,
   ChevronDown,
+  ArrowRight,
+  Trash2,
+  Info,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function BatchesPage() {
   const { formatCurrency } = useSettings();
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [batches, setBatches] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -35,6 +40,25 @@ export default function BatchesPage() {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const getTodayDateStr = () => new Date().toISOString().slice(0, 10);
+
+  const formatDisplayDate = (isoDate: string) => {
+    if (!isoDate) return '';
+    const parts = isoDate.split('-');
+    if (parts.length < 3) return isoDate;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return isoDate;
+    const d = new Date(year, month - 1, day);
+    if (isNaN(d.getTime())) return isoDate;
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  };
 
   const generateBatchNumber = () => {
     const today = new Date();
@@ -52,9 +76,8 @@ export default function BatchesPage() {
     product_id: '',
     purchase_id: '',
     batch_number: generateBatchNumber(),
-    expiry_date: '',
-    cost_price: 0,
-    quantity: 10,
+    expiry_date: getTodayDateStr(),
+    quantity: 1,
   });
 
   const openAddBatchModal = () => {
@@ -62,14 +85,14 @@ export default function BatchesPage() {
       product_id: '',
       purchase_id: '',
       batch_number: generateBatchNumber(),
-      expiry_date: '',
-      cost_price: 0,
-      quantity: 10,
+      expiry_date: getTodayDateStr(),
+      quantity: 1,
     });
     setProductSearch('');
     setIsProductSearchOpen(false);
     setPurchaseSearch('');
     setIsPurchaseSearchOpen(false);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -102,11 +125,62 @@ export default function BatchesPage() {
     loadPurchases();
   }, []);
 
+  const selectedProduct = products.find((p) => String(p.id) === String(batchForm.product_id));
+  const productCurrentStock = Number(selectedProduct?.current_stock || 0);
+  const alreadyBatchedQty = batches
+    .filter(
+      (b) =>
+        Number(b.product_id) === Number(batchForm.product_id) &&
+        b.is_active &&
+        Number(b.current_quantity) > 0
+    )
+    .reduce((sum, b) => sum + Number(b.current_quantity), 0);
+  const availableToBatch = Math.max(0, productCurrentStock - alreadyBatchedQty);
+
+  // Custom modern dialog states
+  const [writeOffTarget, setWriteOffTarget] = useState<any | null>(null);
+  const [writeOffReason, setWriteOffReason] = useState('');
+  const [isWriteOffLoading, setIsWriteOffLoading] = useState(false);
+
+  const [isAutoRemoveOpen, setIsAutoRemoveOpen] = useState(false);
+  const [isAutoRemoveLoading, setIsAutoRemoveLoading] = useState(false);
+
+  const [formError, setFormError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 6000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+
   const handleCreateBatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!batchForm.product_id || !batchForm.batch_number || !batchForm.expiry_date) return;
+    setFormError(null);
+    if (!batchForm.product_id || !batchForm.batch_number || !batchForm.expiry_date) {
+      setFormError('Please select a perishable product and expiration date.');
+      return;
+    }
+
+    if (batchForm.quantity <= 0) {
+      setFormError('Batch quantity must be greater than 0.');
+      return;
+    }
+
+    if (batchForm.quantity > availableToBatch) {
+      setFormError(`Batch quantity cannot exceed available stock (${availableToBatch.toFixed(2)} units).`);
+      return;
+    }
+
     const payload = {
-      ...batchForm,
+      product_id: Number(batchForm.product_id),
+      batch_number: batchForm.batch_number,
+      expiry_date: batchForm.expiry_date,
+      quantity: Number(batchForm.quantity),
       purchase_id: batchForm.purchase_id ? Number(batchForm.purchase_id) : undefined,
     };
     const res = await apiRequest('/batches', {
@@ -119,31 +193,86 @@ export default function BatchesPage() {
         product_id: '',
         purchase_id: '',
         batch_number: generateBatchNumber(),
-        expiry_date: '',
-        cost_price: 0,
-        quantity: 10,
+        expiry_date: getTodayDateStr(),
+        quantity: 1,
       });
       setProductSearch('');
       setIsProductSearchOpen(false);
-      loadBatches();
-      loadProducts();
-    }
-  };
-
-  const handleWriteOff = async (batch: any) => {
-    if (!confirm(`Are you sure you want to write off batch "${batch.batch_number}" (${Number(batch.current_quantity).toFixed(2)} units)? This will deduct the stock from inventory and record a damage write-off movement.`)) {
-      return;
-    }
-    const res = await apiRequest(`/batches/${batch.id}/write-off`, {
-      method: 'POST',
-      body: JSON.stringify({ reason: 'Disposal of expired inventory via Batches Management' }),
-    });
-    if (res.success) {
-      alert(res.message || 'Batch written off successfully.');
+      setFeedback({
+        type: 'success',
+        title: 'Batch Entry Registered',
+        message: `Batch "${payload.batch_number}" (${payload.quantity} units) is now active for FEFO tracking.`,
+      });
       loadBatches();
       loadProducts();
     } else {
-      alert(res.message || 'Failed to write off batch.');
+      setFormError(res.message || 'Failed to create batch.');
+    }
+  };
+
+  const openWriteOffDialog = (batch: any) => {
+    const isExpired = Number(batch.days_to_expiry) < 0;
+    setWriteOffTarget(batch);
+    setWriteOffReason(
+      isExpired
+        ? 'Disposal of expired inventory via Batches Management'
+        : 'Damaged or compromised stock write-off'
+    );
+  };
+
+  const executeWriteOff = async () => {
+    if (!writeOffTarget) return;
+    setIsWriteOffLoading(true);
+    const target = writeOffTarget;
+    const res = await apiRequest(`/batches/${target.id}/write-off`, {
+      method: 'POST',
+      body: JSON.stringify({
+        reason: writeOffReason.trim() || 'Manual stock write-off',
+      }),
+    });
+    setIsWriteOffLoading(false);
+    setWriteOffTarget(null);
+
+    if (res.success) {
+      setFeedback({
+        type: 'success',
+        title: 'Stock Removed Successfully',
+        message: res.message || `Batch "${target.batch_number}" stock was deducted and written off.`,
+      });
+      loadBatches();
+      loadProducts();
+    } else {
+      setFeedback({
+        type: 'error',
+        title: 'Write-Off Failed',
+        message: res.message || 'Failed to write off batch stock.',
+      });
+    }
+  };
+
+  const executeAutoRemoveExpired = async () => {
+    setIsAutoRemoveLoading(true);
+    const res = await apiRequest('/batches/auto-remove-expired', {
+      method: 'POST',
+    });
+    setIsAutoRemoveLoading(false);
+    setIsAutoRemoveOpen(false);
+
+    if (res.success) {
+      const count = res.data?.length || 0;
+      setFeedback({
+        type: 'success',
+        title: 'Expired Stock Purged',
+        message: res.message || `${count} expired batch(es) successfully removed from inventory.`,
+      });
+      loadBatches();
+      loadProducts();
+    } else {
+      setFeedback({
+        type: 'error',
+        title: 'Auto-Removal Failed',
+        message: res.message || 'Could not auto-remove expired batches.',
+      });
     }
   };
 
@@ -162,7 +291,6 @@ export default function BatchesPage() {
     .filter((b) => Number(b.days_to_expiry) < 0)
     .reduce((sum, b) => sum + Number(b.current_quantity || 0), 0);
 
-  const selectedProduct = products.find((p) => String(p.id) === String(batchForm.product_id));
   const filteredProducts = products.filter((p) => {
     if (!productSearch.trim()) return true;
     const q = productSearch.toLowerCase();
@@ -225,7 +353,14 @@ export default function BatchesPage() {
             </Button>
             <Button
               variant="primary"
-              disabled={!batchForm.product_id || !batchForm.batch_number || !batchForm.expiry_date}
+              disabled={
+                !batchForm.product_id ||
+                !batchForm.batch_number ||
+                !batchForm.expiry_date ||
+                Number(batchForm.quantity) <= 0 ||
+                Number(batchForm.quantity) > availableToBatch ||
+                availableToBatch <= 0
+              }
               onClick={handleCreateBatch}
             >
               Save Batch
@@ -234,6 +369,20 @@ export default function BatchesPage() {
         }
       >
         <form onSubmit={handleCreateBatch} className="space-y-4">
+          {formError && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-200 bg-red-50/90 dark:border-red-900/50 dark:bg-red-950/40 text-xs text-red-700 dark:text-red-400">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
+              <div className="flex-1 font-medium">{formError}</div>
+              <button
+                type="button"
+                onClick={() => setFormError(null)}
+                className="text-red-400 hover:text-red-600 dark:hover:text-red-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Optimized Searchable Product Picker */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -241,42 +390,55 @@ export default function BatchesPage() {
             </label>
 
             {selectedProduct ? (
-              <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                      {selectedProduct.name}
-                    </span>
-                    {selectedProduct.has_expiry && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
-                        Perishable
+              <div className="p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                        {selectedProduct.name}
                       </span>
-                    )}
+                      {selectedProduct.has_expiry && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                          Perishable
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono truncate">
+                      {[selectedProduct.sku, selectedProduct.barcode].filter(Boolean).join(' • ')}
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono truncate">
-                    {[
-                      selectedProduct.sku,
-                      selectedProduct.barcode,
-                      Number(selectedProduct.cost_price || 0) > 0
-                        ? formatCurrency(Number(selectedProduct.cost_price))
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' • ')}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchForm({ ...batchForm, product_id: '', quantity: 1 });
+                      setProductSearch('');
+                      setIsProductSearchOpen(true);
+                    }}
+                    title="Deselect product"
+                    className="ml-3 shrink-0 rounded-lg p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Stock allocation info */}
+                <div className="flex items-center gap-3 pt-1 border-t border-blue-200/60 dark:border-blue-900/40 text-xs">
+                  <div className="text-slate-600 dark:text-slate-300">
+                    Current Stock: <span className="font-mono font-bold text-slate-900 dark:text-white">{productCurrentStock.toFixed(2)}</span>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300">
+                    Active Batched: <span className="font-mono font-bold text-blue-700 dark:text-sky-400">{alreadyBatchedQty.toFixed(2)}</span>
+                  </div>
+                  <div className={`font-semibold ${availableToBatch > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    Available to Batch: <span className="font-mono font-bold">{availableToBatch.toFixed(2)}</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBatchForm({ ...batchForm, product_id: '' });
-                    setProductSearch('');
-                    setIsProductSearchOpen(true);
-                  }}
-                  title="Deselect product"
-                  className="ml-3 shrink-0 rounded-lg p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+
+                {availableToBatch <= 0 && (
+                  <div className="text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2 rounded-lg border border-red-200 dark:border-red-900/50">
+                    All stock for this product is already assigned to active batches.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="relative">
@@ -316,36 +478,32 @@ export default function BatchesPage() {
                           No matching products found.
                         </div>
                       ) : (
-                        filteredProducts.slice(0, 40).map((p) => (
-                          <div
-                            key={p.id}
-                            onClick={() => {
-                              const cost = Number(p.cost_price ?? p.costPrice ?? 0);
-                              setBatchForm((prev) => ({
-                                ...prev,
-                                product_id: String(p.id),
-                                cost_price: cost > 0 ? cost : prev.cost_price,
-                              }));
-                              setIsProductSearchOpen(false);
-                            }}
-                            className="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer transition"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                                {p.name}
-                              </div>
-                              <div className="text-[11px] text-slate-400 font-mono truncate">
-                                {[
-                                  p.sku,
-                                  p.barcode,
-                                  Number(p.cost_price || 0) > 0 ? formatCurrency(Number(p.cost_price)) : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(' • ')}
+                        filteredProducts.slice(0, 40).map((p) => {
+                          const pStock = Number(p.current_stock || 0);
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => {
+                                setBatchForm((prev) => ({
+                                  ...prev,
+                                  product_id: String(p.id),
+                                  quantity: pStock > 0 ? 1 : 0,
+                                }));
+                                setIsProductSearchOpen(false);
+                              }}
+                              className="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer transition"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                  {p.name}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono truncate">
+                                  {[p.sku, p.barcode, `Stock: ${pStock}`].filter(Boolean).join(' • ')}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </>
@@ -357,40 +515,24 @@ export default function BatchesPage() {
           {/* Batch Number & Purchase ID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Batch Number <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  title="Generate new batch number"
-                  onClick={() =>
-                    setBatchForm((prev) => ({ ...prev, batch_number: generateBatchNumber() }))
-                  }
-                  className="rounded-lg p-1 text-slate-400 hover:text-blue-600 dark:hover:text-sky-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                >
-                  <RotateCw className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Batch Number <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
-                required
+                readOnly
                 value={batchForm.batch_number}
-                onChange={(e) => setBatchForm({ ...batchForm, batch_number: e.target.value })}
-                placeholder="e.g. BATCH-20260909-A7K2"
-                className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 font-mono text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
+                className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-3.5 font-mono text-xs font-bold text-slate-700 dark:text-slate-300 cursor-not-allowed select-all focus:outline-none transition"
               />
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Purchase ID
-                </label>
-              </div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Purchase ID
+              </label>
 
               {batchForm.purchase_id ? (
-                <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20">
+                <div className="flex items-center justify-between h-10 px-3.5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20">
                   <span className="font-mono font-bold text-xs text-blue-700 dark:text-sky-300 truncate">
                     {selectedPurchase?.reference_no || `#${batchForm.purchase_id}`}
                   </span>
@@ -420,7 +562,7 @@ export default function BatchesPage() {
                       }}
                       onFocus={() => setIsPurchaseSearchOpen(true)}
                       placeholder="e.g: PUR-202609-00005"
-                      className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-9 pr-8 font-mono text-xs font-semibold text-slate-900 dark:text-white placeholder:font-sans placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
+                      className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-8 font-mono text-xs font-semibold text-slate-900 dark:text-white placeholder:font-sans placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:focus:border-sky-400 dark:focus:ring-sky-400/20 focus:outline-none transition"
                     />
                     {purchaseSearch && (
                       <button
@@ -471,103 +613,102 @@ export default function BatchesPage() {
             </div>
           </div>
 
-          {/* Lower Row: Compact Date Picker on Left & Vertical Quantity/Price on Right */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-stretch">
-            {/* Left: Compact Date Picker */}
-            <div className="sm:col-span-7 flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400" />
-                  Expiration Date <span className="text-red-500">*</span>
-                </label>
-
-                {/* Real-time Shelf Life Status Badge */}
-                {batchForm.expiry_date && (() => {
-                  const diffDays = Math.ceil(
-                    (new Date(batchForm.expiry_date).getTime() - new Date().setHours(0, 0, 0, 0)) /
-                      (1000 * 60 * 60 * 24)
-                  );
-                  if (diffDays < 0) {
-                    return (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950/70 dark:text-red-300 border border-red-200 dark:border-red-900/60">
-                        Expired ({Math.abs(diffDays)}d)
-                      </span>
-                    );
+          {/* Expiry Date & Batch Quantity in a Clean Single Row with matching h-10 height */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Expiration Date <span className="text-red-500">*</span>
+              </label>
+              <div
+                onClick={() => {
+                  try {
+                    dateInputRef.current?.showPicker();
+                  } catch {
+                    dateInputRef.current?.focus();
                   }
-                  if (diffDays <= 30) {
-                    return (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60">
-                        Soon ({diffDays}d)
-                      </span>
-                    );
-                  }
-                  return (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/60">
-                      Safe ({diffDays}d)
-                    </span>
-                  );
-                })()}
-              </div>
-
-              <input
-                type="date"
-                required
-                value={batchForm.expiry_date}
-                onChange={(e) => setBatchForm({ ...batchForm, expiry_date: e.target.value })}
-                className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 text-xs font-semibold text-slate-900 dark:text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
-              />
-
-              {/* Quick Shelf-Life Expiry Presets */}
-              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                {[
-                  { label: '+7d', days: 7 },
-                  { label: '+30d', days: 30 },
-                  { label: '+90d', days: 90 },
-                  { label: '+180d', days: 180 },
-                  { label: '+1y', days: 365 },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      const target = new Date();
-                      target.setDate(target.getDate() + preset.days);
-                      setBatchForm((prev) => ({
-                        ...prev,
-                        expiry_date: target.toISOString().slice(0, 10),
-                      }));
-                    }}
-                    className="rounded-lg bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+                }}
+                className="relative flex items-center h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 cursor-pointer transition hover:border-slate-400 dark:hover:border-slate-600 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/20 dark:focus-within:border-sky-400 dark:focus-within:ring-sky-400/20"
+              >
+                <input
+                  type="text"
+                  readOnly
+                  value={formatDisplayDate(batchForm.expiry_date)}
+                  placeholder="Select expiration date"
+                  className="h-full w-full bg-transparent pl-3.5 pr-10 text-xs font-semibold text-slate-900 dark:text-white cursor-pointer select-none focus:outline-none"
+                />
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  required
+                  value={batchForm.expiry_date}
+                  onChange={(e) => setBatchForm({ ...batchForm, expiry_date: e.target.value })}
+                  className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
+                  tabIndex={-1}
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none flex items-center">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
               </div>
             </div>
 
-            {/* Right: Quantity & Price Stacked Vertically */}
-            <div className="sm:col-span-5 flex flex-col justify-between gap-2.5">
-              <Input
-                label="Batch Quantity (Units) *"
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Batch Quantity (Units) <span className="text-red-500">*</span>
+              </label>
+              <input
                 type="number"
                 step="0.01"
                 min="0.01"
+                max={availableToBatch > 0 ? availableToBatch : undefined}
                 required
-                value={batchForm.quantity}
+                value={batchForm.quantity || ''}
                 onChange={(e) => setBatchForm({ ...batchForm, quantity: parseFloat(e.target.value) || 0 })}
+                placeholder="Enter quantity"
+                className={`h-10 w-full rounded-xl border bg-white dark:bg-slate-900 px-3.5 text-xs font-semibold text-slate-900 dark:text-white transition focus:outline-none focus:ring-2 ${
+                  selectedProduct && Number(batchForm.quantity) > availableToBatch
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-300 dark:border-slate-700 focus:border-blue-600 focus:ring-blue-600/20 dark:focus:border-sky-400 dark:focus:ring-sky-400/20'
+                }`}
               />
-
-              <Input
-                label="Unit Cost Price (SAR)"
-                type="number"
-                step="0.0001"
-                value={batchForm.cost_price}
-                onChange={(e) => setBatchForm({ ...batchForm, cost_price: parseFloat(e.target.value) || 0 })}
-              />
+              {selectedProduct && Number(batchForm.quantity) > availableToBatch && (
+                <p className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+                  Cannot exceed available stock ({availableToBatch.toFixed(2)})
+                </p>
+              )}
             </div>
           </div>
         </form>
       </Modal>
+
+      {/* Feedback Toast Banner */}
+      {feedback && (
+        <div
+          className={`flex items-start justify-between gap-3 p-4 rounded-xl border shadow-sm transition-all ${
+            feedback.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200'
+              : 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-200'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            {feedback.type === 'success' ? (
+              <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
+            )}
+            <div>
+              <p className="text-sm font-bold">{feedback.title}</p>
+              <p className="text-xs mt-0.5 opacity-90">{feedback.message}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -580,14 +721,26 @@ export default function BatchesPage() {
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="md"
-          onClick={openAddBatchModal}
-          leftIcon={<Plus className="h-4 w-4" />}
-        >
-          Add Batch Entry
-        </Button>
+        <div className="flex items-center gap-2">
+          {expiredCount > 0 && (
+            <Button
+              variant="danger"
+              size="md"
+              onClick={() => setIsAutoRemoveOpen(true)}
+              leftIcon={<ShieldAlert className="h-4 w-4" />}
+            >
+              Auto-Remove Expired Stock ({expiredCount})
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="md"
+            onClick={openAddBatchModal}
+            leftIcon={<Plus className="h-4 w-4" />}
+          >
+            Add Batch Entry
+          </Button>
+        </div>
       </div>
 
       {/* Premium Compact KPI Status Cards */}
@@ -818,15 +971,6 @@ export default function BatchesPage() {
             ),
           },
           {
-            header: 'Cost Price',
-            align: 'right',
-            accessor: (b) => (
-              <span className="font-mono text-slate-500">
-                {formatCurrency(b.cost_price)}
-              </span>
-            ),
-          },
-          {
             header: 'Status',
             align: 'center',
             accessor: (b) => {
@@ -850,22 +994,213 @@ export default function BatchesPage() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleWriteOff(b);
+                    openWriteOffDialog(b);
                   }}
                   className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
                     isExpired
                       ? 'bg-rose-600 hover:bg-rose-700 text-white'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200'
                   }`}
-                  title={isExpired ? 'Dispose expired batch' : 'Write off damaged batch'}
+                  title={isExpired ? 'Remove expired stock from inventory' : 'Write off damaged batch'}
                 >
-                  Write Off
+                  {isExpired ? 'Remove Expired' : 'Write Off'}
                 </button>
               );
             },
           },
         ]}
       />
+
+      {/* Custom Confirmation Modal: Write Off / Remove Expired Batch */}
+      <Modal
+        isOpen={Boolean(writeOffTarget)}
+        onClose={() => {
+          if (!isWriteOffLoading) setWriteOffTarget(null);
+        }}
+        icon={
+          writeOffTarget && Number(writeOffTarget.days_to_expiry) < 0 ? (
+            <ShieldAlert className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+          ) : (
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+          )
+        }
+        title={
+          writeOffTarget && Number(writeOffTarget.days_to_expiry) < 0
+            ? 'Confirm Expired Stock Removal'
+            : 'Confirm Batch Stock Write-Off'
+        }
+        subtitle="Review action details and inventory impact"
+        maxWidth="lg"
+        footer={
+          <div className="flex items-center justify-end gap-2.5 w-full">
+            <Button
+              variant="secondary"
+              disabled={isWriteOffLoading}
+              onClick={() => setWriteOffTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={isWriteOffLoading}
+              isLoading={isWriteOffLoading}
+              onClick={executeWriteOff}
+            >
+              Confirm & Deduct Stock
+            </Button>
+          </div>
+        }
+      >
+        {writeOffTarget && (
+          <div className="space-y-4">
+            {/* Action Box */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 p-3.5 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <Package className="h-3.5 w-3.5" />
+                <span>Action Target</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">Product:</span>{' '}
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {writeOffTarget.product_name}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">Batch #:</span>{' '}
+                  <span className="font-mono font-bold text-blue-600 dark:text-sky-400">
+                    {writeOffTarget.batch_number}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">Expiry Date:</span>{' '}
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                    {formatDisplayDate(writeOffTarget.expiry_date)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">Quantity to Deduct:</span>{' '}
+                  <span className="font-mono font-black text-rose-600 dark:text-rose-400">
+                    {Number(writeOffTarget.current_quantity).toFixed(2)} units
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* System Reaction Breakdown */}
+            <div className="rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 p-3.5 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                <span>System Reaction</span>
+              </div>
+              <ul className="text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                  <span>Deducts <strong className="font-mono font-bold text-rose-600 dark:text-rose-400">{Number(writeOffTarget.current_quantity).toFixed(2)} units</strong> directly from product stock.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                  <span>Sets the batch&apos;s remaining quantity to <strong className="font-mono">0.00</strong>.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                  <span>Marks the batch as inactive/depleted.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                  <span>Records a damage movement in the inventory ledger.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Reason input */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+                Disposal / Write-Off Note
+              </label>
+              <Input
+                type="text"
+                value={writeOffReason}
+                onChange={(e) => setWriteOffReason(e.target.value)}
+                placeholder="Specify reason (e.g. Expired disposal, leakage, broken)"
+                className="w-full text-xs"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Custom Confirmation Modal: Auto-Remove All Expired */}
+      <Modal
+        isOpen={isAutoRemoveOpen}
+        onClose={() => {
+          if (!isAutoRemoveLoading) setIsAutoRemoveOpen(false);
+        }}
+        icon={<ShieldAlert className="h-5 w-5 text-rose-600 dark:text-rose-400" />}
+        title="Auto-Remove All Expired Stock"
+        subtitle="Review action details and inventory impact"
+        maxWidth="lg"
+        footer={
+          <div className="flex items-center justify-end gap-2.5 w-full">
+            <Button
+              variant="secondary"
+              disabled={isAutoRemoveLoading}
+              onClick={() => setIsAutoRemoveOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={isAutoRemoveLoading}
+              isLoading={isAutoRemoveLoading}
+              onClick={executeAutoRemoveExpired}
+            >
+              Purge {expiredCount} Expired {expiredCount === 1 ? 'Batch' : 'Batches'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Action Box */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 p-3.5 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Action Scope</span>
+            </div>
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+              Scanning has identified{' '}
+              <strong className="text-rose-600 dark:text-rose-400 font-mono text-sm">{expiredCount}</strong> expired batch(es) holding a total of{' '}
+              <strong className="text-rose-600 dark:text-rose-400 font-mono text-sm">{expiredUnits.toFixed(2)} units</strong> ready for removal.
+            </p>
+          </div>
+
+          {/* System Reaction Breakdown */}
+          <div className="rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 p-3.5 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              <span>System Reaction</span>
+            </div>
+            <ul className="text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                <span>Deducts <strong className="font-mono font-bold text-rose-600 dark:text-rose-400">{expiredUnits.toFixed(2)} units</strong> directly from product stock.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                <span>Sets remaining quantity to <strong className="font-mono">0.00</strong> across all {expiredCount} expired batches.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                <span>Marks all expired batches as inactive/depleted.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">•</span>
+                <span>Records damage movements in the inventory ledger.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -206,9 +206,9 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
             const expiry = item.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
             await client.query(
-              `INSERT INTO product_batches (product_id, batch_number, expiry_date, purchase_item_id, cost_price, initial_quantity, current_quantity)
-               VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-              [item.productId, batchNo, expiry, purchaseItemId, item.netUnitCost, item.quantity]
+              `INSERT INTO product_batches (product_id, batch_number, expiry_date, purchase_item_id, initial_quantity, current_quantity)
+               VALUES ($1, $2, $3, $4, $5, $5)`,
+              [item.productId, batchNo, expiry, purchaseItemId, item.quantity]
             );
 
             await client.query(`UPDATE products SET has_expiry = TRUE WHERE id = $1`, [item.productId]);

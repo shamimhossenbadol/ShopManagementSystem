@@ -11,9 +11,14 @@ import {
   Upload,
   X,
   FolderPlus,
-  Calendar,
   AlertCircle,
 } from 'lucide-react';
+
+const generateSku = () => {
+  const ts = Date.now().toString().slice(-6);
+  const rand = Math.floor(100 + Math.random() * 900);
+  return `SKU-${ts}${rand}`;
+};
 
 export interface ProductFormModalProps {
   isOpen: boolean;
@@ -38,7 +43,7 @@ export function ProductFormModal({
   // Form State - exactly matching Manager Product Master SKU form
   const [form, setForm] = useState({
     name: '',
-    sku: `SKU-${Date.now().toString().slice(-6)}`,
+    sku: generateSku(),
     barcode: '',
     pluCode: '',
     categoryId: 1,
@@ -47,9 +52,9 @@ export function ProductFormModal({
     taxRateId: 1,
     costPrice: 0,
     wholesalePrice: 0,
-    sellingPrice: 0,
+    sellingPrice: '' as any,
     minStockLevel: 5,
-    initialStock: 10,
+    initialStock: 10000,
     hasExpiry: false,
     isWeighable: false,
     isQuickPlu: false,
@@ -109,7 +114,7 @@ export function ProductFormModal({
           taxRateId: productToEdit.tax_rate_id || 1,
           costPrice: Number(productToEdit.cost_price || 0),
           wholesalePrice: Number(productToEdit.wholesale_price || 0),
-          sellingPrice: Number(productToEdit.selling_price || 0),
+          sellingPrice: productToEdit.selling_price !== undefined && productToEdit.selling_price !== null ? productToEdit.selling_price : '',
           minStockLevel: Number(productToEdit.min_stock_level || 5),
           initialStock: 0,
           hasExpiry: Boolean(productToEdit.has_expiry),
@@ -123,7 +128,7 @@ export function ProductFormModal({
         // Create Mode
         setForm({
           name: '',
-          sku: `SKU-${Date.now().toString().slice(-6)}`,
+          sku: generateSku(),
           barcode: initialBarcode || '',
           pluCode: '',
           categoryId: categories[0]?.id || 1,
@@ -132,9 +137,9 @@ export function ProductFormModal({
           taxRateId: taxRates.find((t) => t.is_default)?.id || taxRates[0]?.id || 1,
           costPrice: 0,
           wholesalePrice: 0,
-          sellingPrice: 0,
+          sellingPrice: '' as any,
           minStockLevel: 5,
-          initialStock: 10,
+          initialStock: 10000,
           hasExpiry: false,
           isWeighable: false,
           isQuickPlu: false,
@@ -213,20 +218,21 @@ export function ProductFormModal({
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
     if (!form.name || !form.name.trim()) {
-      setErrorMsg('Product Name is required.');
+      setErrorMsg('Product Name is mandatory.');
       return;
     }
     if (!form.sku || !form.sku.trim()) {
-      setErrorMsg('SKU Code is required.');
+      setErrorMsg('SKU Code is mandatory.');
       return;
     }
     // Strict Mandatory Barcode Check
     if (!form.barcode || !form.barcode.trim()) {
-      setErrorMsg('Barcode is mandatory. Please enter or scan a barcode.');
+      setErrorMsg('Barcode is mandatory.');
       return;
     }
-    if (Number(form.sellingPrice) < 0 || isNaN(Number(form.sellingPrice))) {
-      setErrorMsg('Selling Price cannot be negative.');
+    // Strict Mandatory Selling Price Check
+    if (form.sellingPrice === '' || form.sellingPrice === null || form.sellingPrice === undefined || Number(form.sellingPrice) <= 0 || isNaN(Number(form.sellingPrice))) {
+      setErrorMsg('Selling Price is mandatory.');
       return;
     }
     if (Number(form.costPrice) < 0 || isNaN(Number(form.costPrice))) {
@@ -392,24 +398,16 @@ export function ProductFormModal({
               />
             </div>
 
-            {/* SKU Code */}
+            {/* SKU Code (Auto-generated & Read-only) */}
             <div className="w-36 sm:w-48 shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  SKU Code <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, sku: `SKU-${Date.now().toString().slice(-6)}` })}
-                  className="text-[11px] font-bold text-blue-700 dark:text-sky-400 hover:underline cursor-pointer"
-                >
-                  Auto
-                </button>
-              </div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                SKU Code <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">(Auto)</span>
+              </label>
               <Input
                 value={form.sku}
-                onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                required
+                readOnly
+                tabIndex={-1}
+                className="bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 cursor-not-allowed select-all font-mono font-bold"
                 placeholder="SKU-10029"
               />
             </div>
@@ -477,9 +475,11 @@ export function ProductFormModal({
                 label="Selling Price"
                 type="number"
                 step="0.01"
+                min="0.01"
                 value={form.sellingPrice}
-                onChange={(e) => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                 required
+                placeholder="0.00"
                 className="font-bold text-blue-700 dark:text-sky-400"
               />
             </div>
@@ -509,7 +509,7 @@ export function ProductFormModal({
           </div>
 
           {/* Stock & Unit Settings */}
-          <div className={`grid grid-cols-1 gap-3 items-start ${isEditMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2 md:grid-cols-4'}`}>
+          <div className={`grid grid-cols-1 gap-3 items-start ${isEditMode ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
             <div>
               <Select
                 label="Base Inventory Unit"
@@ -543,31 +543,6 @@ export function ProductFormModal({
                 />
               </div>
             )}
-            <div className="w-full space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Batch & Expiry
-              </label>
-              <label
-                className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm transition cursor-pointer select-none ${
-                  form.hasExpiry
-                    ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-500 shadow-sm'
-                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Calendar className={`h-4 w-4 shrink-0 ${form.hasExpiry ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400'}`} />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate leading-5">
-                    Track Expiry
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={form.hasExpiry}
-                  onChange={(e) => setForm({ ...form, hasExpiry: e.target.checked })}
-                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer ml-2"
-                />
-              </label>
-            </div>
           </div>
         </form>
       </Modal>

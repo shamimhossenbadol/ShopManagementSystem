@@ -109,8 +109,8 @@ The system provides complete configuration control under **Settings & System Cus
 ```
 [System Settings]
 ├── 1. Shop Profile & Branding
-│   ├── Primary English Store Name (e.g., AL-NOOR SUPERMARKET & HYPERMARKET)
-│   ├── Secondary POS Sub-Header (e.g., AL-NOOR RETAIL POS)
+│   ├── Primary English Store Name (e.g., SHOP MANAGEMENT SYSTEM)
+│   ├── Secondary POS Sub-Header (e.g., SHOP MANAGEMENT SYSTEM)
 │   ├── Commercial Registration (CR) Number
 │   ├── 15-Digit VAT Identification Number
 │   ├── Contact Phone & Official Email

@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import { useSettings } from '@/hooks/useSettings';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { Button, IconButton } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { Input, Textarea } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { BarcodeLabelModal } from '@/components/ui/BarcodeLabelModal';
 import { ProductImportModal } from '@/components/products/ProductImportModal';
@@ -16,23 +14,12 @@ import {
   Package,
   Plus,
   Search,
-  Check,
-  AlertCircle,
   Edit2,
   Trash2,
   Barcode,
-  Printer,
-  FolderPlus,
-  X,
-  Scale,
-  Calendar,
-  Grid,
   Upload,
   Download,
-  FileJson,
-  Image as ImageIcon,
-  Sparkles,
-  Layers,
+  X,
   Filter,
 } from 'lucide-react';
 
@@ -67,66 +54,91 @@ export default function ProductsPage() {
   const { formatCurrency, settings } = useSettings();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
-  const [units, setUnits] = useState<any[]>([]);
-  const [taxRates, setTaxRates] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out' | 'perishable'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [scannerStatus, setScannerStatus] = useState<string | null>(null);
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<any>(null);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
-
-  // Image Upload state
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageFile, setImageFile] = useState<{ name: string; dataUrl: string; mimeType: string } | null>(null);
-
-  const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [form, setForm] = useState({
-    name: '',
-    sku: '',
-    barcode: '',
-    pluCode: '',
-    categoryId: 1,
-    unitId: 1,
-    packagingMultiplier: 1.0,
-    taxRateId: 1,
-    costPrice: 0,
-    wholesalePrice: 0,
-    sellingPrice: 0,
-    minStockLevel: 5,
-    initialStock: 0,
-    hasExpiry: false,
-    isWeighable: false,
-    isQuickPlu: false,
-    taxType: 'inclusive',
+  const handleBarcodeLookup = async (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
+    setSearch(clean);
+    setCurrentPage(1);
+
+    const cleanLower = clean.toLowerCase();
+    const localMatch = products.some(
+      (p) =>
+        (p.barcode && p.barcode.trim().toLowerCase() === cleanLower) ||
+        (p.sku && p.sku.trim().toLowerCase() === cleanLower) ||
+        (p.plu_code && p.plu_code.trim().toLowerCase() === cleanLower)
+    );
+
+    if (!localMatch) {
+      try {
+        const res = await apiRequest(`/products/scan/${encodeURIComponent(clean)}`);
+        if (res.success && res.data) {
+          setProducts((prev) => {
+            const exists = prev.some((p) => p.id === res.data.id);
+            if (exists) return prev;
+            return [res.data, ...prev];
+          });
+          if (res.isScaleBarcode && res.data.plu_code) {
+            setSearch(res.data.plu_code);
+          }
+        }
+      } catch (err) {
+        console.error('Barcode server lookup failed:', err);
+      }
+    }
+  };
+
+  useBarcodeScanner({
+    enableAudioBeep: settings.barcode_audio_beep !== 'false',
+    onScan: (scannedBarcode) => {
+      // Ignore background scanner events when any modal dialog is active
+      if (isModalOpen || isBarcodeModalOpen || isImportModalOpen) {
+        return;
+      }
+      const clean = scannedBarcode.trim();
+      if (!clean) return;
+
+      handleBarcodeLookup(clean);
+      setScannerStatus(`Scanned: ${clean}`);
+      setTimeout(() => setScannerStatus(null), 3000);
+    },
   });
 
   const loadData = async () => {
     setDataLoading(true);
-    const res = await apiRequest('/products');
-    if (res.success && res.data) setProducts(res.data);
+    try {
+      const [prodRes, catRes] = await Promise.all([
+        apiRequest('/products?limit=all'),
+        apiRequest('/products/categories'),
+      ]);
 
-    const catRes = await apiRequest('/products/categories');
-    if (catRes.success && catRes.data) setCategories(catRes.data);
-
-    const unitRes = await apiRequest('/products/units');
-    if (unitRes.success && unitRes.data) setUnits(unitRes.data);
-
-    const taxRes = await apiRequest('/settings/tax-rates');
-    if (taxRes.success && taxRes.data) setTaxRates(taxRes.data);
-
-    setDataLoading(false);
+      if (prodRes.success && prodRes.data) {
+        setProducts(prodRes.data);
+      }
+      if (catRes.success && catRes.data) {
+        setCategories(catRes.data);
+      }
+    } catch (err) {
+      console.error('Failed to load products data:', err);
+    } finally {
+      setDataLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -146,24 +158,6 @@ export default function ProductsPage() {
     }
   }, []);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('Image file size exceeds 5MB limit.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setImagePreview(dataUrl);
-      setImageFile({ name: file.name, dataUrl, mimeType: file.type });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const [editingProduct, setEditingProduct] = useState<any>(null);
-
   const openCreate = () => {
     setIsEditMode(false);
     setEditingProduct(null);
@@ -176,85 +170,6 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
-    if (e && typeof e.preventDefault === 'function') e.preventDefault();
-
-    if (!form.name || !form.name.trim()) {
-      setErrorMsg('Product Name is required.');
-      return;
-    }
-    if (!form.sku || !form.sku.trim()) {
-      setErrorMsg('SKU Code is required.');
-      return;
-    }
-    if (!form.barcode || !form.barcode.trim()) {
-      setErrorMsg('Barcode is mandatory. Please enter or scan a barcode.');
-      return;
-    }
-    if (Number(form.sellingPrice) < 0 || isNaN(Number(form.sellingPrice))) {
-      setErrorMsg('Selling Price cannot be negative.');
-      return;
-    }
-    if (Number(form.costPrice) < 0 || isNaN(Number(form.costPrice))) {
-      setErrorMsg('Cost Price cannot be negative.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMsg(null);
-
-    const endpoint = isEditMode && editingId ? `/products/${editingId}` : '/products';
-    const method = isEditMode ? 'PUT' : 'POST';
-
-    const res = await apiRequest(endpoint, {
-      method,
-      body: JSON.stringify({
-        ...form,
-        name: form.name.trim(),
-        sku: form.sku.trim(),
-        barcode: form.barcode?.trim() || null,
-        pluCode: form.pluCode?.trim() || null,
-        costPrice: Number(form.costPrice) || 0,
-        wholesalePrice: form.wholesalePrice ? Number(form.wholesalePrice) : null,
-        sellingPrice: Number(form.sellingPrice) || 0,
-        minStockLevel: Number(form.minStockLevel) || 0,
-        initialStock: Number(form.initialStock) || 0,
-        packagingMultiplier: Number(form.packagingMultiplier) || 1.0,
-      }),
-    });
-
-    if (res.success) {
-      const prodId = isEditMode && editingId ? editingId : res.data?.id;
-      if (prodId && imageFile) {
-        await apiRequest(`/products/${prodId}/images`, {
-          method: 'POST',
-          body: JSON.stringify({
-            fileName: imageFile.name,
-            dataUrl: imageFile.dataUrl,
-            mimeType: imageFile.mimeType,
-            isPrimary: true,
-          }),
-        });
-      }
-      setIsModalOpen(false);
-      setImagePreview(null);
-      setImageFile(null);
-      loadData();
-    } else {
-      let detailedMsg = res.message || 'Failed to save product.';
-      if (res.errors) {
-        const fieldErrors = Object.entries(res.errors)
-          .filter(([k]) => k !== '_errors')
-          .map(([field, err]: any) => `${field}: ${Array.isArray(err?._errors) ? err._errors.join(', ') : err}`)
-          .join('; ');
-        if (fieldErrors) detailedMsg += ` (${fieldErrors})`;
-      }
-      setErrorMsg(detailedMsg);
-    }
-
-    setLoading(false);
-  };
-
   const handleDeactivate = async (id: number) => {
     if (!confirm('Are you sure you want to deactivate this product SKU?')) return;
     const res = await apiRequest(`/products/${id}`, { method: 'DELETE' });
@@ -264,22 +179,6 @@ export default function ProductsPage() {
   const openBarcodePrint = (p: any) => {
     setBarcodeProduct(p);
     setIsBarcodeModalOpen(true);
-  };
-
-  const handleCreateCategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = await apiRequest('/products/categories', {
-      method: 'POST',
-      body: JSON.stringify({ name: newCatName }),
-    });
-    if (res.success) {
-      setNewCatName('');
-      setIsCategoryModalOpen(false);
-      if (res.data?.id) {
-        setForm((prev) => ({ ...prev, categoryId: res.data.id }));
-      }
-      loadData();
-    }
   };
 
   const handleExportJson = async () => {
@@ -341,26 +240,57 @@ export default function ProductsPage() {
     }
   };
 
-  const filtered = products.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.sku.toLowerCase().includes(search.toLowerCase()) ||
-      (p.barcode && p.barcode.includes(search)) ||
-      (p.plu_code && p.plu_code.includes(search));
+  // Dynamic stock counting for tab titles, dynamically reflecting selected category
+  const stockCounts = useMemo(() => {
+    let all = 0;
+    let low = 0;
+    let out = 0;
+    let perishable = 0;
 
-    const matchesCat = selectedCat ? p.category_id === selectedCat : true;
-
-    let matchesStock = true;
-    if (stockFilter === 'low') {
-      matchesStock = Number(p.current_stock) > 0 && Number(p.current_stock) <= Number(p.min_stock_level || 5);
-    } else if (stockFilter === 'out') {
-      matchesStock = Number(p.current_stock) <= 0;
-    } else if (stockFilter === 'perishable') {
-      matchesStock = p.has_expiry === true;
+    for (const p of products) {
+      if (selectedCat && p.category_id !== selectedCat) continue;
+      all++;
+      const stock = Number(p.current_stock || 0);
+      const min = Number(p.min_stock_level || 5);
+      if (stock <= 0) {
+        out++;
+      } else if (stock <= min) {
+        low++;
+      }
+      if (p.has_expiry) {
+        perishable++;
+      }
     }
+    return { all, low, out, perishable };
+  }, [products, selectedCat]);
 
-    return matchesSearch && matchesCat && matchesStock;
-  });
+  // In-memory instant filtering across the entire catalog
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return products.filter((p) => {
+      const matchesSearch =
+        !query ||
+        (p.name && p.name.toLowerCase().includes(query)) ||
+        (p.sku && p.sku.toLowerCase().includes(query)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(query)) ||
+        (p.plu_code && p.plu_code.toLowerCase().includes(query)) ||
+        (p.category_name && p.category_name.toLowerCase().includes(query)) ||
+        (p.brand_name && p.brand_name.toLowerCase().includes(query));
+
+      const matchesCat = selectedCat ? p.category_id === selectedCat : true;
+
+      let matchesStock = true;
+      if (stockFilter === 'low') {
+        matchesStock = Number(p.current_stock) > 0 && Number(p.current_stock) <= Number(p.min_stock_level || 5);
+      } else if (stockFilter === 'out') {
+        matchesStock = Number(p.current_stock) <= 0;
+      } else if (stockFilter === 'perishable') {
+        matchesStock = Boolean(p.has_expiry);
+      }
+
+      return matchesSearch && matchesCat && matchesStock;
+    });
+  }, [products, search, selectedCat, stockFilter]);
 
   return (
     <div className="space-y-6">
@@ -402,7 +332,7 @@ export default function ProductsPage() {
             Product Master Catalog
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage products, pricing, inventory, and barcodes.
+            Manage products, pricing, inventory, and barcodes across {products.length} catalog items.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -436,92 +366,170 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Filters Toolbar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
-        {/* Search */}
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by SKU, product name, barcode, or PLU..."
-            className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-10 pr-9 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+      {/* Filters & Tabs Toolbar */}
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 shadow-sm">
+        {/* Left: Search & Category Dropdown */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-0">
+          {/* Search Input */}
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleBarcodeLookup(search);
+                }
+              }}
+              placeholder="Search by SKU, product name, barcode, or PLU..."
+              className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-10 pr-28 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {scannerStatus ? (
+                <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md animate-pulse">
+                  {scannerStatus}
+                </span>
+              ) : (
+                <span className="hidden sm:flex items-center gap-1 text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded-md">
+                  <Barcode className="h-3 w-3" /> Scan Ready
+                </span>
+              )}
+              {search && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setSearch('');
+                    setCurrentPage(1);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                  title="Clear filter"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
 
-        {/* Category Filter */}
-        <div className="w-full sm:w-56 shrink-0 relative">
-          <select
-            value={selectedCat || ''}
-            onChange={(e) => setSelectedCat(e.target.value ? parseInt(e.target.value) : null)}
-            className="h-10 w-full appearance-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-3.5 pr-8 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none cursor-pointer transition"
-          >
-            <option value="">All Categories ({products.length})</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-            <Filter className="h-3.5 w-3.5 opacity-60" />
+          {/* Category Filter */}
+          <div className="w-full sm:w-56 shrink-0 relative">
+            <select
+              value={selectedCat || ''}
+              onChange={(e) => {
+                setSelectedCat(e.target.value ? parseInt(e.target.value, 10) : null);
+                setCurrentPage(1);
+              }}
+              className="h-10 w-full appearance-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-3.5 pr-8 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none cursor-pointer transition"
+            >
+              <option value="">All Categories ({products.length})</option>
+              {categories.map((c) => {
+                const catCount = products.filter((p) => p.category_id === c.id).length;
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({catCount})
+                  </option>
+                );
+              })}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Filter className="h-3.5 w-3.5 opacity-60" />
+            </div>
           </div>
         </div>
 
-        {/* Stock Status Filter Pills */}
-        <div className="flex items-center gap-1 shrink-0 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl h-10 border border-slate-200/60 dark:border-slate-700/60">
-          <button
-            type="button"
-            onClick={() => setStockFilter('all')}
-            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
-              stockFilter === 'all'
-                ? 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            All Stock
-          </button>
-          <button
-            type="button"
-            onClick={() => setStockFilter('low')}
-            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
-              stockFilter === 'low'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Low Stock
-          </button>
-          <button
-            type="button"
-            onClick={() => setStockFilter('out')}
-            className={`h-full rounded-lg px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center ${
-              stockFilter === 'out'
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Out of Stock
-          </button>
+        {/* Right: Stock Status Filter Tabs with Dynamic Counting Labels */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:pb-0 shrink-0">
+          {[
+            {
+              id: 'all' as const,
+              label: 'All Stock',
+              count: stockCounts.all,
+              activeClass: 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950',
+              badgeActive: 'bg-white/20 text-white dark:bg-slate-950/20 dark:text-slate-950',
+              badgeInactive: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+            },
+            {
+              id: 'low' as const,
+              label: 'Low Stock',
+              count: stockCounts.low,
+              activeClass: 'bg-amber-600 text-white shadow-sm',
+              badgeActive: 'bg-white/20 text-white',
+              badgeInactive:
+                stockCounts.low > 0
+                  ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+            },
+            {
+              id: 'out' as const,
+              label: 'Out of Stock',
+              count: stockCounts.out,
+              activeClass: 'bg-red-600 text-white shadow-sm',
+              badgeActive: 'bg-white/20 text-white',
+              badgeInactive:
+                stockCounts.out > 0
+                  ? 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-400 font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+            },
+            {
+              id: 'perishable' as const,
+              label: 'Perishable',
+              count: stockCounts.perishable,
+              activeClass: 'bg-purple-600 text-white shadow-sm',
+              badgeActive: 'bg-white/20 text-white',
+              badgeInactive:
+                stockCounts.perishable > 0
+                  ? 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 font-bold'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+            },
+          ].map((tab) => {
+            const isActive = stockFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setStockFilter(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={`h-10 rounded-xl px-3.5 text-xs font-bold whitespace-nowrap transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  isActive
+                    ? tab.activeClass
+                    : 'bg-slate-100 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700/60'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded-md transition ${
+                    isActive ? tab.badgeActive : tab.badgeInactive
+                  }`}
+                >
+                  ({tab.count})
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Products Master DataTable */}
+      {/* Products Master DataTable with Full Catalog Pagination */}
       <DataTable
         isLoading={dataLoading}
         data={filtered}
         keyExtractor={(p) => p.id}
         emptyMessage="No products match your filter criteria."
+        pagination={{
+          pageSize: 50,
+          pageSizeOptions: [25, 50, 100, 250, 'all'],
+          currentPage,
+          onPageChange: (p) => setCurrentPage(p),
+        }}
         columns={[
           {
             header: 'Product Name / Identifiers',
@@ -560,19 +568,24 @@ export default function ProductsPage() {
             accessor: (p) => {
               const stock = Number(p.current_stock || 0);
               const min = Number(p.min_stock_level || 5);
+              const unitShort = p.unit_short || p.unit_name || '';
+              const isDecimal = Boolean(p.allow_decimal) || stock % 1 !== 0;
+              const formattedQty = isDecimal ? stock.toFixed(2) : stock.toFixed(0);
+              const qtyDisplay = unitShort ? `${formattedQty} ${unitShort}` : formattedQty;
+
               if (stock <= 0) {
                 return <Badge variant="danger">Out of Stock (0)</Badge>;
               }
               if (stock <= min) {
                 return (
                   <Badge variant="warning">
-                    Low Stock ({stock.toFixed(0)})
+                    Low Stock ({qtyDisplay})
                   </Badge>
                 );
               }
               return (
                 <Badge variant="success">
-                  In Stock ({stock.toFixed(0)})
+                  In Stock ({qtyDisplay})
                 </Badge>
               );
             },

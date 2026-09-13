@@ -47,7 +47,7 @@ DELETE FROM users WHERE role != 'manager';
 
 -- Ensure Manager user is active with reset sessions
 INSERT INTO users (id, role, username, email, password_hash, full_name, phone, pin_code, is_active) VALUES
-(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE)
+(1, 'manager', 'admin', 'admin@shopmanagement.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '$2b$10$zT413Tpuxg5/JiedBrTjIeXcozz.HYkcBLjVOaiuflK7czSOJ9wVO', TRUE)
 ON CONFLICT (id) DO UPDATE SET 
     role = 'manager',
     is_active = TRUE,

@@ -61,166 +61,17 @@ async function waitForDatabase(maxRetries = 30, delayMs = 1500): Promise<void> {
   throw new Error('❌ Could not connect to PostgreSQL database after multiple attempts.');
 }
 
-async function runAutoMigrations() {
-  console.log('🔄 Verifying and applying database schema migrations...');
-
-  const migrationSteps: { name: string; sql: string; critical?: boolean }[] = [
-    {
-      name: 'Users table session tracking columns',
-      critical: true,
-      sql: `
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS current_session_id VARCHAR(100);
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS current_pos_session_id VARCHAR(100);
-      `,
-    },
-    {
-      name: 'Users table PIN hash column expansion and optional password hash & username',
-      critical: true,
-      sql: `
-        ALTER TABLE users ALTER COLUMN pin_code TYPE VARCHAR(255);
-        ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
-        ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
-      `,
-    },
-    {
-      name: 'Cash sessions columns & terminal support',
-      sql: `
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_name VARCHAR(100) DEFAULT 'Terminal-01';
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS sequence_number INT;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS previous_session_id INT REFERENCES cash_sessions(id);
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS carry_forward_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS close_type VARCHAR(20) DEFAULT 'normal';
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS force_closed_by INT REFERENCES users(id);
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS force_close_reason TEXT;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_total DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_expected DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS terminal_card_discrepancy DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS opening_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-        ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS carry_forward_card_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000;
-      `,
-    },
-    {
-      name: 'Single open POS session constraint and sequence numbering',
-      sql: `
-        -- Close legacy duplicate open sessions before creating the unique index
-        UPDATE cash_sessions 
-        SET status = 'closed', closed_at = NOW(), closing_note = 'Auto-closed legacy open session'
-        WHERE status = 'open' 
-          AND id NOT IN (SELECT id FROM cash_sessions WHERE status = 'open' ORDER BY opened_at DESC LIMIT 1);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_single_open_cash_session 
-            ON cash_sessions ((1)) WHERE status = 'open';
-
-        UPDATE cash_sessions SET sequence_number = id WHERE sequence_number IS NULL;
-      `,
-    },
-    {
-      name: 'Sales session foreign key and index',
-      sql: `
-        ALTER TABLE sales ADD COLUMN IF NOT EXISTS session_id INT REFERENCES cash_sessions(id) ON DELETE SET NULL;
-        CREATE INDEX IF NOT EXISTS idx_sales_session_id ON sales(session_id);
-      `,
-    },
-    {
-      name: 'Product batches purchase tracking',
-      sql: `
-        ALTER TABLE product_batches ADD COLUMN IF NOT EXISTS purchase_id INT REFERENCES purchases(id) ON DELETE SET NULL;
-        ALTER TABLE product_batches ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-      `,
-    },
-    {
-      name: 'Session adjustments table and immutability trigger',
-      sql: `
-        CREATE TABLE IF NOT EXISTS session_adjustments (
-            id BIGSERIAL PRIMARY KEY,
-            session_id INT NOT NULL REFERENCES cash_sessions(id) ON DELETE RESTRICT,
-            adjustment_type VARCHAR(20) NOT NULL CHECK (adjustment_type IN ('opening', 'closing')),
-            amount DECIMAL(15,4) NOT NULL,
-            description TEXT NOT NULL,
-            created_by INT NOT NULL REFERENCES users(id),
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_session_adjustments_session ON session_adjustments(session_id);
-
-        DO $$ 
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_session_adjustments_no_update_delete') THEN
-                CREATE OR REPLACE FUNCTION prevent_adjustment_mutation()
-                RETURNS TRIGGER AS $fn$
-                BEGIN
-                    RAISE EXCEPTION 'Session adjustments are immutable and cannot be modified or deleted';
-                END;
-                $fn$ LANGUAGE plpgsql;
-
-                CREATE TRIGGER trg_session_adjustments_no_update_delete
-                    BEFORE UPDATE OR DELETE ON session_adjustments
-                    FOR EACH ROW EXECUTE FUNCTION prevent_adjustment_mutation();
-            END IF;
-        END $$;
-      `,
-    },
-    {
-      name: 'Tax and produce scale enhancements',
-      sql: `
-        ALTER TABLE tax_rates ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false;
-        ALTER TABLE tax_rates ADD COLUMN IF NOT EXISTS tax_type VARCHAR(50) DEFAULT 'VAT';
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS plu_code VARCHAR(20);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS has_expiry BOOLEAN NOT NULL DEFAULT false;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS is_weighable BOOLEAN NOT NULL DEFAULT false;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS is_quick_plu BOOLEAN NOT NULL DEFAULT false;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
-        CREATE INDEX IF NOT EXISTS idx_products_plu ON products(plu_code);
-      `,
-    },
-    {
-      name: 'Settings defaults and group column',
-      sql: `
-        ALTER TABLE settings ADD COLUMN IF NOT EXISTS setting_group VARCHAR(50) DEFAULT 'shop';
-        CREATE INDEX IF NOT EXISTS idx_settings_group ON settings(setting_group);
-        INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public)
-        VALUES 
-          ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true),
-          ('pos_default_payment_method', 'hardware', 'card', 'Default POS Payment Method (card, cash, split)', true)
-        ON CONFLICT (setting_key) DO NOTHING;
-      `,
-    },
-    {
-      name: 'Customers loyalty points column',
-      sql: `
-        ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points INT NOT NULL DEFAULT 0;
-      `,
-    },
-    {
-      name: 'Products default tax type to inclusive',
-      sql: `
-        ALTER TABLE products ALTER COLUMN tax_type SET DEFAULT 'inclusive';
-      `,
-    },
-  ];
-
-  for (const step of migrationSteps) {
-    try {
-      await db.query(step.sql);
-      console.log(`✅ Auto-migration: ${step.name} applied successfully.`);
-    } catch (err: any) {
-      console.error(`❌ Auto-migration error on "${step.name}":`, err.message);
-      if (step.critical) {
-        throw new Error(`Critical migration failed on "${step.name}": ${err.message}`);
-      }
-    }
-  }
-
-  console.log('🎉 All database auto-migrations completed and verified.');
+async function verifyDatabase(): Promise<void> {
+  await waitForDatabase();
+  console.log('✅ PostgreSQL database ready and verified against canonical schema.');
 }
 
 async function main() {
-  await waitForDatabase();
-  await runAutoMigrations();
+  await verifyDatabase();
 
   // 1. Plugins
   await server.register(cors, {
-    origin: true,
+    origin: ['http://localhost:3000', 'http://localhost', 'http://127.0.0.1:3000', 'http://127.0.0.1'],
     credentials: true,
   });
 

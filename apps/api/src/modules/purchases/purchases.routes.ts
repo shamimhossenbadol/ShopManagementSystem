@@ -2,14 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db/pool.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
-import { calculateWeightedAverageCost, round2 } from '../../utils/financial.js';
+import { calculateWeightedAverageCost, round2, round4 } from '../../utils/financial.js';
 
 const purchaseItemSchema = z.object({
   productId: z.coerce.number(),
   netUnitCost: z.coerce.number().positive(),
   quantity: z.coerce.number().positive(),
   taxRate: z.coerce.number().min(0).default(15.00),
-  batchNumber: z.string().optional().nullable(),
   expiryDate: z.string().optional().nullable(),
 });
 
@@ -126,6 +125,11 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
         }
 
         const grandTotal = round2(subtotal + totalTax + shippingCost);
+        if (paidAmount > grandTotal) {
+          throw new Error(
+            `Amount paid at receipt (${paidAmount.toFixed(2)} SAR) cannot exceed grand total (${grandTotal.toFixed(2)} SAR).`
+          );
+        }
         const dueAmount = round2(Math.max(0, grandTotal - paidAmount));
         const paymentStatus = dueAmount === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid';
 
@@ -161,6 +165,8 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
         const purchase = pRes.rows[0];
 
         // 2. Process items, add stock movements, update WAC and create batches
+        const totalItemSubtotal = items.reduce((sum, item) => sum + (item.netUnitCost * item.quantity), 0);
+
         for (const item of items) {
           const itemSubtotal = round2(item.netUnitCost * item.quantity);
           const itemTax = round2(itemSubtotal * (item.taxRate / 100));
@@ -172,43 +178,52 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
           );
           const purchaseItemId = piRes.rows[0].id;
 
-          // Get current stock & WAC cost with row lock
+          // Get current stock, WAC cost, and multiplier with row lock
           const prodRes = await client.query(
-            `SELECT cost_price, current_stock, has_expiry
+            `SELECT cost_price, current_stock, has_expiry, packaging_multiplier
              FROM products WHERE id = $1 FOR UPDATE`,
             [item.productId]
           );
 
           const curStock = Number(prodRes.rows[0]?.current_stock || 0);
           const curWac = Number(prodRes.rows[0]?.cost_price || 0);
+          const packagingMultiplier = Number(prodRes.rows[0]?.packaging_multiplier || 1);
+          const baseQuantity = item.quantity * packagingMultiplier;
 
-          // Calculate new WAC
-          const newWac = calculateWeightedAverageCost(curStock, curWac, item.quantity, item.netUnitCost);
+          // Allocate shipping cost proportionally
+          const shippingShare = totalItemSubtotal > 0
+            ? round2((shippingCost * itemSubtotal) / totalItemSubtotal)
+            : 0;
+          const effectiveUnitCost = round4(((item.netUnitCost * item.quantity) + shippingShare) / item.quantity);
+          const baseUnitCost = round4(effectiveUnitCost / packagingMultiplier);
 
-          // Update product WAC cost price and increment current_stock
+          // Calculate new WAC using base units
+          const newWac = calculateWeightedAverageCost(curStock, curWac, baseQuantity, baseUnitCost);
+
+          // Update product WAC cost price and increment current_stock using base quantity
           await client.query(
             `UPDATE products 
              SET cost_price = $1, current_stock = current_stock + $2, updated_at = NOW() 
              WHERE id = $3`,
-            [newWac, item.quantity, item.productId]
+            [newWac, baseQuantity, item.productId]
           );
 
-          // Insert stock movement (Inflow)
+          // Insert stock movement (Inflow) using base quantity
           await client.query(
             `INSERT INTO stock_movements (product_id, quantity, type, reference_id, reference_type, unit_cost, user_id, notes)
              VALUES ($1, $2, 'purchase', $3, 'purchase', $4, $5, $6)`,
-            [item.productId, item.quantity, purchase.id, item.netUnitCost, request.user!.id, `Purchase: ${ref}`]
+            [item.productId, baseQuantity, purchase.id, baseUnitCost, request.user!.id, `Purchase: ${ref}`]
           );
 
-          // If expiry or batch provided, insert into product_batches
-          if (item.expiryDate || item.batchNumber) {
-            const batchNo = item.batchNumber || `BATCH-${Date.now().toString().slice(-6)}`;
-            const expiry = item.expiryDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          // If expiry provided, insert into product_batches using base quantity
+          if (item.expiryDate) {
+            const batchNo = `BATCH-${Date.now().toString().slice(-6)}`;
+            const expiry = item.expiryDate;
 
             await client.query(
               `INSERT INTO product_batches (product_id, batch_number, expiry_date, purchase_item_id, initial_quantity, current_quantity)
                VALUES ($1, $2, $3, $4, $5, $5)`,
-              [item.productId, batchNo, expiry, purchaseItemId, item.quantity]
+              [item.productId, batchNo, expiry, purchaseItemId, baseQuantity]
             );
 
             await client.query(`UPDATE products SET has_expiry = TRUE WHERE id = $1`, [item.productId]);
@@ -216,26 +231,35 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
         }
 
         // 3. Record supplier ledger
+        await client.query(`SELECT id FROM suppliers WHERE id = $1 FOR UPDATE`, [supplierId]);
         const supBalRes = await client.query(
           `SELECT COALESCE(balance, 0) as last_bal FROM supplier_ledger 
            WHERE supplier_id = $1 ORDER BY id DESC LIMIT 1`,
           [supplierId]
         );
         const lastSupBal = Number(supBalRes.rows[0]?.last_bal || 0);
-        const newSupBal = round2(lastSupBal + dueAmount);
+        const balAfterBill = round2(lastSupBal + grandTotal);
 
         await client.query(
           `INSERT INTO supplier_ledger (supplier_id, user_id, type, reference_id, debit, credit, balance, notes)
            VALUES ($1, $2, 'bill', $3, 0, $4, $5, $6)`,
-          [supplierId, request.user!.id, purchase.id, grandTotal, newSupBal, `Purchase Bill ${ref}`]
+          [supplierId, request.user!.id, purchase.id, grandTotal, balAfterBill, `Purchase Bill ${ref}`]
         );
 
         // 4. Record immediate payment if applied
         if (paidAmount > 0) {
+          const balAfterPayment = round2(balAfterBill - paidAmount);
+
           await client.query(
-            `INSERT INTO purchase_payments (purchase_id, payment_method_id, amount, created_by)
-             VALUES ($1, $2, $3, $4)`,
-            [purchase.id, paymentMethodId, paidAmount, request.user!.id]
+            `INSERT INTO supplier_ledger (supplier_id, user_id, type, reference_id, debit, credit, balance, notes)
+             VALUES ($1, $2, 'payment', $3, $4, 0, $5, $6)`,
+            [supplierId, request.user!.id, purchase.id, paidAmount, balAfterPayment, `Immediate Payment for ${ref}`]
+          );
+
+          await client.query(
+            `INSERT INTO purchase_payments (purchase_id, payment_method_id, amount, reference_note, created_by)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [purchase.id, paymentMethodId, paidAmount, `Immediate Receipt Payment: ${ref}`, request.user!.id]
           );
 
           // If paid from cash drawer, record cash outflow
@@ -320,7 +344,26 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
           );
         }
 
-        // 3. Credit supplier ledger
+        // 3. Update parent purchase due amount
+        if (purchaseId) {
+          const pRes = await client.query(
+            `SELECT id, grand_total, paid_amount, due_amount FROM purchases WHERE id = $1 FOR UPDATE`,
+            [purchaseId]
+          );
+          if (pRes.rows.length > 0) {
+            const p = pRes.rows[0];
+            const returnDeduction = Math.min(Number(p.due_amount), totalReturnAmount);
+            const newDue = round2(Number(p.due_amount) - returnDeduction);
+            const newStatus = newDue <= 0 ? 'paid' : (Number(p.paid_amount) > 0 ? 'partial' : 'unpaid');
+            await client.query(
+              `UPDATE purchases SET due_amount = $1, payment_status = $2, updated_at = NOW() WHERE id = $3`,
+              [newDue, newStatus, p.id]
+            );
+          }
+        }
+
+        // 4. Credit supplier ledger
+        await client.query(`SELECT id FROM suppliers WHERE id = $1 FOR UPDATE`, [supplierId]);
         const supBalRes = await client.query(
           `SELECT COALESCE(balance, 0) as last_bal FROM supplier_ledger 
            WHERE supplier_id = $1 ORDER BY id DESC LIMIT 1`,
@@ -335,7 +378,7 @@ export async function purchaseRoutes(fastify: FastifyInstance) {
           [supplierId, request.user!.id, returnId, totalReturnAmount, newBal, `Purchase Return ${ref}`]
         );
 
-        // 4. Audit Log
+        // 5. Audit Log
         await client.query(
           `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
            VALUES ($1, 'PURCHASE_RETURN', 'purchase_returns', $2, $3)`,

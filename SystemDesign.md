@@ -1135,15 +1135,15 @@ CREATE TABLE settings_history (
 -- DEFAULT SETTINGS SEED (EVERY ASPECT IS DYNAMICALLY CUSTOMIZABLE)
 -- 1. Shop Profile
 INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public) VALUES
-('shop_name_en', 'shop', 'AL-NOOR SUPERMARKET & HYPERMARKET', 'Shop Primary Name', true),
-('shop_name_ar', 'shop', 'متجر النور', 'Shop Arabic Legal Name', true),
+('shop_name_en', 'shop', 'SHOP MANAGEMENT SYSTEM', 'Shop Primary Name', true),
+('shop_name_ar', 'shop', 'SHOP MANAGEMENT SYSTEM', 'Shop Arabic Legal Name', true),
 ('shop_cr_number', 'shop', '1010123456', 'Commercial Registration Number', true),
 ('shop_vat_number', 'shop', '300123456700003', 'VAT / Tax Registration Number', true),
 ('shop_phone', 'shop', '+966 11 456 7890', 'Shop Contact Phone', true),
-('shop_email', 'shop', 'info@alnoorshop.com', 'Shop Email Address', true),
+('shop_email', 'shop', 'info@shopmanagement.com', 'Shop Email Address', true),
 ('shop_address', 'shop', 'King Fahd Road, Riyadh, Saudi Arabia', 'Shop Physical Address', true),
 ('shop_logo_path', 'shop', '/uploads/branding/logo.webp', 'Shop Brand Logo', true),
-('receipt_header', 'shop', 'Welcome to Al-Noor Supermarket', 'Receipt Top Header Message', true),
+('receipt_header', 'shop', 'Welcome to Shop Management System', 'Receipt Top Header Message', true),
 ('receipt_footer', 'shop', 'Thank you for shopping with us! Return within 7 days with receipt.', 'Receipt Bottom Note', true);
 
 -- 2. Tax & VAT

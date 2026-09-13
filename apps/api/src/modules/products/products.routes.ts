@@ -61,7 +61,7 @@ export async function productRoutes(fastify: FastifyInstance) {
 
   // GET /api/v1/products - List / search products
   fastify.get('/', async (request, reply) => {
-    const { search, category_id, is_quick_plu, is_weighable } = request.query as any;
+    const { search, category_id, is_quick_plu, is_weighable, limit, offset } = request.query as any;
     const isManager = request.user!.role === 'manager';
 
     let sql = `
@@ -82,39 +82,43 @@ export async function productRoutes(fastify: FastifyInstance) {
         p.is_quick_plu,
         p.is_active,
         p.current_stock,
-        COALESCE((
-          SELECT SUM(b.current_quantity)
-          FROM product_batches b
-          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
-        ), 0) as expired_stock,
-        GREATEST(0, p.current_stock - COALESCE((
-          SELECT SUM(b.current_quantity)
-          FROM product_batches b
-          WHERE b.product_id = p.id AND b.is_active = TRUE AND b.expiry_date < CURRENT_DATE
-        ), 0)) as sellable_stock,
-        COALESCE(p.image_url, (SELECT file_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, id DESC LIMIT 1)) as image_url,
-        (
-          SELECT COALESCE(json_agg(json_build_object(
-            'id', pi.id,
-            'file_path', pi.file_path,
-            'file_name', pi.file_name,
-            'is_primary', pi.is_primary
-          )), '[]'::json)
-          FROM product_images pi
-          WHERE pi.product_id = p.id
-        ) as images
+        COALESCE(pb_exp.expired_stock, 0) as expired_stock,
+        GREATEST(0, p.current_stock - COALESCE(pb_exp.expired_stock, 0)) as sellable_stock,
+        COALESCE(p.image_url, pi_prim.file_path) as image_url,
+        COALESCE(pi_agg.images, '[]'::json) as images
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN brands b ON p.brand_id = b.id
       LEFT JOIN units u ON p.unit_id = u.id
       LEFT JOIN tax_rates t ON p.tax_rate_id = t.id
+      LEFT JOIN (
+        SELECT product_id, SUM(current_quantity) as expired_stock
+        FROM product_batches
+        WHERE is_active = TRUE AND expiry_date < CURRENT_DATE
+        GROUP BY product_id
+      ) pb_exp ON pb_exp.product_id = p.id
+      LEFT JOIN (
+        SELECT DISTINCT ON (product_id) product_id, file_path
+        FROM product_images
+        ORDER BY product_id, is_primary DESC, id DESC
+      ) pi_prim ON pi_prim.product_id = p.id
+      LEFT JOIN (
+        SELECT product_id, json_agg(json_build_object(
+          'id', id,
+          'file_path', file_path,
+          'file_name', file_name,
+          'is_primary', is_primary
+        )) as images
+        FROM product_images
+        GROUP BY product_id
+      ) pi_agg ON pi_agg.product_id = p.id
       WHERE p.is_active = TRUE AND p.is_deleted = FALSE
     `;
 
     const params: any[] = [];
     if (search) {
-      params.push(`%${search}%`);
-      sql += ` AND (p.name ILIKE $${params.length} OR p.sku ILIKE $${params.length} OR p.barcode ILIKE $${params.length} OR p.plu_code ILIKE $${params.length})`;
+      params.push(search);
+      sql += ` AND (p.barcode = $${params.length} OR p.sku = $${params.length} OR p.name % $${params.length} OR p.name ILIKE $${params.length} || '%')`;
     }
     if (category_id) {
       params.push(Number(category_id));
@@ -127,7 +131,27 @@ export async function productRoutes(fastify: FastifyInstance) {
       sql += ` AND p.is_weighable = TRUE`;
     }
 
-    sql += ` ORDER BY p.id ASC LIMIT 200`;
+    if (search) {
+      sql += ` ORDER BY CASE WHEN p.barcode = $1 THEN 0 WHEN p.sku = $1 THEN 1 ELSE 2 END, similarity(p.name, $1) DESC, p.id ASC`;
+    } else {
+      sql += ` ORDER BY p.id ASC`;
+    }
+
+    if (limit && limit !== 'all') {
+      const parsedLimit = parseInt(limit, 10);
+      if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        params.push(parsedLimit);
+        sql += ` LIMIT $${params.length}`;
+
+        if (offset) {
+          const parsedOffset = parseInt(offset, 10);
+          if (!isNaN(parsedOffset) && parsedOffset > 0) {
+            params.push(parsedOffset);
+            sql += ` OFFSET $${params.length}`;
+          }
+        }
+      }
+    }
 
     const res = await query(sql, params);
     return reply.send({ success: true, data: res.rows });
@@ -489,6 +513,20 @@ export async function productRoutes(fastify: FastifyInstance) {
     const cur = curRes.rows[0];
     const data = parsed.data;
 
+    if (data.barcode) {
+      const barcodeCheck = await query(
+        'SELECT id FROM products WHERE barcode = $1 AND id != $2 AND is_deleted = FALSE',
+        [data.barcode, Number(id)]
+      );
+      if (barcodeCheck.rows.length > 0) {
+        return reply.status(409).send({
+          success: false,
+          message: `Barcode "${data.barcode}" is already assigned to another product.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
     const updated = await withTransaction(async (client) => {
       const pRes = await client.query(
         `UPDATE products SET
@@ -542,6 +580,16 @@ export async function productRoutes(fastify: FastifyInstance) {
   // DELETE /api/v1/products/:id - Soft delete Product (Manager only)
   fastify.delete('/:id', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
+
+    const stockCheck = await query('SELECT current_stock FROM products WHERE id = $1', [Number(id)]);
+    if (Number(stockCheck.rows[0]?.current_stock) > 0) {
+      return reply.status(400).send({
+        success: false,
+        message: `Cannot deactivate product with ${stockCheck.rows[0].current_stock} units in stock. Perform a stock write-off first.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     await query(`UPDATE products SET is_deleted = TRUE, is_active = FALSE, updated_at = NOW() WHERE id = $1`, [Number(id)]);
 
     await query(
@@ -656,8 +704,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        shopName: settingsMap.shop_name_en || 'AL-NOOR SUPERMARKET & HYPERMARKET',
-        shopNameAr: settingsMap.shop_name_ar || 'AL-NOOR RETAIL POS',
+        shopName: settingsMap.shop_name_en || 'SHOP MANAGEMENT SYSTEM',
+        shopNameAr: settingsMap.shop_name_ar || 'SHOP MANAGEMENT SYSTEM',
         productName: prod.name,
         sku: prod.sku,
         barcode: prod.barcode || prod.sku,

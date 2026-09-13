@@ -76,8 +76,7 @@ export async function expenseRoutes(fastify: FastifyInstance) {
         const isCashRes = await client.query(`SELECT is_cash FROM payment_methods WHERE id = $1`, [paymentMethodId]);
         if (isCashRes.rows[0]?.is_cash) {
           const sessionRes = await client.query(
-            `SELECT id FROM cash_sessions WHERE user_id = $1 AND status = 'open' LIMIT 1`,
-            [request.user!.id]
+            `SELECT id FROM cash_sessions WHERE status = 'open' LIMIT 1`
           );
           if (sessionRes.rows.length > 0) {
             await client.query(

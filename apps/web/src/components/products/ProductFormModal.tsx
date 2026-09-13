@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -74,6 +75,17 @@ export function ProductFormModal({
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [catLoading, setCatLoading] = useState(false);
+
+  // Hardware Barcode Scanner Listener inside modal
+  useBarcodeScanner({
+    enableAudioBeep: true,
+    onScan: (scanned) => {
+      if (!isOpen) return;
+      const clean = scanned.trim();
+      if (!clean) return;
+      setForm((prev) => ({ ...prev, barcode: clean }));
+    },
+  });
 
   const loadDropdowns = async () => {
     try {
@@ -341,7 +353,16 @@ export function ProductFormModal({
           </div>
         }
       >
-        <form id="product-master-form" onSubmit={handleSubmit} className="space-y-4">
+        <form
+          id="product-master-form"
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement)?.tagName === 'INPUT') {
+              e.preventDefault();
+            }
+          }}
+          className="space-y-4"
+        >
           {/* Identity & Basic Info */}
           <div className="flex items-start gap-3">
             {/* Compact Image Upload Tile */}

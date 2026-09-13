@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db/pool.js';
 import { authenticate, requireRole } from '../../middleware/auth.js';
-import { calculateLineVat, round2 } from '../../utils/financial.js';
+import { calculateLineVat, round2, allocateInvoiceDiscount } from '../../utils/financial.js';
 import { generateZatcaTLVQR, generateInvoiceHash } from '../../utils/zatca.js';
 
 const saleItemSchema = z.object({
@@ -35,7 +35,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
 
   // POST /api/v1/sales - Atomic POS Checkout
-  fastify.post('/', { preHandler: [requireRole(['sales_executive'])] }, async (request, reply) => {
+  fastify.post('/', { preHandler: [requireRole(['sales_executive', 'manager'])] }, async (request, reply) => {
     const parsed = createSaleSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -46,6 +46,16 @@ export async function salesRoutes(fastify: FastifyInstance) {
     }
 
     const { customerId, items, payments, invoiceDiscount, invoiceDiscountType, idempotencyKey } = parsed.data;
+
+    for (const item of items) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+        return reply.status(400).send({
+          success: false,
+          message: `Invalid quantity for product. Only whole numbers are allowed.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
 
     // Idempotency Check: if idempotency key was previously processed, return existing sale
     if (idempotencyKey) {
@@ -75,15 +85,18 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
     try {
       const checkoutResult = await withTransaction(async (client) => {
-        // 1. Check active cash session for cashier
+        // 1. Check active cash session on single POS terminal
         const sessionRes = await client.query(
-          `SELECT id FROM cash_sessions WHERE user_id = $1 AND status = 'open' LIMIT 1`,
-          [request.user!.id]
+          `SELECT id FROM cash_sessions WHERE status = 'open' LIMIT 1`
         );
         const activeSessionId = sessionRes.rows.length > 0 ? sessionRes.rows[0].id : null;
 
-        // 2. Fetch products and lock rows for atomic stock check
-        const productIds = items.map((i) => i.productId);
+        if (!activeSessionId) {
+          throw new Error('Cannot process sale: No active cash drawer session. Please open a cash shift first.');
+        }
+
+        // 2. Fetch products and lock rows in deterministic order for atomic stock check
+        const productIds = [...new Set(items.map((i) => i.productId))].sort((a, b) => a - b);
         const prodRes = await client.query(
           `SELECT p.id, p.sku, p.name, p.cost_price, p.tax_type, p.has_expiry, p.current_stock, t.rate as tax_rate,
                   COALESCE((
@@ -108,9 +121,12 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
         // Calculate Gross Subtotal for proportional discount distribution
         let grossSubtotal = 0;
-        for (const item of items) {
-          grossSubtotal += item.unitPrice * item.quantity;
-        }
+        const lineGrossAmounts: { lineId: number; amount: number }[] = [];
+        items.forEach((item, index) => {
+          const lg = item.unitPrice * item.quantity;
+          grossSubtotal += lg;
+          lineGrossAmounts.push({ lineId: index, amount: lg });
+        });
 
         let computedInvoiceDiscount = invoiceDiscount;
         if (invoiceDiscountType === 'percentage' && grossSubtotal > 0) {
@@ -118,12 +134,16 @@ export async function salesRoutes(fastify: FastifyInstance) {
         }
         computedInvoiceDiscount = Math.min(computedInvoiceDiscount, grossSubtotal);
 
+        // Pre-allocate invoice discount proportionally using largest-remainder method
+        const allocatedDiscounts = allocateInvoiceDiscount(lineGrossAmounts, computedInvoiceDiscount);
+
         let subtotal = 0;
         let totalTax = 0;
         let totalItemsCount = 0;
         const processedItems: any[] = [];
 
-        for (const item of items) {
+        for (let idx = 0; idx < items.length; idx++) {
+          const item = items[idx];
           const product = prodMap.get(item.productId);
           if (!product) {
             throw new Error(`Product with ID ${item.productId} is unavailable.`);
@@ -144,13 +164,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
             );
           }
 
-          const lineGross = item.unitPrice * item.quantity;
-          // Proportional general invoice discount allocated to this line
-          const allocatedDiscount =
-            grossSubtotal > 0
-              ? (computedInvoiceDiscount * lineGross) / grossSubtotal
-              : 0;
-
+          const allocatedDiscount = allocatedDiscounts.get(idx) || 0;
           const totalLineDiscount = round2(item.discount + allocatedDiscount);
           const isInclusive = product.tax_type === 'inclusive';
           const taxRate = Number(product.tax_rate ?? 15.00);
@@ -309,9 +323,9 @@ export async function salesRoutes(fastify: FastifyInstance) {
               const newBatchQty = batchQty - deduct;
               await client.query(
                 `UPDATE product_batches 
-                 SET current_quantity = $1, is_active = ($1 > 0), updated_at = NOW() 
-                 WHERE id = $2`,
-                [newBatchQty, batch.id]
+                 SET current_quantity = $1, is_active = $2, updated_at = NOW() 
+                 WHERE id = $3`,
+                [newBatchQty, newBatchQty > 0, batch.id]
               );
               remainingToDeduct -= deduct;
             }
@@ -380,11 +394,11 @@ export async function salesRoutes(fastify: FastifyInstance) {
         );
         const settingsMap = Object.fromEntries(storeSettingsRes.rows.map((r) => [r.setting_key, r.setting_value]));
 
-        const sellerName = settingsMap.shop_name_en || settingsMap.shop_name || process.env.SHOP_NAME || 'AL-NOOR SUPER MARKET';
+        const sellerName = settingsMap.shop_name_en || settingsMap.shop_name || process.env.SHOP_NAME || 'SHOP MANAGEMENT SYSTEM';
         const vatNumber = settingsMap.vat_number || settingsMap.shop_vat_number || process.env.SHOP_VAT_NUMBER || '300123456700003';
 
         const prevHashRes = await client.query(
-          `SELECT invoice_hash FROM invoices ORDER BY id DESC LIMIT 1`
+          `SELECT invoice_hash, id FROM invoices ORDER BY id DESC LIMIT 1 FOR UPDATE`
         );
         const previousHash = prevHashRes.rows[0]?.invoice_hash || '0';
         const timestampIso = now.toISOString();
@@ -422,7 +436,7 @@ export async function salesRoutes(fastify: FastifyInstance) {
 
         return {
           sale,
-          items: processedItems,
+          items: processedItems.map(({ unitCost, ...rest }) => rest),
           payments,
           tenderedAmount: totalPaid,
           changeAmount,
@@ -491,7 +505,12 @@ export async function salesRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ success: false, message: 'Sale not found.' });
     }
 
-    const itemsRes = await query(`SELECT * FROM sale_items WHERE sale_id = $1`, [Number(id)]);
+    const itemsRes = await query(
+      `SELECT id, sale_id, product_id, product_name, sku, unit_cost, unit_price, quantity, net_unit_price, discount, discount_type, discount_value, tax_rate, tax_type, tax_amount, subtotal 
+       FROM sale_items 
+       WHERE sale_id = $1`,
+      [Number(id)]
+    );
     const payRes = await query(
       `SELECT sp.*, pm.name as payment_method_name 
        FROM sale_payments sp

@@ -14,6 +14,8 @@ import QuickAddProductModal from '@/components/pos/QuickAddProductModal';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
 import {
   Search,
   ShoppingCart,
@@ -54,6 +56,8 @@ import {
   Lock,
   Printer,
   KeyRound,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 
 interface CartItem {
@@ -189,11 +193,17 @@ export default function PosTerminalPage() {
     };
   }, []);
 
-  // Manager PIN Unlock State (Fallback only)
-  const [isManagerPinUnlockOpen, setIsManagerPinUnlockOpen] = useState(false);
-  const [managerUnlockPin, setManagerUnlockPin] = useState('');
-  const [managerPinError, setManagerPinError] = useState<string | null>(null);
-  const [managerPinLoading, setManagerPinLoading] = useState(false);
+  // In-Terminal POS Customer Sales Return State
+  const [isPosReturnModalOpen, setIsPosReturnModalOpen] = useState(false);
+  const [returnSearchInvoice, setReturnSearchInvoice] = useState('');
+  const [returnSearching, setReturnSearching] = useState(false);
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [returnFoundSale, setReturnFoundSale] = useState<any>(null);
+  const [posReturnItems, setPosReturnItems] = useState<any[]>([]);
+  const [returnRefundMethodId, setReturnRefundMethodId] = useState<number>(1);
+  const [returnReason, setReturnReason] = useState('Customer return / exchange');
+  const [returnError, setReturnError] = useState<string | null>(null);
+  const [returnSuccess, setReturnSuccess] = useState<string | null>(null);
 
   // Quick Add Product to Catalog State (Sales Executive POS Access)
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -277,15 +287,6 @@ export default function PosTerminalPage() {
     }
     const userRes = await apiRequest('/auth/me');
     if (userRes.success && userRes.data?.user) {
-      // Zero-Privilege POS Rule: Manager cannot operate POS under Manager role.
-      // Must verify PIN to activate Sales Executive session.
-      if (userRes.data.user.role === 'manager') {
-        setUser(userRes.data.user);
-        setAuthChecking(false);
-        setIsManagerPinUnlockOpen(true);
-        return;
-      }
-
       setUser(userRes.data.user);
       setActiveShift(userRes.data.activeShift);
       setAuthChecking(false);
@@ -317,30 +318,134 @@ export default function PosTerminalPage() {
     }
   };
 
-  // Submit Manager PIN to activate Sales Executive POS Session
-  const handleManagerPinSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!managerUnlockPin || managerUnlockPin.length !== 5) {
-      setManagerPinError('Please enter a valid 5-digit PIN.');
-      return;
-    }
+  // In-Terminal POS Return Handlers
+  const handleOpenPosReturn = () => {
+    setReturnSearchInvoice('');
+    setReturnFoundSale(null);
+    setPosReturnItems([]);
+    setReturnError(null);
+    setReturnSuccess(null);
+    setIsPosReturnModalOpen(true);
+  };
 
-    setManagerPinLoading(true);
-    setManagerPinError(null);
+  const handleSearchReturnSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!returnSearchInvoice.trim()) return;
+    setReturnSearching(true);
+    setReturnError(null);
+    setReturnFoundSale(null);
 
-    const res = await apiRequest('/auth/switch-to-pos', {
-      method: 'POST',
-      body: JSON.stringify({ pin: managerUnlockPin }),
-    });
+    const res = await apiRequest(`/invoices/${encodeURIComponent(returnSearchInvoice.trim())}`);
+    setReturnSearching(false);
 
-    setManagerPinLoading(false);
+    if (res.success && res.data) {
+      setReturnFoundSale(res.data);
+      const items = (res.data.items || []).map((i: any) => {
+        const originalQty = Number(i.quantity);
+        const alreadyReturned = Number(i.already_returned_qty || 0);
+        const maxQty = Math.max(0, Number(i.returnable_quantity ?? (originalQty - alreadyReturned)));
+        return {
+          saleItemId: i.id,
+          productId: i.product_id || i.productId || 1,
+          productName: i.product_name,
+          sku: i.sku,
+          originalQty,
+          alreadyReturned,
+          maxQty,
+          returnQty: 0,
+          unitPrice: Number(i.unit_price),
+          taxAmount: originalQty > 0 ? Number(i.tax_amount) / originalQty : 0,
+          restocked: true,
+        };
+      });
+      setPosReturnItems(items);
 
-    if (res.success && res.data?.user) {
-      setIsManagerPinUnlockOpen(false);
-      setManagerUnlockPin('');
-      loadData(false);
+      if (res.data.returnPolicy && !res.data.returnPolicy.isReturnEligible) {
+        setReturnError(
+          `Return window expired: This invoice was issued ${res.data.returnPolicy.daysSinceSale} days ago (store return policy deadline is ${res.data.returnPolicy.policyDays} days).`
+        );
+      } else if (items.every((it: any) => it.maxQty === 0)) {
+        setReturnError('All items from this invoice have already been returned in full.');
+      }
     } else {
-      setManagerPinError(res.message || 'Invalid PIN code. Please try again.');
+      setReturnError(res.message || 'Original invoice not found in system records.');
+    }
+  };
+
+  const updatePosReturnItemQty = (idx: number, qty: number) => {
+    const updated = [...posReturnItems];
+    const max = updated[idx].maxQty;
+    updated[idx].returnQty = Math.max(0, Math.min(max, qty));
+    setPosReturnItems(updated);
+  };
+
+  const updatePosReturnItemRestock = (idx: number, restocked: boolean) => {
+    const updated = [...posReturnItems];
+    updated[idx].restocked = restocked;
+    setPosReturnItems(updated);
+  };
+
+  const calculatePosReturnTotal = () => {
+    return posReturnItems.reduce((sum, i) => sum + i.returnQty * i.unitPrice, 0);
+  };
+
+  const handleConfirmPosReturn = async () => {
+    setReturnLoading(true);
+    setReturnError(null);
+
+    try {
+      const itemsToReturn = posReturnItems
+        .filter((i) => i.returnQty > 0)
+        .map((i) => ({
+          saleItemId: i.saleItemId,
+          productId: i.productId,
+          quantity: i.returnQty,
+          unitPrice: i.unitPrice,
+          taxAmount: i.taxAmount * i.returnQty,
+          subtotal: i.returnQty * i.unitPrice,
+          restocked: i.restocked,
+        }));
+
+      if (itemsToReturn.length === 0) {
+        setReturnError('Please specify a return quantity greater than 0 for at least one item.');
+        return;
+      }
+
+      const saleId = returnFoundSale?.sale?.id || returnFoundSale?.invoice?.sale_id;
+      if (!saleId) {
+        setReturnError('Could not resolve original sale ID for this invoice.');
+        return;
+      }
+
+      const res = await apiRequest('/returns/sales', {
+        method: 'POST',
+        body: JSON.stringify({
+          saleId: Number(saleId),
+          refundMethodId: Number(returnRefundMethodId),
+          reason: returnReason,
+          items: itemsToReturn,
+        }),
+      });
+
+      if (res.success) {
+        setReturnSuccess(`Return Credit Note ${res.data?.reference_no || ''} processed successfully! Stock restored.`);
+        const prodRes = await apiRequest('/products');
+        if (prodRes.success && prodRes.data) {
+          setProducts(prodRes.data);
+        }
+        setTimeout(() => {
+          setIsPosReturnModalOpen(false);
+          setReturnFoundSale(null);
+          setPosReturnItems([]);
+          setReturnSuccess(null);
+        }, 1200);
+      } else {
+        setReturnError(res.message || 'Sales return processing failed.');
+      }
+    } catch (err: any) {
+      setReturnError(err?.message || 'An unexpected error occurred while processing return.');
+    } finally {
+      setReturnLoading(false);
     }
   };
 
@@ -519,7 +624,7 @@ export default function PosTerminalPage() {
         method: 'POST',
         body: JSON.stringify({
           actualClosingBalance: Number(closingCountedCash) || 0,
-          terminalCardTotal: Number(closingCardTotal) || Number(sessionSummaryData?.cardSales) || 0,
+          terminalCardTotal: closingCardTotal !== '' ? Number(closingCardTotal) : (sessionSummaryData?.cardSales ?? 0),
           closingNote: closingNote || (redirectToManager ? 'Shift ended to return to Manager login' : 'Regular POS Shift Close'),
           adjustments: closingAdjustments.length > 0 ? closingAdjustments : undefined,
         }),
@@ -581,7 +686,7 @@ export default function PosTerminalPage() {
       }
     };
 
-    const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+    const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'SHOP MANAGEMENT SYSTEM';
     const shopAddress = settings.shop_address || '';
     const shopPhone = settings.shop_phone || '';
     const cashierName = formatTwoWords(user?.fullName || user?.full_name || user?.username);
@@ -597,6 +702,8 @@ export default function PosTerminalPage() {
     const cardSales = Number(sessionSummaryData?.cardSales ?? 0);
     const cashRefunds = Number(sessionSummaryData?.cashRefunds ?? 0);
     const cashExpenses = Number(sessionSummaryData?.cashExpenses ?? 0);
+    const duePaymentAmount = Number(sessionSummaryData?.totalDueAmount ?? sessionSummaryData?.duePayment ?? 0);
+    const totalRefundAmount = Number(sessionSummaryData?.totalRefundAmount ?? (cashRefunds + Number(sessionSummaryData?.cardRefunds || 0)));
 
     const expectedCash = Number(
       sessionSummaryData?.expectedCashInDrawer ??
@@ -680,7 +787,8 @@ export default function PosTerminalPage() {
       <div class="row"><span>Invoices Processed:</span><span class="bold">${invoicesCount}</span></div>
       <div class="row"><span>Cash Received:</span><span class="bold">${formatCurrency(cashSales)}</span></div>
       <div class="row"><span>Mada / Card Sales:</span><span class="bold">${formatCurrency(cardSales)}</span></div>
-      ${cashRefunds > 0 ? `<div class="row"><span>Cash Refunds:</span><span class="bold">-${formatCurrency(cashRefunds)}</span></div>` : ''}
+      ${duePaymentAmount > 0 ? `<div class="row"><span>Due Payment:</span><span class="bold">${formatCurrency(duePaymentAmount)}</span></div>` : ''}
+      ${totalRefundAmount > 0 ? `<div class="row"><span>Refund Process:</span><span class="bold">-${formatCurrency(totalRefundAmount)}</span></div>` : ''}
       ${cashExpenses > 0 ? `<div class="row"><span>Cash Expenses:</span><span class="bold">-${formatCurrency(cashExpenses)}</span></div>` : ''}
       <div class="row-bold"><span>TOTAL GROSS SALES:</span><span class="bold">${formatCurrency(grossSales)}</span></div>
 
@@ -1418,24 +1526,55 @@ export default function PosTerminalPage() {
                   </div>
                 </div>
 
-                {/* Cash in Drawer - Highlighted Blue Accent */}
-                <div className="rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30 p-2.5 sm:p-3 shadow-xs">
-                  <div className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400 truncate flex items-center gap-1">
-                    <Banknote className="h-3 w-3" />
-                    <span>Cash in Drawer</span>
+                {/* Due Payment */}
+                <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 p-2.5 sm:p-3 shadow-xs">
+                  <div className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400 truncate flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    <span>Due Payment</span>
                   </div>
-                  <div className="font-mono text-sm sm:text-base font-black text-blue-700 dark:text-sky-300 mt-1 truncate">
+                  <div className="font-mono text-sm sm:text-base font-black text-amber-700 dark:text-amber-400 mt-1 truncate">
+                    {formatCurrency(sessionSummaryData?.totalDueAmount ?? sessionSummaryData?.duePayment ?? 0)}
+                  </div>
+                </div>
+
+                {/* Refund Process */}
+                <div className="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 p-2.5 sm:p-3 shadow-xs">
+                  <div className="text-[10px] font-bold uppercase text-rose-600 dark:text-rose-400 truncate flex items-center gap-1">
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Refund Process</span>
+                  </div>
+                  <div className="font-mono text-sm sm:text-base font-black text-rose-600 dark:text-rose-400 mt-1 truncate">
+                    {formatCurrency(sessionSummaryData?.totalRefundAmount ?? (Number(sessionSummaryData?.cashRefunds || 0) + Number(sessionSummaryData?.cardRefunds || 0)))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Highlighted Expected Balances: Cash in Drawer & Cash in Card (2 Cards, Similar Height) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Cash in Drawer - Highlighted */}
+                <div className="rounded-xl border-2 border-emerald-400/90 dark:border-emerald-600/80 bg-emerald-50/50 dark:bg-emerald-950/25 p-2.5 sm:p-3 shadow-xs">
+                  <div className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400 truncate flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Banknote className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Cash in Drawer</span>
+                    </span>
+                    <span className="text-[9px] font-semibold text-emerald-600/75 dark:text-emerald-400/75 uppercase tracking-wider">Expected</span>
+                  </div>
+                  <div className="font-mono text-sm sm:text-base font-black text-emerald-700 dark:text-emerald-300 mt-1 truncate">
                     {formatCurrency(sessionExpectedCash)}
                   </div>
                 </div>
 
-                {/* Cash in Card - Highlighted Purple Accent */}
-                <div className="rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/50 dark:bg-purple-950/30 p-2.5 sm:p-3 shadow-xs">
-                  <div className="text-[10px] font-bold uppercase text-purple-600 dark:text-purple-400 truncate flex items-center gap-1">
-                    <CreditCard className="h-3 w-3" />
-                    <span>Cash in Card</span>
+                {/* Cash in Card - Highlighted */}
+                <div className="rounded-xl border-2 border-indigo-400/90 dark:border-indigo-600/80 bg-indigo-50/50 dark:bg-indigo-950/25 p-2.5 sm:p-3 shadow-xs">
+                  <div className="text-[10px] font-bold uppercase text-indigo-700 dark:text-indigo-400 truncate flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <CreditCard className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>Cash in Card</span>
+                    </span>
+                    <span className="text-[9px] font-semibold text-indigo-600/75 dark:text-indigo-400/75 uppercase tracking-wider">Expected</span>
                   </div>
-                  <div className="font-mono text-sm sm:text-base font-black text-purple-700 dark:text-purple-300 mt-1 truncate">
+                  <div className="font-mono text-sm sm:text-base font-black text-indigo-700 dark:text-indigo-300 mt-1 truncate">
                     {formatCurrency(sessionExpectedCard)}
                   </div>
                 </div>
@@ -1738,72 +1877,182 @@ export default function PosTerminalPage() {
         </div>
       </Modal>
 
-      {/* Manager Sales Executive PIN Verification Modal */}
+      {/* In-Terminal POS Customer Sales Return Modal */}
       <Modal
-        isOpen={isManagerPinUnlockOpen}
-        onClose={() => router.push('/dashboard')}
-        showCloseButton={false}
+        isOpen={isPosReturnModalOpen}
+        onClose={() => setIsPosReturnModalOpen(false)}
         title={
           <div className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-blue-600 dark:text-sky-400" />
-            <span>Sales Executive Till Verification</span>
+            <RotateCcw className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+            <span>Customer Sales Return & Refund</span>
           </div>
         }
-        subtitle="Managers must authenticate with their 5-digit PIN to operate the POS terminal as a Sales Executive"
-        maxWidth="sm"
+        subtitle="Process return, issue credit note, restore inventory, and refund customer directly from till"
+        maxWidth="4xl"
         footer={
-          <div className="flex w-full items-center justify-between gap-2">
+          returnFoundSale ? (
+            <div className="flex w-full items-center justify-between gap-2">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setIsPosReturnModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="md"
+                isLoading={returnLoading}
+                disabled={calculatePosReturnTotal() === 0 || (returnFoundSale?.returnPolicy && !returnFoundSale.returnPolicy.isReturnEligible)}
+                onClick={handleConfirmPosReturn}
+              >
+                Confirm Refund ({formatCurrency(calculatePosReturnTotal())})
+              </Button>
+            </div>
+          ) : (
             <Button
               variant="secondary"
               size="md"
-              onClick={() => router.push('/dashboard')}
+              onClick={() => setIsPosReturnModalOpen(false)}
             >
-              Back to Dashboard
+              Close
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              isLoading={managerPinLoading}
-              onClick={() => handleManagerPinSubmit()}
-            >
-              Verify PIN & Open Till
-            </Button>
-          </div>
+          )
         }
       >
-        <form onSubmit={handleManagerPinSubmit} className="space-y-4">
-          {managerPinError && (
-            <div className="flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{managerPinError}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-              Enter Your 5-Digit PIN Code *
-            </label>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={5}
-              autoFocus
-              value={managerUnlockPin}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                setManagerUnlockPin(val);
-                if (val.length === 5) {
-                  setManagerPinError(null);
-                }
-              }}
-              placeholder="•••••"
-              className="w-full text-center font-mono text-3xl font-black tracking-[0.5em] py-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p className="text-[11px] text-slate-400 text-center mt-2">
-              Zero-Privilege POS: This session will operate with Sales Executive till permissions
-            </p>
+        {returnError && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{returnError}</span>
           </div>
+        )}
+
+        {returnSuccess && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-xs font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900">
+            <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{returnSuccess}</span>
+          </div>
+        )}
+
+        {/* Step 1: Search Invoice */}
+        <form onSubmit={handleSearchReturnSale} className="flex items-center gap-2 mb-4">
+          <div className="flex-1 min-w-0">
+            <Input
+              value={returnSearchInvoice}
+              onChange={(e) => setReturnSearchInvoice(e.target.value)}
+              required
+              autoFocus
+              placeholder="Scan or enter invoice # (e.g. INV-202609-0001)..."
+              className="font-mono text-xs"
+            />
+          </div>
+          <Button
+            type="submit"
+            isLoading={returnSearching}
+            variant="primary"
+            className="shrink-0 whitespace-nowrap px-4"
+            leftIcon={<Search className="h-4 w-4 shrink-0" />}
+          >
+            Find Invoice
+          </Button>
         </form>
+
+        {/* Step 2: Line Items & Return Quantities */}
+        {returnFoundSale && (
+          <div className="space-y-4 text-xs">
+            <div className="rounded-2xl bg-blue-50 dark:bg-sky-950/40 p-3 border border-blue-200 dark:border-sky-900/40 flex justify-between items-center">
+              <div>
+                <span className="font-bold text-blue-950 dark:text-sky-200">
+                  Invoice #{returnFoundSale.invoice?.invoice_no || returnFoundSale.sale?.reference_no}
+                </span>
+                <p className="text-[11px] text-slate-500">
+                  Total: {formatCurrency(returnFoundSale.sale?.grand_total || returnFoundSale.invoice?.grand_total || 0)}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {returnFoundSale.returnPolicy?.isReturnEligible ? (
+                  <Badge variant="success">Policy Valid ({returnFoundSale.returnPolicy.daysSinceSale}/{returnFoundSale.returnPolicy.policyDays}d)</Badge>
+                ) : returnFoundSale.returnPolicy ? (
+                  <Badge variant="danger">Policy Expired ({returnFoundSale.returnPolicy.daysSinceSale}d &gt; {returnFoundSale.returnPolicy.policyDays}d)</Badge>
+                ) : (
+                  <Badge variant="primary">Verified</Badge>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-64 overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-850 text-slate-400 font-bold uppercase text-[10px] sticky top-0">
+                  <tr>
+                    <th className="py-2.5 px-3">Item Name</th>
+                    <th className="py-2.5 px-3 text-right">Sold Price</th>
+                    <th className="py-2.5 px-3 text-center">Returned / Purchased</th>
+                    <th className="py-2.5 px-3 text-center">Return Qty</th>
+                    <th className="py-2.5 px-3 text-center">Condition</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {posReturnItems.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="py-2 px-3 font-bold text-slate-900 dark:text-white">
+                        {item.productName}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-bold">
+                        {formatCurrency(item.unitPrice)}
+                      </td>
+                      <td className="py-2 px-3 text-center font-mono">
+                        <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                          {item.alreadyReturned}/{item.originalQty}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.maxQty}
+                          disabled={item.maxQty <= 0 || (returnFoundSale?.returnPolicy && !returnFoundSale.returnPolicy.isReturnEligible)}
+                          step="1"
+                          value={item.returnQty}
+                          onChange={(e) => updatePosReturnItemQty(idx, parseFloat(e.target.value) || 0)}
+                          className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 text-center font-mono font-bold disabled:opacity-40"
+                        />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <select
+                          value={item.restocked ? 'restock' : 'damage'}
+                          onChange={(e) => updatePosReturnItemRestock(idx, e.target.value === 'restock')}
+                          className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 text-[11px] font-semibold"
+                        >
+                          <option value="restock">Restock</option>
+                          <option value="damage">Damaged</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Refund Tender & Reason */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
+              <Select
+                label="Refund Destination Tender *"
+                value={returnRefundMethodId}
+                onChange={(e) => setReturnRefundMethodId(parseInt(e.target.value))}
+              >
+                <option value={1}>Cash (from Current Till Drawer)</option>
+                <option value={2}>Mada / Card Reversal</option>
+              </Select>
+
+              <Input
+                label="Return Reason *"
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="Reason for return"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Open Cash Shift Modal with Carry-Forward (Premium Dual-Balance) */}
@@ -2164,7 +2413,7 @@ export default function PosTerminalPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                  {settings.shop_name_en || 'AL-NOOR SUPERMARKET'}
+                  {settings.shop_name_en || 'SHOP MANAGEMENT SYSTEM'}
                 </span>
               </div>
               <div
@@ -2178,6 +2427,16 @@ export default function PosTerminalPage() {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2">
+            {/* Customer Return Button */}
+            <button
+              type="button"
+              onClick={handleOpenPosReturn}
+              title="Process Customer Return & Refund"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:border-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition shadow-xs"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+
             {/* Direct Reprint Last Receipt (Native Printer) */}
             {completedSaleData && (
               <button
@@ -2201,31 +2460,15 @@ export default function PosTerminalPage() {
               {isFullscreen ? <Minimize className="h-4 w-4 text-sky-500" /> : <Maximize className="h-4 w-4" />}
             </button>
 
-            {/* Font Scaling 100% / 110% Switcher */}
-            <div className="flex h-9 items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-bold font-mono">
-              <button
-                type="button"
-                onClick={() => setFontSizeScale('100%')}
-                className={`h-full rounded-lg px-2.5 transition flex items-center justify-center ${
-                  fontSizeScale === '100%' || fontSizeScale === '1.0'
-                    ? 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                100%
-              </button>
-              <button
-                type="button"
-                onClick={() => setFontSizeScale('110%')}
-                className={`h-full rounded-lg px-2.5 transition flex items-center justify-center ${
-                  fontSizeScale === '110%' || fontSizeScale === '1.1'
-                    ? 'bg-blue-700 text-white shadow-sm dark:bg-sky-500 dark:text-slate-950'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                110%
-              </button>
-            </div>
+            {/* UI Scaling Single Toggle Button (100% <-> 110%) */}
+            <button
+              type="button"
+              onClick={() => setFontSizeScale(fontSizeScale === '110%' || fontSizeScale === '1.1' ? '100%' : '110%')}
+              title="Toggle UI Scale (100% / 110%)"
+              className="flex h-9 min-w-[48px] px-2.5 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 font-mono text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:border-blue-500 dark:hover:border-sky-400 transition"
+            >
+              {fontSizeScale === '110%' || fontSizeScale === '1.1' ? '110%' : '100%'}
+            </button>
 
             {/* Theme Switcher Button */}
             <button
@@ -2243,11 +2486,11 @@ export default function PosTerminalPage() {
               <span>{currentTime || '00:00:00'}</span>
             </div>
 
-            {/* Cashier Profile Badge: Name, Shift Start & Duration, Role */}
+            {/* Cashier Profile Badge: Name and Duration Only */}
             <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs shadow-sm">
               <div className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
               <div className="flex flex-col text-left justify-center">
-                <span className="font-bold text-slate-900 dark:text-slate-100 text-[11px] leading-tight truncate max-w-[120px]">
+                <span className="font-bold text-slate-900 dark:text-slate-100 text-[11px] leading-tight truncate max-w-[130px]">
                   {formatTwoWords(user?.fullName || user?.full_name || user?.username)}
                 </span>
                 <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 leading-tight mt-0.5">
@@ -2255,9 +2498,6 @@ export default function PosTerminalPage() {
                   <span>{sessionDuration}</span>
                 </span>
               </div>
-              <span className="rounded bg-blue-100 dark:bg-sky-950 px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase text-blue-800 dark:text-sky-300 ml-1 shrink-0">
-                {user?.actualRole === 'manager' ? 'Manager Shift' : 'Cashier'}
-              </span>
             </div>
 
             {/* Logout / Shift Summary Button */}

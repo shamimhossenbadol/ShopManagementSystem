@@ -134,6 +134,7 @@ interface ShiftInvoice {
   totalTax: number;
   grandTotal: number;
   paidAmount: number;
+  dueAmount?: number;
   paymentStatus: string;
   payments: ShiftPayment[];
   items: ShiftItem[];
@@ -312,7 +313,7 @@ export default function CashSessionsPage() {
     const formattedEndDate = formatHumanDate(endDate);
     const periodLabel = isRange ? `${formattedStartDate} to ${formattedEndDate}` : formattedStartDate;
 
-    const shopName = settings?.shop_name_en || settings?.shop_name_ar || 'AL-NOOR SUPERMARKET & HYPERMARKET';
+    const shopName = settings?.shop_name_en || settings?.shop_name_ar || 'SHOP MANAGEMENT SYSTEM';
     const vatNumber = settings?.shop_vat_number || settings?.vat_number || '300123456700003';
     const crNumber = settings?.shop_cr_number || settings?.cr_number || '1010123456';
     const phone = settings?.shop_phone || settings?.phone || '+966 11 456 7890';
@@ -1188,6 +1189,12 @@ export default function CashSessionsPage() {
                               : `${diff > 0 ? '+' : ''}${formatCurrency(diff)} VARIANCE`}
                           </Badge>
                         )}
+                        <Badge
+                          variant={Number(shift.totalRefunds || 0) > 0 ? 'danger' : 'neutral'}
+                          className="font-mono text-[10px] py-0.5"
+                        >
+                          Refunds: {formatCurrency(shift.totalRefunds || 0)}
+                        </Badge>
                       </div>
 
           <div className="text-xs text-slate-400 dark:text-neutral-500 font-mono">
@@ -1707,10 +1714,16 @@ export default function CashSessionsPage() {
                           .replace(/\s*\(General Account\)/gi, '')
                           .trim() || 'Walk-in Customer';
 
+                        const hasDue = Number(inv.dueAmount || 0) > 0 || inv.paymentStatus === 'unpaid' || inv.paymentStatus === 'partial';
+
                         return (
                           <div
                             key={inv.id}
-                            className="rounded-xl border border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17] p-3.5 shadow-sm hover:border-slate-300 dark:hover:border-neutral-700 transition-all space-y-2.5"
+                            className={`rounded-xl border ${
+                              hasDue
+                                ? 'border-amber-400 dark:border-amber-500/80 bg-amber-50/25 dark:bg-amber-950/20 shadow-amber-500/5'
+                                : 'border-slate-200/80 dark:border-neutral-800 bg-white dark:bg-[#0B0F17]'
+                            } p-3.5 shadow-sm hover:border-slate-300 dark:hover:border-neutral-700 transition-all space-y-2.5`}
                           >
                             <div
                               onClick={() => setExpandedInvoiceId(isExpanded ? null : inv.id)}
@@ -1718,12 +1731,23 @@ export default function CashSessionsPage() {
                             >
                               {/* 1. Left: Icon + Invoice ID & Customer Name */}
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-slate-600 dark:text-neutral-400 shrink-0">
+                                <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                  hasDue
+                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                                    : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
+                                }`}>
                                   <Receipt className="h-4 w-4" />
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="font-mono font-black text-sm text-slate-900 dark:text-white truncate">
-                                    {inv.invoiceNo}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-black text-sm text-slate-900 dark:text-white truncate">
+                                      {inv.invoiceNo}
+                                    </span>
+                                    {hasDue && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-mono shrink-0">
+                                        DUE: {formatCurrency(inv.dueAmount || (inv.grandTotal - inv.paidAmount))}
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="text-[11px] text-slate-500 dark:text-neutral-400 font-medium truncate font-sans">
                                     {cleanCustomer}
@@ -1815,7 +1839,7 @@ export default function CashSessionsPage() {
                                 </div>
 
                                 {/* Invoice Financial Summary Footer */}
-                                <div className="flex flex-wrap items-center justify-between text-xs font-mono bg-white dark:bg-[#121620] p-2.5 rounded-xl border border-slate-200/60 dark:border-neutral-800 text-slate-600 dark:text-neutral-400">
+                                <div className="flex flex-wrap items-center justify-between text-xs font-mono bg-white dark:bg-[#121620] p-2.5 rounded-xl border border-slate-200/60 dark:border-neutral-800 text-slate-600 dark:text-neutral-400 gap-2">
                                   <div>
                                     <span className="text-slate-400">Subtotal:</span>{' '}
                                     <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(inv.subtotal)}</span>
@@ -1836,6 +1860,14 @@ export default function CashSessionsPage() {
                                       {formatCurrency(inv.paidAmount)}
                                     </span>
                                   </div>
+                                  {hasDue && (
+                                    <div className="bg-amber-500/10 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                                      <span className="text-amber-700 dark:text-amber-400 font-bold">Due Amount:</span>{' '}
+                                      <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
+                                        {formatCurrency(inv.dueAmount || (inv.grandTotal - inv.paidAmount))}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}

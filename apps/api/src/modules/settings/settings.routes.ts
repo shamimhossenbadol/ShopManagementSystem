@@ -12,9 +12,17 @@ const taxRateSchema = z.object({
 
 export async function settingsRoutes(fastify: FastifyInstance) {
   // GET /api/v1/settings - Get settings map (grouped or flat)
+  // GET /api/v1/settings/payment-methods - Fetch payment methods
+  fastify.get('/payment-methods', async (request, reply) => {
+    const res = await query(
+      `SELECT id, name, code, is_cash FROM payment_methods WHERE is_active = TRUE ORDER BY id ASC`
+    );
+    return reply.send({ success: true, data: res.rows });
+  });
+
   fastify.get('/', async (request, reply) => {
     const res = await query(
-      `SELECT setting_key, setting_group, setting_value, description, is_public FROM settings ORDER BY setting_group, setting_key`
+      `SELECT setting_key, setting_group, setting_value, description, is_public FROM settings WHERE is_public = TRUE ORDER BY setting_group, setting_key`
     );
     const settingsMap: Record<string, string> = {};
     const groupedMap: Record<string, Record<string, string>> = {};
@@ -231,7 +239,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
         DELETE FROM users WHERE role != 'manager';
 
         INSERT INTO users (id, role, username, email, password_hash, full_name, phone, pin_code, is_active) VALUES
-        (1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE)
+        (1, 'manager', 'admin', 'admin@shopmanagement.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '$2b$10$zT413Tpuxg5/JiedBrTjIeXcozz.HYkcBLjVOaiuflK7czSOJ9wVO', TRUE)
         ON CONFLICT (id) DO UPDATE SET 
             role = 'manager',
             is_active = TRUE,

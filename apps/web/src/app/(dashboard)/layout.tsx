@@ -113,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (res.success && res.data?.user) {
         setUser(res.data.user);
         setActiveShift(res.data.activeShift);
-        if (res.data.user.role !== 'manager' && pathname !== '/pos' && pathname !== '/cash') {
+        if (res.data.user.role !== 'manager' && pathname !== '/pos' && pathname !== '/cash' && pathname !== '/returns') {
           router.replace('/pos');
         }
       } else {
@@ -189,6 +189,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
+  const visibleNavGroups = user?.role === 'sales_executive'
+    ? [
+        {
+          groupName: 'Counter Operations',
+          items: [
+            { label: 'POS Terminal', href: '/pos', icon: Store },
+            { label: 'Returns & Credit Notes', href: '/returns', icon: RotateCcw },
+            { label: 'Cash Drawer Shifts', href: '/cash', icon: Banknote },
+          ],
+        },
+      ]
+    : [
+        {
+          groupName: 'Operations',
+          items: [
+            { label: 'POS Terminal', href: '/pos', icon: Store },
+            { label: 'Manager Dashboard', href: '/dashboard', icon: LayoutDashboard },
+            { label: 'Cash Drawer Shifts', href: '/cash', icon: Banknote },
+            { label: 'Returns & Credit Notes', href: '/returns', icon: RotateCcw },
+          ],
+        },
+        ...NAV_GROUPS.slice(1),
+      ];
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Global Search Palette (Ctrl+K) */}
@@ -208,10 +232,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <div className="overflow-hidden">
               <h1 className="text-xs font-black tracking-tight text-slate-900 dark:text-white uppercase truncate">
-                {settings.shop_name_en || 'AL-NOOR SUPERMARKET'}
+                {settings.shop_name_en || 'SHOP MANAGEMENT SYSTEM'}
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold truncate">
-                {settings.shop_name_ar || 'AL-NOOR RETAIL POS'}
+                {settings.shop_name_ar || 'SHOP MANAGEMENT SYSTEM'}
               </p>
             </div>
           </Link>
@@ -225,7 +249,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Categorized Navigation Links */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-          {NAV_GROUPS.map((group, groupIdx) => (
+          {visibleNavGroups.map((group, groupIdx) => (
             <div key={groupIdx} className="space-y-1">
               <div className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 {group.groupName}
@@ -324,6 +348,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Right Controls: Shift Status, AST Clock, UI Scale, Theme Toggle */}
           <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Quick POS Terminal Button */}
+            <Link
+              href="/pos"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-700 dark:bg-sky-500 text-white dark:text-slate-950 px-3 text-xs font-bold shadow-sm hover:opacity-95 transition"
+              title="Open POS Terminal"
+            >
+              <Store className="h-4 w-4" />
+              <span className="hidden sm:inline">POS Terminal</span>
+            </Link>
+
             {/* Shift Status Indicator */}
             {activeShift ? (
               <Link

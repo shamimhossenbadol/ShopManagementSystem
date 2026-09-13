@@ -17,6 +17,7 @@ export const Button: React.FC<ButtonProps> = ({
   rightIcon,
   className = '',
   disabled,
+  type = 'button',
   ...props
 }) => {
   const baseStyles =
@@ -44,6 +45,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type={type}
       className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       disabled={disabled || isLoading}
       {...props}
@@ -73,7 +75,7 @@ export const IconButton: React.FC<
     icon: React.ReactNode;
     title: string;
   }
-> = ({ variant = 'secondary', size = 'md', icon, title, className = '', ...props }) => {
+> = ({ variant = 'secondary', size = 'md', icon, title, className = '', type = 'button', ...props }) => {
   const sizeStyles = {
     sm: 'h-8 w-8 text-xs',
     md: 'h-10 w-10 text-sm min-h-[40px] min-w-[40px]',
@@ -94,6 +96,7 @@ export const IconButton: React.FC<
 
   return (
     <button
+      type={type}
       title={title}
       aria-label={title}
       className={`inline-flex items-center justify-center rounded-xl transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}

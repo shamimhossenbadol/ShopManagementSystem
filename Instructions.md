@@ -210,7 +210,7 @@ The system provides a production-final, hardware-tuned **Thermal Barcode Label G
 - **6 Modular Visual Toggles (2×3 Grid)**:
   1. `Show Title`: Product Name (English / Arabic).
   2. `Show Barcode Number`: Human-readable barcode number below the barcode bars.
-  3. `Show Shop Name`: Store brand header (e.g. `AL-NOOR SUPERMARKET`).
+  3. `Show Shop Name`: Store brand header (e.g. `SHOP MANAGEMENT SYSTEM`).
   4. `Show Price`: Formatted selling price with active currency symbol.
   5. `Show VAT Badge`: Saudi VAT compliance label (`Incl. 15% VAT` or `Excl. VAT`).
   6. `Show SKU`: Product unique SKU identifier.

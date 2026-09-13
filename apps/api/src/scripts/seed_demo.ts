@@ -27,14 +27,14 @@ INSERT INTO brands (id, name, description) VALUES
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
 -- 3. SEED REALISTIC SUPPLIERS / VENDORS
-INSERT INTO suppliers (id, name, company_name, vat_number, email, phone, address, opening_balance) VALUES
-(1, 'Almarai Distribution Division', 'Almarai Company SJSC', '300456789000003', 'orders@almarai.com', '+966 11 470 0000', 'Exit 8, Dammam Road, Riyadh, Saudi Arabia', 14250.00),
-(2, 'Savola Foods Distribution', 'Savola Group', '300112233400003', 'supply@savola.com', '+966 11 206 5555', 'King Abdulaziz Road, Riyadh, Saudi Arabia', 28400.00),
-(3, 'Pepsico / Bugshan Beverages', 'Bugshan Beverage Co.', '300998877600003', 'beverages@bugshan.com', '+966 11 498 7777', '2nd Industrial City, Riyadh, Saudi Arabia', 6500.00),
-(4, 'National Food Industries (Luna)', 'NFI Luna Foods', '300789012300003', 'sales@luna.com.sa', '+966 12 636 1234', 'Phase 3 Industrial City, Jeddah, Saudi Arabia', 8900.00),
-(5, 'Unilever Saudi Arabia Ltd', 'Unilever Arabia', '300887766500003', 'orders.ksa@unilever.com', '+966 13 847 1111', 'King Fahd Highway, Dammam, Saudi Arabia', 12300.00),
-(6, 'Riyadh Central Vegetable Wholesale Market', 'Al-Azizia Agricultural Supply', '300665544300003', 'produce@alazizia-market.sa', '+966 50 111 2233', 'Al-Azizia Central Wholesale Market, Riyadh', 3200.00),
-(7, 'Al-Rabie Saudi Foods Co.', 'Al Rabie Foods Co. Ltd', '300223344500003', 'customercare@alrabie.com.sa', '+966 11 498 8888', 'Industrial Area, Riyadh, Saudi Arabia', 4500.00)
+INSERT INTO suppliers (id, name, company_name, vat_number, phone) VALUES
+(1, 'Almarai Distribution Division', 'Almarai Company SJSC', '300456789000003', '+966 11 470 0000'),
+(2, 'Savola Foods Distribution', 'Savola Group', '300112233400003', '+966 11 206 5555'),
+(3, 'Pepsico / Bugshan Beverages', 'Bugshan Beverage Co.', '300998877600003', '+966 11 498 7777'),
+(4, 'National Food Industries (Luna)', 'NFI Luna Foods', '300789012300003', '+966 12 636 1234'),
+(5, 'Unilever Saudi Arabia Ltd', 'Unilever Arabia', '300887766500003', '+966 13 847 1111'),
+(6, 'Riyadh Central Vegetable Wholesale Market', 'Al-Azizia Agricultural Supply', '300665544300003', '+966 50 111 2233'),
+(7, 'Al-Rabie Saudi Foods Co.', 'Al Rabie Foods Co. Ltd', '300223344500003', '+966 11 498 8888')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, company_name = EXCLUDED.company_name, vat_number = EXCLUDED.vat_number, phone = EXCLUDED.phone;
 
 -- 4. SEED REALISTIC CUSTOMERS (RETAIL & CREDIT ACCOUNTS)

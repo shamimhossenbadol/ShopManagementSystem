@@ -62,14 +62,14 @@ interface SettingsContextType {
 }
 
 const defaultSettings: ShopSettings = {
-  shop_name_en: 'Sell & Inventory',
-  shop_name_ar: 'Sell & Inventory POS',
+  shop_name_en: 'SHOP MANAGEMENT SYSTEM',
+  shop_name_ar: 'SHOP MANAGEMENT SYSTEM',
   shop_cr_number: '1010123456',
   shop_vat_number: '300123456700003',
   shop_phone: '+966 11 456 7890',
-  shop_email: 'info@alnoorshop.com',
+  shop_email: 'info@shopmanagement.com',
   shop_address: 'King Fahd Road, Riyadh, Saudi Arabia',
-  receipt_header: 'Welcome to Sell & Inventory',
+  receipt_header: 'Welcome to Shop Management System',
   receipt_footer: 'Thank you for shopping with us! Return within 7 days with invoice.',
   currency_code: 'SAR',
   currency_symbol: 'SAR',

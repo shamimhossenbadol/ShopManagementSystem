@@ -254,12 +254,20 @@ export async function cashRoutes(fastify: FastifyInstance) {
       [session.id]
     );
 
+    const cardRefundRes = await query(
+      `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+       FROM sales_return_refunds srf
+       WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+      [session.id]
+    );
+
     const openingFloat = Number(session.opening_balance || 0);
     const openingCardFloat = Number(session.opening_card_balance || 0);
     const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
     const liveExpected = round2(openingFloat + netFlow);
     const liveCardSales = round2(Number(cardRes.rows[0]?.card_total || 0));
-    const liveCardTotal = round2(openingCardFloat + liveCardSales);
+    const cardRefunds = round2(Number(cardRefundRes.rows[0]?.card_refunds || 0));
+    const liveCardTotal = round2(openingCardFloat + liveCardSales - cardRefunds);
 
     return reply.send({
       success: true,
@@ -306,11 +314,22 @@ export async function cashRoutes(fastify: FastifyInstance) {
       `SELECT 
         COUNT(id) as invoices_count,
         COALESCE(SUM(grand_total), 0) as total_gross_sales,
-        COALESCE(SUM(total_tax), 0) as total_tax_collected
+        COALESCE(SUM(total_tax), 0) as total_tax_collected,
+        COALESCE(SUM(due_amount), 0) as total_due_amount
        FROM sales
        WHERE session_id = $1 AND sale_status = 'completed'`,
       [session.id]
     );
+
+    const dueCollectionsRes = await query(
+      `SELECT COALESCE(SUM(amount), 0) as total_due_collected
+       FROM cash_movements
+       WHERE session_id = $1 AND (description LIKE '%Due Payment%' OR description LIKE '%Due Collection%')`,
+      [session.id]
+    );
+    const totalDueSales = Number(salesRes.rows[0]?.total_due_amount || 0);
+    const totalDueCollected = Number(dueCollectionsRes.rows[0]?.total_due_collected || 0);
+    const totalDuePayment = round2(totalDueSales + totalDueCollected);
 
     // Cash movements breakdown
     const movRes = await query(
@@ -333,17 +352,36 @@ export async function cashRoutes(fastify: FastifyInstance) {
       [session.id]
     );
 
+    const cardRefundRes = await query(
+      `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+       FROM sales_return_refunds srf
+       WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+      [session.id]
+    );
+
+    const sessionRefundsRes = await query(
+      `SELECT COUNT(DISTINCT sr.id) as refund_invoices_count,
+              COALESCE(SUM(sr.total_amount), 0) as total_refund_amount
+       FROM sales_returns sr
+       JOIN sales_return_refunds srf ON srf.sales_return_id = sr.id
+       WHERE srf.cash_session_id = $1`,
+      [session.id]
+    );
+    const refundInvoicesCount = Number(sessionRefundsRes.rows[0]?.refund_invoices_count || 0);
+    const totalRefundAmount = Number(sessionRefundsRes.rows[0]?.total_refund_amount || 0);
+
     const openingFloat = Number(session.opening_balance || 0);
     const openingCardFloat = Number(session.opening_card_balance || 0);
     const cashSales = Number(movRes.rows[0]?.cash_sales || 0);
     const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
     const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
     const cardSales = Number(cardRes.rows[0]?.card_total || 0);
+    const cardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
     const invoicesCount = Number(salesRes.rows[0]?.invoices_count || 0);
     const totalGrossSales = Number(salesRes.rows[0]?.total_gross_sales || (cashSales + cardSales));
     const netOperationalFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
     const expectedCashInDrawer = round2(openingFloat + netOperationalFlow);
-    const expectedCardInTerminal = round2(openingCardFloat + cardSales);
+    const expectedCardInTerminal = round2(openingCardFloat + cardSales - cardRefunds);
 
     return reply.send({
       success: true,
@@ -368,7 +406,13 @@ export async function cashRoutes(fastify: FastifyInstance) {
         totalGrossSales,
         cashSales,
         cardSales,
+        totalDueAmount: round2(totalDueSales),
+        totalDueCollected: round2(totalDueCollected),
+        duePayment: totalDuePayment,
         cashRefunds,
+        cardRefunds,
+        totalRefundAmount: round2(totalRefundAmount),
+        refundInvoicesCount,
         cashExpenses,
         expectedCashInDrawer,
         expectedCardInTerminal,
@@ -538,12 +582,20 @@ export async function cashRoutes(fastify: FastifyInstance) {
           [session.id]
         );
 
+        const cardRefundRes = await client.query(
+          `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+           FROM sales_return_refunds srf
+           WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+          [session.id]
+        );
+
         const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedBalance = round2(Number(session.opening_balance) + netFlow);
         const difference = round2(actualClosingBalance - expectedBalance);
 
         const openingCardFloat = Number(session.opening_card_balance || 0);
-        const expectedCard = round2(openingCardFloat + Number(cardRes.rows[0]?.card_total || 0));
+        const cardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
+        const expectedCard = round2(openingCardFloat + Number(cardRes.rows[0]?.card_total || 0) - cardRefunds);
         const cardDifference = round2(terminalCardTotal - expectedCard);
 
         // 3. Update session record with close_type
@@ -840,8 +892,16 @@ export async function cashRoutes(fastify: FastifyInstance) {
         [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
       );
 
+      const cardRefundRes = await query(
+        `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+         FROM sales_return_refunds srf
+         WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+        [sess.id]
+      );
+
       const sessCashSales = Number(movRes.rows[0]?.cash_sales || 0);
       const sessCardSales = Number(cardRes.rows[0]?.card_total || 0);
+      const sessCardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
       const sessCashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
       const sessCashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
       const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
@@ -851,7 +911,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
       const sessCardExpected = sess.status === 'closed' && sess.terminal_card_expected !== null && sess.terminal_card_expected !== undefined
         ? Number(sess.terminal_card_expected)
-        : round2(openCardFloat + sessCardSales);
+        : round2(openCardFloat + sessCardSales - sessCardRefunds);
       const sessCardCounted = Number(sess.terminal_card_total || 0);
       const sessCardDiff = sess.status === 'closed'
         ? round2(Number(sess.terminal_card_discrepancy ?? (sessCardCounted - sessCardExpected)))
@@ -885,6 +945,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
         cashSales: sessCashSales,
         cardSales: sessCardSales,
         cashRefunds: sessCashRefunds,
+        cardRefunds: sessCardRefunds,
+        totalRefunds: round2(sessCashRefunds + sessCardRefunds),
         cashExpenses: sessCashExpenses,
         expectedCash: expectedCash,
         countedCash: countedCash,
@@ -905,8 +967,24 @@ export async function cashRoutes(fastify: FastifyInstance) {
     const totalInvoices = Number(salesRes.rows[0]?.total_invoices || 0);
     const totalTaxCollected = Number(salesRes.rows[0]?.total_tax_collected || 0);
 
+    const manualMovRes = await query(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN type = 'cash_in' AND source = 'manual_deposit' THEN amount ELSE 0 END), 0) as manual_deposits,
+        COALESCE(SUM(CASE WHEN type = 'cash_out' AND source = 'manual_withdrawal' THEN amount ELSE 0 END), 0) as manual_withdrawals
+       FROM cash_movements
+       WHERE session_id IN (
+         SELECT id FROM cash_sessions
+         WHERE (opened_at >= $1 AND opened_at < $2)
+            OR ($3::boolean = TRUE AND status = 'open' AND opened_at >= ($1::timestamptz - interval '36 hours'))
+       )`,
+      [bounds.startTime, bounds.endTime, isToday]
+    );
+
+    const totalManualDeposits = Number(manualMovRes.rows[0]?.manual_deposits || 0);
+    const totalManualWithdrawals = Number(manualMovRes.rows[0]?.manual_withdrawals || 0);
+
     // Net expected cash across all store drawers
-    const netStoreExpectedCash = round2(totalOpeningFloat + totalCashSales - totalCashRefunds - totalCashExpenses);
+    const netStoreExpectedCash = round2(totalOpeningFloat + totalCashSales - totalCashRefunds - totalCashExpenses + totalManualDeposits - totalManualWithdrawals);
 
     return reply.send({
       success: true,
@@ -1035,8 +1113,16 @@ export async function cashRoutes(fastify: FastifyInstance) {
           [sess.id, sess.user_id, sess.opened_at, sess.closed_at]
         );
 
+        const cardRefundRes = await query(
+          `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+           FROM sales_return_refunds srf
+           WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+          [sess.id]
+        );
+
         const cashSales = Number(movRes.rows[0]?.cash_sales || 0);
         const cardSales = Number(cardRes.rows[0]?.card_total || 0);
+        const cardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
         const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
         const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
         const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
@@ -1065,6 +1151,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
           cashSales,
           cardSales,
           cashRefunds,
+          cardRefunds,
+          totalRefunds: round2(cashRefunds + cardRefunds),
           cashExpenses,
           expectedCash,
           countedCash,
@@ -1072,7 +1160,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
           terminalCardTotal: Number(sess.terminal_card_total || 0),
           terminalCardExpected: sess.status === 'closed' && sess.terminal_card_expected !== null && sess.terminal_card_expected !== undefined
             ? Number(sess.terminal_card_expected)
-            : round2(Number(sess.opening_card_balance || 0) + cardSales),
+            : round2(Number(sess.opening_card_balance || 0) + cardSales - cardRefunds),
           terminalCardDiscrepancy: Number(sess.terminal_card_discrepancy || 0),
           closingNote: sess.closing_note,
         };
@@ -1185,12 +1273,21 @@ export async function cashRoutes(fastify: FastifyInstance) {
         const openingAdjustments = adjRes.rows.filter((a: any) => a.adjustment_type === 'opening');
         const closingAdjustments = adjRes.rows.filter((a: any) => a.adjustment_type === 'closing');
 
+        const cardRefundRes = await query(
+          `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+           FROM sales_return_refunds srf
+           WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+          [sess.id]
+        );
+
         const cashSales = Number(movRes.rows[0]?.cash_sales || 0);
         const cardSales = Number(cardRes.rows[0]?.card_total || 0);
+        const cardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
         const cashRefunds = Number(movRes.rows[0]?.cash_refunds || 0);
         const cashExpenses = Number(movRes.rows[0]?.cash_expenses || 0);
         const netFlow = Number(movRes.rows[0]?.net_operational_flow || 0);
         const expectedCash = round2(openFloat + netFlow);
+        const openCardFloat = Number(sess.opening_card_balance || 0);
 
         return {
           id: sess.id,
@@ -1206,7 +1303,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
           closedAt: sess.closed_at,
           terminalName: sess.terminal_name || 'Terminal-01',
           openingBalance: openFloat,
-          openingCardBalance: Number(sess.opening_card_balance || 0),
+          openingCardBalance: openCardFloat,
           carryForwardBalance: Number(sess.carry_forward_balance || 0),
           carryForwardCardBalance: Number(sess.carry_forward_card_balance || 0),
           previousSessionId: sess.previous_session_id,
@@ -1224,7 +1321,9 @@ export async function cashRoutes(fastify: FastifyInstance) {
           forceCloseReason: sess.force_close_reason || null,
           closingNote: sess.closing_note,
           terminalCardTotal: Number(sess.terminal_card_total || 0),
-          terminalCardExpected: cardSales,
+          terminalCardExpected: sess.status === 'closed' && sess.terminal_card_expected !== null && sess.terminal_card_expected !== undefined
+            ? Number(sess.terminal_card_expected)
+            : round2(openCardFloat + cardSales - cardRefunds),
           terminalCardDiscrepancy: Number(sess.terminal_card_discrepancy || 0),
           openingAdjustments: openingAdjustments.map((a: any) => ({
             id: a.id,
@@ -1393,10 +1492,22 @@ export async function cashRoutes(fastify: FastifyInstance) {
       totalTax: Number(s.total_tax),
       grandTotal: Number(s.grand_total),
       paidAmount: Number(s.paid_amount),
+      dueAmount: Number(s.due_amount || 0),
       paymentStatus: s.payment_status,
       payments: paymentsBySale[s.id] || [],
       items: itemsBySale[s.id] || [],
     }));
+
+    const sessionRefundsRes = await query(
+      `SELECT COUNT(DISTINCT sr.id) as refund_invoices_count,
+              COALESCE(SUM(sr.total_amount), 0) as total_refund_amount
+       FROM sales_returns sr
+       JOIN sales_return_refunds srf ON srf.sales_return_id = sr.id
+       WHERE srf.cash_session_id = $1`,
+      [Number(id)]
+    );
+    const refundInvoicesCount = Number(sessionRefundsRes.rows[0]?.refund_invoices_count || 0);
+    const totalRefundAmount = Number(sessionRefundsRes.rows[0]?.total_refund_amount || 0);
 
     // Calculate accurate aggregated financial metrics for both open and closed states
     const openFloat = Number(sess.opening_balance || 0);
@@ -1422,6 +1533,13 @@ export async function cashRoutes(fastify: FastifyInstance) {
       [Number(id), sess.user_id, sess.opened_at, sess.closed_at]
     );
 
+    const cardRefundRes = await query(
+      `SELECT COALESCE(SUM(srf.amount), 0) as card_refunds
+       FROM sales_return_refunds srf
+       WHERE srf.cash_session_id = $1 AND srf.destination = 'card'`,
+      [Number(id)]
+    );
+
     const movSummaryRes = await query(
       `SELECT 
         COALESCE(SUM(CASE WHEN type = 'cash_in' AND source != 'opening_float' THEN amount WHEN type = 'cash_out' THEN -amount ELSE 0 END), 0) as net_operational_flow,
@@ -1434,6 +1552,7 @@ export async function cashRoutes(fastify: FastifyInstance) {
 
     const cashSales = Number(payBreakdownRes.rows[0]?.cash_sales || 0);
     const cardSales = Number(payBreakdownRes.rows[0]?.card_sales || 0);
+    const cardRefunds = Number(cardRefundRes.rows[0]?.card_refunds || 0);
     const netOperationalFlow = Number(movSummaryRes.rows[0]?.net_operational_flow || 0);
     const cashRefunds = Number(movSummaryRes.rows[0]?.cash_refunds || 0);
     const cashExpenses = Number(movSummaryRes.rows[0]?.cash_expenses || 0);
@@ -1445,8 +1564,8 @@ export async function cashRoutes(fastify: FastifyInstance) {
     const cashDifference = isClosed ? round2(Number(sess.difference || 0)) : null;
 
     const expectedCard = isClosed 
-      ? Number(sess.terminal_card_expected ?? round2(openCardFloat + cardSales))
-      : round2(openCardFloat + cardSales);
+      ? Number(sess.terminal_card_expected ?? round2(openCardFloat + cardSales - cardRefunds))
+      : round2(openCardFloat + cardSales - cardRefunds);
     const countedCard = isClosed ? Number(sess.terminal_card_total || 0) : null;
     const cardDifference = isClosed ? round2(Number(sess.terminal_card_discrepancy || 0)) : null;
 
@@ -1469,6 +1588,10 @@ export async function cashRoutes(fastify: FastifyInstance) {
           invoicesCount: invoices.length,
           netOperationalFlow: round2(netOperationalFlow),
           cashRefunds: round2(cashRefunds),
+          cardRefunds: round2(cardRefunds),
+          totalRefunds: round2(totalRefundAmount),
+          totalRefundAmount: round2(totalRefundAmount),
+          refundInvoicesCount,
           cashExpenses: round2(cashExpenses),
           manualCashIns: round2(manualCashIns),
           expected_balance: round2(expectedCash),

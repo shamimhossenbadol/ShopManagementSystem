@@ -31,8 +31,15 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     const invoice = invRes.rows[0];
 
     const itemsRes = await query(
-      `SELECT id, product_name, sku, quantity, unit_price, discount, tax_rate, tax_amount, subtotal
-       FROM sale_items WHERE sale_id = $1`,
+      `SELECT 
+         si.id, si.product_id, si.product_name, si.sku, si.quantity, si.unit_price, si.discount, si.tax_rate, si.tax_amount, si.subtotal,
+         COALESCE(SUM(sri.quantity), 0) as already_returned_qty,
+         GREATEST(0, si.quantity - COALESCE(SUM(sri.quantity), 0)) as returnable_quantity
+       FROM sale_items si
+       LEFT JOIN sales_return_items sri ON sri.sale_item_id = si.id
+       WHERE si.sale_id = $1
+       GROUP BY si.id, si.product_id, si.product_name, si.sku, si.quantity, si.unit_price, si.discount, si.tax_rate, si.tax_amount, si.subtotal
+       ORDER BY si.id ASC`,
       [invoice.sale_id]
     );
 
@@ -48,15 +55,39 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     const setRes = await query(`SELECT setting_key, setting_value FROM settings`);
     const settings = Object.fromEntries(setRes.rows.map((r) => [r.setting_key, r.setting_value]));
 
+    const returnPolicyDays = parseInt(settings.return_policy_days || '7', 10);
+    const saleCreatedAt = new Date(invoice.created_at);
+    const daysSinceSale = Math.max(0, Math.floor((Date.now() - saleCreatedAt.getTime()) / (1000 * 60 * 60 * 24)));
+    const isReturnEligible = daysSinceSale <= returnPolicyDays;
+
     return reply.send({
       success: true,
       data: {
         invoice,
+        sale: {
+          id: invoice.sale_id,
+          reference_no: invoice.reference_no,
+          subtotal: invoice.subtotal,
+          total_discount: invoice.total_discount,
+          invoice_discount: invoice.invoice_discount,
+          total_tax: invoice.total_tax,
+          grand_total: invoice.grand_total,
+          paid_amount: invoice.paid_amount,
+          due_amount: invoice.due_amount,
+          payment_status: invoice.payment_status,
+          customer_name: invoice.customer_name,
+        },
         items: itemsRes.rows,
         payments: paymentsRes.rows,
+        returnPolicy: {
+          policyDays: returnPolicyDays,
+          daysSinceSale,
+          isReturnEligible,
+          expiryDate: new Date(saleCreatedAt.getTime() + returnPolicyDays * 86400000).toISOString(),
+        },
         store: {
-          nameEn: settings.shop_name_en || settings.shop_name || 'AL-NOOR SUPERMARKET & HYPERMARKET',
-          nameAr: settings.shop_name_ar || 'AL-NOOR RETAIL POS',
+          nameEn: settings.shop_name_en || settings.shop_name || 'SHOP MANAGEMENT SYSTEM',
+          nameAr: settings.shop_name_ar || 'SHOP MANAGEMENT SYSTEM',
           vatNumber: settings.shop_vat_number || '300123456700003',
           crNumber: settings.shop_cr_number || '1010123456',
           address: settings.shop_address || 'King Fahd Road, Riyadh, Saudi Arabia',
@@ -106,7 +137,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     let receipt = '';
     receipt += `${ESC}@`; // Init
     receipt += `${ESC}a\x01`; // Center
-    receipt += `${settings.shop_name_en || 'AL-NOOR SUPER MARKET'}\n`;
+    receipt += `${settings.shop_name_en || 'SHOP MANAGEMENT SYSTEM'}\n`;
     receipt += `VAT: ${settings.shop_vat_number || '300123456700003'} | CR: ${settings.shop_cr_number || '1010123456'}\n`;
     receipt += `Simplified Tax Invoice\n`;
     receipt += `------------------------------------------------\n`;

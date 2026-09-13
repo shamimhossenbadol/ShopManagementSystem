@@ -35,7 +35,7 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
 
   const { sale, items, invoice, cashierName, payments, tenderedAmount, changeAmount, customer } = data || {};
 
-  const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'AL-NOOR SUPERMARKET';
+  const shopName = settings.shop_name_en || settings.shop_name || settings.shop_name_ar || 'SHOP MANAGEMENT SYSTEM';
   const shopAddress = settings.shop_address || '';
   const shopPhone = settings.shop_phone || '';
   const vatNumber = settings.shop_vat_number || '300123456700003';
@@ -49,6 +49,11 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
   const totalDiscount = Number(sale?.total_discount || 0);
   const paidAmount = Number(sale?.paid_amount || 0);
   const dueAmount = Number(sale?.due_amount || 0);
+  const totalCustomerDue = customer?.current_due !== undefined && customer?.current_due !== null
+    ? Number(customer.current_due)
+    : (customer?.balance !== undefined && customer?.balance !== null
+        ? Number(customer.balance)
+        : dueAmount);
 
   // Cash payment & change calculation
   const cashPayment = Array.isArray(payments) ? payments.find((p: any) => p.paymentMethodId === 1 || p.payment_method_id === 1) : null;
@@ -121,10 +126,6 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       <div class="row"><span>Invoice No:</span><span class="bold">${invoiceNo}</span></div>
       <div class="row"><span>Date & Time:</span><span>${invoiceDate}</span></div>
       <div class="row"><span>Cashier:</span><span class="bold">${cashier}</span></div>
-      ${customer && (customer.id !== 1 || (customer.name && !customer.name.toLowerCase().includes('walk-in'))) ? `
-      <div class="row"><span>Customer:</span><span class="bold">${customer.name}</span></div>
-      ${customer.phone ? `<div class="row"><span>Contact:</span><span>${customer.phone}</span></div>` : ''}
-      ` : ''}
 
       <div class="divider"></div>
       <div class="row bold" style="font-size: 11px; text-transform: uppercase;">
@@ -168,10 +169,16 @@ export async function printThermalReceipt(data: any, settings: any = {}) {
       ${cardPayment ? `<div class="row" style="font-size: 11px;"><span>- Mada / Card:</span><span>${Number(cardPayment.amount || 0).toFixed(2)} SAR</span></div>` : ''}
       <div class="row-bold" style="font-size: 12.5px; margin-top: 3px; border-top: 1px dashed #000000; padding-top: 3px;"><span>Returnable / Change:</span><span class="bold">${calculatedChange.toFixed(2)} SAR</span></div>
       ${dueAmount > 0 ? `
-        <div class="row bold" style="font-size: 11.5px; color: #b91c1c; border-top: 1px dashed #000000; margin-top: 3px; padding-top: 2px;"><span>Customer Due (This Invoice):</span><span class="bold">${dueAmount.toFixed(2)} SAR</span></div>
-        ${customer?.current_due !== undefined ? `
-          <div class="row" style="font-size: 10.5px; color: #b91c1c;"><span>Total Customer Balance:</span><span class="bold">${Number(customer.current_due).toFixed(2)} SAR</span></div>
-        ` : ''}
+        <div style="margin-top: 6px; border: 1.5px solid #000000; border-radius: 4px; padding: 5px 6px;">
+          <div class="row bold" style="font-size: 12px; margin: 0;">
+            <span>INVOICE DUE:</span>
+            <span style="font-size: 13.5px; font-weight: 900;">${dueAmount.toFixed(2)} SAR</span>
+          </div>
+          <div class="row bold" style="font-size: 12px; margin-top: 3px;">
+            <span>TOTAL OUTSTANDING:</span>
+            <span style="font-size: 13.5px; font-weight: 900;">${Math.max(dueAmount, totalCustomerDue).toFixed(2)} SAR</span>
+          </div>
+        </div>
       ` : ''}
 
       <div class="divider"></div>

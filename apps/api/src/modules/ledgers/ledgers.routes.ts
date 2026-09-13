@@ -27,22 +27,17 @@ const updateCustomerSchema = z.object({
 });
 
 const supplierSchema = z.object({
-  name: z.string().min(1),
-  companyName: z.string().optional().nullable(),
-  vatNumber: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  openingBalance: z.number().min(0).default(0),
+  name: z.string().trim().min(1, 'Supplier name is required'),
+  companyName: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
+  vatNumber: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
+  phone: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
 });
 
 const updateSupplierSchema = z.object({
-  name: z.string().min(1).optional(),
-  companyName: z.string().optional().nullable(),
-  vatNumber: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
+  name: z.string().trim().min(1).optional(),
+  companyName: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
+  vatNumber: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
+  phone: z.preprocess(emptyToNull, z.string().trim().optional().nullable()),
   isActive: z.boolean().optional(),
 });
 
@@ -50,6 +45,7 @@ const customerPaymentSchema = z.object({
   customerId: z.number(),
   amount: z.number().positive(),
   paymentMethodId: z.number().default(1),
+  saleId: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -57,6 +53,7 @@ const supplierPaymentSchema = z.object({
   supplierId: z.number(),
   amount: z.number().positive(),
   paymentMethodId: z.number().default(1),
+  purchaseId: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -195,7 +192,7 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, message: 'Invalid payment data.' });
     }
 
-    const { customerId, amount, paymentMethodId, notes } = parsed.data;
+    const { customerId, amount, paymentMethodId, saleId, notes } = parsed.data;
 
     try {
       const result = await withTransaction(async (client) => {
@@ -214,12 +211,71 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
           [customerId, request.user!.id, amount, newBal, notes || 'Customer Due Collection']
         );
 
-        // 2. If Cash, update active cash session
+        // 2. Allocate payment to sales with outstanding due
+        let remainingToAllocate = amount;
+        if (saleId) {
+          const sRes = await client.query(
+            `SELECT id, grand_total, paid_amount, due_amount FROM sales 
+             WHERE id = $1 AND customer_id = $2 AND due_amount > 0 FOR UPDATE`,
+            [saleId, customerId]
+          );
+          if (sRes.rows.length > 0) {
+            const s = sRes.rows[0];
+            const alloc = Math.min(remainingToAllocate, Number(s.due_amount));
+            const newPaid = round2(Number(s.paid_amount) + alloc);
+            const newDue = round2(Number(s.due_amount) - alloc);
+            const newStatus = newDue <= 0 ? 'paid' : 'partial';
+
+            await client.query(
+              `UPDATE sales SET paid_amount = $1, due_amount = $2, payment_status = $3, updated_at = NOW() WHERE id = $4`,
+              [newPaid, newDue, newStatus, s.id]
+            );
+
+            await client.query(
+              `INSERT INTO sale_payments (sale_id, payment_method_id, amount, reference_note, created_by)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [s.id, paymentMethodId, alloc, notes || 'Customer Due Collection', request.user!.id]
+            );
+
+            remainingToAllocate = round2(remainingToAllocate - alloc);
+          }
+        }
+
+        if (remainingToAllocate > 0) {
+          const unpaidSales = await client.query(
+            `SELECT id, grand_total, paid_amount, due_amount FROM sales 
+             WHERE customer_id = $1 AND due_amount > 0 
+             ORDER BY created_at ASC, id ASC FOR UPDATE`,
+            [customerId]
+          );
+
+          for (const s of unpaidSales.rows) {
+            if (remainingToAllocate <= 0) break;
+            const alloc = Math.min(remainingToAllocate, Number(s.due_amount));
+            const newPaid = round2(Number(s.paid_amount) + alloc);
+            const newDue = round2(Number(s.due_amount) - alloc);
+            const newStatus = newDue <= 0 ? 'paid' : 'partial';
+
+            await client.query(
+              `UPDATE sales SET paid_amount = $1, due_amount = $2, payment_status = $3, updated_at = NOW() WHERE id = $4`,
+              [newPaid, newDue, newStatus, s.id]
+            );
+
+            await client.query(
+              `INSERT INTO sale_payments (sale_id, payment_method_id, amount, reference_note, created_by)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [s.id, paymentMethodId, alloc, notes || 'Customer Due Collection', request.user!.id]
+            );
+
+            remainingToAllocate = round2(remainingToAllocate - alloc);
+          }
+        }
+
+        // 3. If Cash, update active cash session
         const isCashRes = await client.query(`SELECT is_cash FROM payment_methods WHERE id = $1`, [paymentMethodId]);
         if (isCashRes.rows[0]?.is_cash) {
           const sessionRes = await client.query(
-            `SELECT id FROM cash_sessions WHERE user_id = $1 AND status = 'open' LIMIT 1`,
-            [request.user!.id]
+            `SELECT id FROM cash_sessions WHERE status = 'open' LIMIT 1`
           );
           if (sessionRes.rows.length > 0) {
             await client.query(
@@ -230,11 +286,11 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
           }
         }
 
-        // 3. Audit Log
+        // 4. Audit Log
         await client.query(
           `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
            VALUES ($1, 'CUSTOMER_DUE_COLLECTED', 'customer_ledger', $2, $3)`,
-          [request.user!.id, customerId, JSON.stringify({ amount, newBalance: newBal, notes })]
+          [request.user!.id, customerId, JSON.stringify({ amount, newBalance: newBal, saleId, notes })]
         );
 
         return { ledgerEntry: ledRes.rows[0], newBalance: newBal };
@@ -260,7 +316,7 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
 
     let sql = `
       SELECT 
-        s.id, s.name, s.company_name, s.phone, s.email, s.vat_number, s.address, s.is_active,
+        s.id, s.name, s.company_name, s.phone, s.vat_number, s.is_active,
         COALESCE((SELECT balance FROM supplier_ledger WHERE supplier_id = s.id ORDER BY id DESC LIMIT 1), 0) as current_payable
       FROM suppliers s
       WHERE s.is_active = TRUE
@@ -281,9 +337,10 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
   fastify.post('/suppliers', { preHandler: [requireRole(['manager'])] }, async (request, reply) => {
     const parsed = supplierSchema.safeParse(request.body);
     if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0]?.message || 'Invalid supplier data.';
       return reply.status(400).send({
         success: false,
-        message: 'Invalid supplier data.',
+        message: firstIssue,
         errors: parsed.error.format(),
       });
     }
@@ -292,20 +349,12 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
 
     const supplier = await withTransaction(async (client) => {
       const sRes = await client.query(
-        `INSERT INTO suppliers (name, company_name, vat_number, email, phone, address, opening_balance)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [data.name, data.companyName || null, data.vatNumber || null, data.email || null, data.phone || null, data.address || null, data.openingBalance]
+        `INSERT INTO suppliers (name, company_name, vat_number, phone)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [data.name.trim(), data.companyName || null, data.vatNumber || null, data.phone || null]
       );
 
       const sup = sRes.rows[0];
-
-      if (data.openingBalance > 0) {
-        await client.query(
-          `INSERT INTO supplier_ledger (supplier_id, user_id, type, debit, credit, balance, notes)
-           VALUES ($1, $2, 'bill', 0, $3, $3, 'Opening balance payable')`,
-          [sup.id, request.user!.id, data.openingBalance]
-        );
-      }
 
       await client.query(
         `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
@@ -324,7 +373,8 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const parsed = updateSupplierSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ success: false, message: 'Invalid supplier update.' });
+      const firstIssue = parsed.error.issues[0]?.message || 'Invalid supplier update.';
+      return reply.status(400).send({ success: false, message: firstIssue });
     }
 
     const curRes = await query(`SELECT * FROM suppliers WHERE id = $1`, [Number(id)]);
@@ -334,16 +384,14 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
 
     const res = await query(
       `UPDATE suppliers SET
-        name = $1, company_name = $2, vat_number = $3, email = $4, phone = $5,
-        address = $6, is_active = $7, updated_at = NOW()
-       WHERE id = $8 RETURNING *`,
+        name = $1, company_name = $2, vat_number = $3, phone = $4,
+        is_active = $5, updated_at = NOW()
+       WHERE id = $6 RETURNING *`,
       [
-        data.name ?? cur.name,
-        data.companyName !== undefined ? data.companyName : cur.company_name,
-        data.vatNumber !== undefined ? data.vatNumber : cur.vat_number,
-        data.email !== undefined ? data.email : cur.email,
-        data.phone !== undefined ? data.phone : cur.phone,
-        data.address !== undefined ? data.address : cur.address,
+        data.name !== undefined ? data.name.trim() : cur.name,
+        data.companyName !== undefined ? (data.companyName || null) : cur.company_name,
+        data.vatNumber !== undefined ? (data.vatNumber || null) : cur.vat_number,
+        data.phone !== undefined ? (data.phone || null) : cur.phone,
         data.isActive ?? cur.is_active,
         Number(id),
       ]
@@ -373,7 +421,7 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ success: false, message: 'Invalid payment data.' });
     }
 
-    const { supplierId, amount, paymentMethodId, notes } = parsed.data;
+    const { supplierId, amount, paymentMethodId, purchaseId, notes } = parsed.data;
 
     try {
       const result = await withTransaction(async (client) => {
@@ -392,12 +440,71 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
           [supplierId, request.user!.id, amount, newBal, notes || 'Supplier Bill Payment']
         );
 
-        // 2. If Cash, update active cash session (outflow)
+        // 2. Allocate payment to purchases with outstanding due
+        let remainingToAllocate = amount;
+        if (purchaseId) {
+          const pRes = await client.query(
+            `SELECT id, grand_total, paid_amount, due_amount FROM purchases 
+             WHERE id = $1 AND supplier_id = $2 AND due_amount > 0 FOR UPDATE`,
+            [purchaseId, supplierId]
+          );
+          if (pRes.rows.length > 0) {
+            const p = pRes.rows[0];
+            const alloc = Math.min(remainingToAllocate, Number(p.due_amount));
+            const newPaid = round2(Number(p.paid_amount) + alloc);
+            const newDue = round2(Number(p.due_amount) - alloc);
+            const newStatus = newDue <= 0 ? 'paid' : 'partial';
+
+            await client.query(
+              `UPDATE purchases SET paid_amount = $1, due_amount = $2, payment_status = $3, updated_at = NOW() WHERE id = $4`,
+              [newPaid, newDue, newStatus, p.id]
+            );
+
+            await client.query(
+              `INSERT INTO purchase_payments (purchase_id, payment_method_id, amount, reference_note, created_by)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [p.id, paymentMethodId, alloc, notes || 'Supplier Bill Payment', request.user!.id]
+            );
+
+            remainingToAllocate = round2(remainingToAllocate - alloc);
+          }
+        }
+
+        if (remainingToAllocate > 0) {
+          const unpaidPurchases = await client.query(
+            `SELECT id, grand_total, paid_amount, due_amount FROM purchases 
+             WHERE supplier_id = $1 AND due_amount > 0 
+             ORDER BY created_at ASC, id ASC FOR UPDATE`,
+            [supplierId]
+          );
+
+          for (const p of unpaidPurchases.rows) {
+            if (remainingToAllocate <= 0) break;
+            const alloc = Math.min(remainingToAllocate, Number(p.due_amount));
+            const newPaid = round2(Number(p.paid_amount) + alloc);
+            const newDue = round2(Number(p.due_amount) - alloc);
+            const newStatus = newDue <= 0 ? 'paid' : 'partial';
+
+            await client.query(
+              `UPDATE purchases SET paid_amount = $1, due_amount = $2, payment_status = $3, updated_at = NOW() WHERE id = $4`,
+              [newPaid, newDue, newStatus, p.id]
+            );
+
+            await client.query(
+              `INSERT INTO purchase_payments (purchase_id, payment_method_id, amount, reference_note, created_by)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [p.id, paymentMethodId, alloc, notes || 'Supplier Bill Payment', request.user!.id]
+            );
+
+            remainingToAllocate = round2(remainingToAllocate - alloc);
+          }
+        }
+
+        // 3. If Cash, update active cash session (outflow)
         const isCashRes = await client.query(`SELECT is_cash FROM payment_methods WHERE id = $1`, [paymentMethodId]);
         if (isCashRes.rows[0]?.is_cash) {
           const sessionRes = await client.query(
-            `SELECT id FROM cash_sessions WHERE user_id = $1 AND status = 'open' LIMIT 1`,
-            [request.user!.id]
+            `SELECT id FROM cash_sessions WHERE status = 'open' LIMIT 1`
           );
           if (sessionRes.rows.length > 0) {
             await client.query(
@@ -408,11 +515,11 @@ export async function ledgerRoutes(fastify: FastifyInstance) {
           }
         }
 
-        // 3. Audit Log
+        // 4. Audit Log
         await client.query(
           `INSERT INTO audit_logs (user_id, action, entity_table, entity_id, new_values)
            VALUES ($1, 'SUPPLIER_BILL_PAID', 'supplier_ledger', $2, $3)`,
-          [request.user!.id, supplierId, JSON.stringify({ amount, newBalance: newBal, notes })]
+          [request.user!.id, supplierId, JSON.stringify({ amount, newBalance: newBal, purchaseId, notes })]
         );
 
         return { ledgerEntry: ledRes.rows[0], newBalance: newBal };

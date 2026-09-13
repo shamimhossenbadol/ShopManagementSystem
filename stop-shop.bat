@@ -1,9 +1,9 @@
 @echo off
-title Al-Noor Retail Shop POS - Stopping...
+title Shop Management System POS - Stopping...
 color 0E
 echo.
 echo ======================================================================
-echo           AL-NOOR RETAIL SHOP MANAGEMENT SYSTEM (KSA)
+echo           RETAIL SHOP MANAGEMENT SYSTEM (KSA)
 echo           Safely Stopping Services
 echo ======================================================================
 echo.

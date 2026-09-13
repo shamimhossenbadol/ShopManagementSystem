@@ -36,7 +36,6 @@ export default function ReturnsPage() {
   const [returnItems, setReturnItems] = useState<any[]>([]);
   const [refundMethodId, setRefundMethodId] = useState<number>(1);
   const [reason, setReason] = useState('Customer changed mind / Defective item');
-  const [managerPin, setManagerPin] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(true);
@@ -44,10 +43,22 @@ export default function ReturnsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+
   const loadData = async () => {
     setTableLoading(true);
-    const res = await apiRequest('/returns/sales');
-    if (res.success && res.data) setSalesReturns(res.data);
+    const [retRes, pmRes] = await Promise.all([
+      apiRequest('/returns/sales'),
+      apiRequest('/settings/payment-methods'),
+    ]);
+    if (retRes.success && retRes.data) setSalesReturns(retRes.data);
+    if (pmRes.success && pmRes.data) setPaymentMethods(pmRes.data);
+    
+    // Set default refund method if none selected
+    if (pmRes.success && pmRes.data && pmRes.data.length > 0) {
+      setRefundMethodId(pmRes.data.find((pm: any) => pm.is_cash)?.id || pmRes.data[0].id);
+    }
+    
     setTableLoading(false);
   };
 
@@ -66,19 +77,33 @@ export default function ReturnsPage() {
 
     if (res.success && res.data) {
       setFoundSale(res.data);
-      setReturnItems(
-        res.data.items.map((i: any) => ({
+      const items = (res.data.items || []).map((i: any) => {
+        const originalQty = Number(i.quantity);
+        const alreadyReturned = Number(i.already_returned_qty || 0);
+        const maxQty = Math.max(0, Number(i.returnable_quantity ?? (originalQty - alreadyReturned)));
+        return {
           saleItemId: i.id,
-          productId: i.product_id || 1,
+          productId: i.product_id || i.productId || 1,
           productName: i.product_name,
           sku: i.sku,
-          maxQty: Number(i.quantity),
+          originalQty,
+          alreadyReturned,
+          maxQty,
           returnQty: 0,
           unitPrice: Number(i.unit_price),
-          taxAmount: Number(i.tax_amount) / Number(i.quantity),
+          taxAmount: originalQty > 0 ? Number(i.tax_amount) / originalQty : 0,
           restocked: true,
-        }))
-      );
+        };
+      });
+      setReturnItems(items);
+
+      if (res.data.returnPolicy && !res.data.returnPolicy.isReturnEligible) {
+        setErrorMsg(
+          `Return window expired: This invoice was issued ${res.data.returnPolicy.daysSinceSale} days ago (store return policy deadline is ${res.data.returnPolicy.policyDays} days).`
+        );
+      } else if (items.every((it: any) => it.maxQty === 0)) {
+        setErrorMsg('All items from this invoice have already been returned in full.');
+      }
     } else {
       setErrorMsg(res.message || 'Original sales invoice not found in records.');
     }
@@ -106,45 +131,53 @@ export default function ReturnsPage() {
     setLoading(true);
     setErrorMsg(null);
 
-    const itemsToReturn = returnItems
-      .filter((i) => i.returnQty > 0)
-      .map((i) => ({
-        saleItemId: i.saleItemId,
-        productId: i.productId,
-        quantity: i.returnQty,
-        unitPrice: i.unitPrice,
-        taxAmount: i.taxAmount * i.returnQty,
-        subtotal: i.returnQty * i.unitPrice,
-        restocked: i.restocked,
-      }));
+    try {
+      const itemsToReturn = returnItems
+        .filter((i) => i.returnQty > 0)
+        .map((i) => ({
+          saleItemId: i.saleItemId,
+          productId: i.productId,
+          quantity: i.returnQty,
+          unitPrice: i.unitPrice,
+          taxAmount: i.taxAmount * i.returnQty,
+          subtotal: i.returnQty * i.unitPrice,
+          restocked: i.restocked,
+        }));
 
-    if (itemsToReturn.length === 0) {
+      if (itemsToReturn.length === 0) {
+        setErrorMsg('Please specify a return quantity for at least one line item.');
+        return;
+      }
+
+      const saleId = foundSale?.sale?.id || foundSale?.invoice?.sale_id;
+      if (!saleId) {
+        setErrorMsg('Invalid invoice reference: could not resolve original sale ID.');
+        return;
+      }
+
+      const res = await apiRequest('/returns/sales', {
+        method: 'POST',
+        body: JSON.stringify({
+          saleId: Number(saleId),
+          refundMethodId: Number(refundMethodId),
+          reason,
+          items: itemsToReturn,
+        }),
+      });
+
+      if (res.success) {
+        setSuccessMsg('Sales return processed successfully! Credit note issued and stock adjusted.');
+        setIsProcessModalOpen(false);
+        setFoundSale(null);
+        setSearchInvoiceNo('');
+        loadData();
+      } else {
+        setErrorMsg(res.message || 'Return processing failed.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'An unexpected error occurred while processing return.');
+    } finally {
       setLoading(false);
-      setErrorMsg('Please specify a return quantity for at least one line item.');
-      return;
-    }
-
-    const res = await apiRequest('/returns/sales', {
-      method: 'POST',
-      body: JSON.stringify({
-        saleId: foundSale.sale.id,
-        refundMethodId: Number(refundMethodId),
-        reason,
-        items: itemsToReturn,
-        managerPin: managerPin || undefined,
-      }),
-    });
-
-    setLoading(false);
-
-    if (res.success) {
-      setSuccessMsg('Sales return processed successfully! Credit note issued and stock adjusted.');
-      setIsProcessModalOpen(false);
-      setFoundSale(null);
-      setSearchInvoiceNo('');
-      loadData();
-    } else {
-      setErrorMsg(res.message || 'Return processing failed.');
     }
   };
 
@@ -197,7 +230,7 @@ export default function ReturnsPage() {
         <MetricCard
           label="Restocked vs Damaged Adjustments"
           value={`${salesReturns.length} Transactions`}
-          subValue="Governed via Manager PIN Authorization"
+          subValue="Direct Cashier & Manager Return Processing"
           icon={<ShieldCheck className="h-5 w-5" />}
           variant="default"
         />
@@ -282,7 +315,7 @@ export default function ReturnsPage() {
           </div>
         }
         subtitle="Reverse VAT and restore saleable goods to original batch allocation"
-        maxWidth="3xl"
+        maxWidth="4xl"
         footer={
           foundSale ? (
             <>
@@ -292,7 +325,7 @@ export default function ReturnsPage() {
               <Button
                 variant="danger"
                 isLoading={loading}
-                disabled={calculateReturnTotal() === 0}
+                disabled={calculateReturnTotal() === 0 || (foundSale?.returnPolicy && !foundSale.returnPolicy.isReturnEligible)}
                 onClick={handleProcessReturn}
               >
                 Confirm Refund ({formatCurrency(calculateReturnTotal())})
@@ -313,19 +346,22 @@ export default function ReturnsPage() {
         )}
 
         {/* Step 1: Search Sale Invoice */}
-        <form onSubmit={handleSearchSale} className="flex gap-2 mb-4">
-          <Input
-            value={searchInvoiceNo}
-            onChange={(e) => setSearchInvoiceNo(e.target.value)}
-            required
-            placeholder="Enter Invoice No or Sale Ref (e.g. INV-202609-0001)..."
-            className="font-mono text-xs"
-          />
+        <form onSubmit={handleSearchSale} className="flex items-center gap-2 mb-4">
+          <div className="flex-1 min-w-0">
+            <Input
+              value={searchInvoiceNo}
+              onChange={(e) => setSearchInvoiceNo(e.target.value)}
+              required
+              placeholder="Enter Invoice No or Sale Ref (e.g. INV-202609-0001)..."
+              className="font-mono text-xs"
+            />
+          </div>
           <Button
             type="submit"
             isLoading={searching}
             variant="primary"
-            leftIcon={<Search className="h-4 w-4" />}
+            className="shrink-0 whitespace-nowrap px-4"
+            leftIcon={<Search className="h-4 w-4 shrink-0" />}
           >
             Find Invoice
           </Button>
@@ -340,11 +376,18 @@ export default function ReturnsPage() {
                   Invoice #{foundSale.invoice?.invoice_no || foundSale.sale?.reference_no}
                 </span>
                 <p className="text-[11px] text-slate-500">
-                  Customer: {foundSale.customer?.name || 'Walk-in'} • Original Total:{' '}
-                  {formatCurrency(foundSale.sale?.grand_total)}
+                  Original Total: {formatCurrency(foundSale.sale?.grand_total || foundSale.invoice?.grand_total || 0)}
                 </p>
               </div>
-              <Badge variant="primary">Verified</Badge>
+              <div className="flex items-center gap-1.5">
+                {foundSale.returnPolicy?.isReturnEligible ? (
+                  <Badge variant="success">Policy Valid ({foundSale.returnPolicy.daysSinceSale}/{foundSale.returnPolicy.policyDays}d)</Badge>
+                ) : foundSale.returnPolicy ? (
+                  <Badge variant="danger">Policy Expired ({foundSale.returnPolicy.daysSinceSale}d &gt; {foundSale.returnPolicy.policyDays}d)</Badge>
+                ) : (
+                  <Badge variant="primary">Verified</Badge>
+                )}
+              </div>
             </div>
 
             {/* Line Items Table */}
@@ -354,7 +397,7 @@ export default function ReturnsPage() {
                   <tr>
                     <th className="py-2.5 px-3">Item Name</th>
                     <th className="py-2.5 px-3 text-right">Sold Price</th>
-                    <th className="py-2.5 px-3 text-center">Sold Qty</th>
+                    <th className="py-2.5 px-3 text-center">Returned / Purchased</th>
                     <th className="py-2.5 px-3 text-center">Return Qty</th>
                     <th className="py-2.5 px-3 text-center">Condition</th>
                   </tr>
@@ -368,18 +411,21 @@ export default function ReturnsPage() {
                       <td className="py-2.5 px-3 text-right font-mono font-bold">
                         {formatCurrency(item.unitPrice)}
                       </td>
-                      <td className="py-2.5 px-3 text-center font-mono text-slate-500">
-                        {item.maxQty}
+                      <td className="py-2.5 px-3 text-center font-mono">
+                        <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                          {item.alreadyReturned}/{item.originalQty}
+                        </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <input
                           type="number"
                           min="0"
                           max={item.maxQty}
+                          disabled={item.maxQty <= 0 || (foundSale?.returnPolicy && !foundSale.returnPolicy.isReturnEligible)}
                           step="1"
                           value={item.returnQty}
                           onChange={(e) => updateItemQty(idx, parseFloat(e.target.value) || 0)}
-                          className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 text-center font-mono font-bold"
+                          className="w-16 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 text-center font-mono font-bold disabled:opacity-40"
                         />
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -398,27 +444,19 @@ export default function ReturnsPage() {
               </table>
             </div>
 
-            {/* Refund Tender & Authorization */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
+            {/* Refund Tender & Return Reason */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
               <Select
                 label="Refund Destination Tender *"
                 value={refundMethodId}
                 onChange={(e) => setRefundMethodId(parseInt(e.target.value))}
               >
-                <option value={1}>Cash Register Outflow</option>
-                <option value={2}>Card Reverse / Mada</option>
-                <option value={4}>Customer Account Credit</option>
+                {paymentMethods.filter((pm: any) => pm.is_cash || pm.name?.toLowerCase().includes('card') || pm.name?.toLowerCase().includes('mada')).map((pm) => (
+                  <option key={pm.id} value={pm.id}>
+                    {pm.name} {pm.is_cash ? '(from Till Drawer)' : '(Card Reversal)'}
+                  </option>
+                ))}
               </Select>
-
-              <Input
-                label="Manager Authorization PIN *"
-                type="password"
-                maxLength={6}
-                value={managerPin}
-                onChange={(e) => setManagerPin(e.target.value)}
-                placeholder="Manager PIN"
-                className="font-mono text-center tracking-widest"
-              />
 
               <Input
                 label="Return Reason *"

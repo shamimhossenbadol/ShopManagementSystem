@@ -142,7 +142,7 @@ export function broadcastSessionEvent(
 
 export async function authRoutes(fastify: FastifyInstance) {
   // POST /api/v1/auth/login - Staff Login (Password or Quick PIN)
-  fastify.post('/login', async (request, reply) => {
+  fastify.post('/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const parseResult = loginSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -159,29 +159,43 @@ export async function authRoutes(fastify: FastifyInstance) {
       // Secure PIN login: fetch users with a PIN and compare using bcrypt
       const candidateQuery = username
         ? await query(
-            `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+            `SELECT * 
              FROM users 
              WHERE username = $1 AND pin_code IS NOT NULL`,
             [username]
           )
         : await query(
-            `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+            `SELECT * 
              FROM users 
              WHERE pin_code IS NOT NULL`
           );
 
-      // Iterate candidates and compare PIN hash (supports both hashed and legacy plaintext PINs)
+      // Iterate candidates and compare PIN hash
       let matchedUser = null;
       for (const candidate of candidateQuery.rows) {
         if (!candidate.pin_code) continue;
-        // Check if PIN is stored as bcrypt hash (starts with $2) or plaintext legacy
+        
+        if (candidate.pin_locked_until && new Date(candidate.pin_locked_until) > new Date()) {
+          continue; // Skip locked candidates
+        }
+
         const isHashed = candidate.pin_code.startsWith('$2');
-        const pinMatch = isHashed
-          ? await bcrypt.compare(pin, candidate.pin_code)
-          : candidate.pin_code === pin;
+        let pinMatch = false;
+        try {
+          pinMatch = isHashed ? await bcrypt.compare(pin, candidate.pin_code) : candidate.pin_code === pin;
+        } catch {
+          pinMatch = false;
+        }
+
         if (pinMatch) {
           matchedUser = candidate;
+          await query(`UPDATE users SET pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = $1`, [candidate.id]);
           break;
+        } else if (username) {
+          // Only penalize failed attempts if a specific username was entered
+          const failed = (candidate.pin_failed_attempts || 0) + 1;
+          const lockedUntil = failed >= 5 ? new Date(Date.now() + 15 * 60000).toISOString() : null;
+          await query(`UPDATE users SET pin_failed_attempts = $1, pin_locked_until = $2 WHERE id = $3`, [failed, lockedUntil, candidate.id]);
         }
       }
 
@@ -197,7 +211,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       if (userRes.rows.length === 0) {
         return reply.status(401).send({
           success: false,
-          message: 'Invalid 5-digit PIN code.',
+          message: 'Invalid 5-digit PIN code or account is locked.',
         });
       }
     } else {
@@ -209,7 +223,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       userRes = await query(
-        `SELECT id, role, username, password_hash, full_name, is_active, pin_code, current_session_id, current_pos_session_id 
+        `SELECT * 
          FROM users 
          WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) OR (LOWER($1) = 'manager' AND role = 'manager')`,
         [username.trim()]
@@ -223,12 +237,27 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       const userCheck = userRes.rows[0];
+      
+      if (userCheck.pin_locked_until && new Date(userCheck.pin_locked_until) > new Date()) {
+         return reply.status(403).send({
+           success: false,
+           message: 'Account locked due to too many failed attempts.',
+         });
+      }
+
       const passwordMatch = await bcrypt.compare(password, userCheck.password_hash);
       if (!passwordMatch) {
+        if (userCheck.pin_failed_attempts !== undefined) {
+          const failed = (userCheck.pin_failed_attempts || 0) + 1;
+          const lockedUntil = failed >= 5 ? new Date(Date.now() + 15 * 60000).toISOString() : null;
+          await query(`UPDATE users SET pin_failed_attempts = $1, pin_locked_until = $2 WHERE id = $3`, [failed, lockedUntil, userCheck.id]);
+        }
         return reply.status(401).send({
           success: false,
           message: 'Invalid username or password.',
         });
+      } else if (userCheck.pin_failed_attempts !== undefined) {
+        await query(`UPDATE users SET pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = $1`, [userCheck.id]);
       }
     }
 
@@ -953,9 +982,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     for (const mgr of candidates.rows) {
       if (!mgr.pin_code) continue;
       const isHashed = mgr.pin_code.startsWith('$2');
-      const match = isHashed
-        ? await bcrypt.compare(pin, mgr.pin_code)
-        : mgr.pin_code === pin;
+      let match = false;
+      try {
+        match = isHashed ? await bcrypt.compare(pin, mgr.pin_code) : mgr.pin_code === pin;
+      } catch {
+        match = false;
+      }
       if (match) {
         authorizedManager = mgr;
         break;
@@ -963,20 +995,23 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     if (!authorizedManager) {
-      return reply.status(401).send({ success: false, message: 'Invalid Manager PIN code.' });
+      return reply.status(401).send({
+        success: false,
+        message: 'Invalid Manager PIN code. Override rejected.',
+      });
     }
 
     return reply.send({
       success: true,
-      message: 'Manager authorized.',
-      data: { authorizedBy: authorizedManager.full_name },
+      managerId: authorizedManager.id,
+      managerName: authorizedManager.full_name,
     });
   });
 
-  // POST /api/v1/auth/switch-to-pos - Demote Manager to Sales Executive POS Session (Requires PIN Verification)
-  fastify.post('/switch-to-pos', { preHandler: [authenticate] }, async (request, reply) => {
+  // POST /api/v1/auth/session/pos - Register/Activate POS terminal session for this user
+  fastify.post('/session/pos', { preHandler: [authenticate] }, async (request, reply) => {
     const { pin } = (request.body as { pin?: string }) || {};
-    
+
     if (!pin || pin.length < 5) {
       return reply.status(400).send({
         success: false,
@@ -997,9 +1032,14 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     // Verify PIN matches (supports bcrypt hashed and legacy plaintext PINs)
     const isHashed = user.pin_code?.startsWith('$2');
-    const pinMatch = user.pin_code
-      ? (isHashed ? await bcrypt.compare(pin, user.pin_code) : user.pin_code === pin)
-      : false;
+    let pinMatch = false;
+    try {
+      pinMatch = user.pin_code
+        ? (isHashed ? await bcrypt.compare(pin, user.pin_code) : user.pin_code === pin)
+        : false;
+    } catch {
+      pinMatch = false;
+    }
 
     if (!pinMatch) {
       return reply.status(401).send({

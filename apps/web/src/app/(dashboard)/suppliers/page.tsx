@@ -21,7 +21,6 @@ import {
   History,
   FileText,
   Phone,
-  Mail,
   Receipt,
   ArrowDownRight,
   ArrowUpRight,
@@ -47,9 +46,6 @@ export default function SuppliersPage() {
     companyName: '',
     vatNumber: '',
     phone: '',
-    email: '',
-    address: '',
-    openingBalance: 0,
   });
 
   const [loading, setLoading] = useState(false);
@@ -76,12 +72,22 @@ export default function SuppliersPage() {
 
   const handleCreateSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supForm.name.trim()) {
+      setErrorMsg('Supplier name is required.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
     const res = await apiRequest('/ledgers/suppliers', {
       method: 'POST',
-      body: JSON.stringify(supForm),
+      body: JSON.stringify({
+        name: supForm.name.trim(),
+        companyName: supForm.companyName.trim() || undefined,
+        vatNumber: supForm.vatNumber.trim() || undefined,
+        phone: supForm.phone.trim() || undefined,
+      }),
     });
 
     setLoading(false);
@@ -92,9 +98,6 @@ export default function SuppliersPage() {
         companyName: '',
         vatNumber: '',
         phone: '',
-        email: '',
-        address: '',
-        openingBalance: 0,
       });
       loadSuppliers();
     } else {
@@ -349,14 +352,10 @@ export default function SuppliersPage() {
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        title={
-          <div className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-blue-700 dark:text-sky-400" />
-            <span>Register New Supplier Profile</span>
-          </div>
-        }
-        subtitle="Maintain vendor contacts and Saudi VAT registration information"
-        maxWidth="lg"
+        icon={<Building2 className="h-5 w-5 text-blue-600 dark:text-sky-400" />}
+        title="Register New Supplier"
+        subtitle="Add a vendor profile to your directory"
+        maxWidth="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
@@ -376,14 +375,18 @@ export default function SuppliersPage() {
         )}
 
         <form onSubmit={handleCreateSupplier} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
             <Input
-              label="Supplier / Contact Name *"
+              label="Supplier Name"
               required
               value={supForm.name}
               onChange={(e) => setSupForm({ ...supForm, name: e.target.value })}
               placeholder="e.g. Almarai Distribution Co."
+              autoFocus
             />
+          </div>
+
+          <div>
             <Input
               label="Company Name"
               value={supForm.companyName}
@@ -394,7 +397,7 @@ export default function SuppliersPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
-              label="VAT Identification Number (15 Digits)"
+              label="VAT Identification Number"
               value={supForm.vatNumber}
               onChange={(e) => setSupForm({ ...supForm, vatNumber: e.target.value })}
               placeholder="300123456700003"
@@ -406,33 +409,6 @@ export default function SuppliersPage() {
               placeholder="+966 11 123 4567"
             />
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Email Address"
-              type="email"
-              value={supForm.email}
-              onChange={(e) => setSupForm({ ...supForm, email: e.target.value })}
-              placeholder="orders@almarai.com"
-            />
-            <Input
-              label="Opening Due Balance (SAR)"
-              type="number"
-              step="0.01"
-              value={supForm.openingBalance}
-              onChange={(e) =>
-                setSupForm({ ...supForm, openingBalance: parseFloat(e.target.value) || 0 })
-              }
-            />
-          </div>
-
-          <Textarea
-            label="Physical Warehouse Address"
-            value={supForm.address}
-            onChange={(e) => setSupForm({ ...supForm, address: e.target.value })}
-            placeholder="Industrial Area 2, Riyadh, Saudi Arabia"
-            rows={2}
-          />
         </form>
       </Modal>
 
@@ -441,13 +417,9 @@ export default function SuppliersPage() {
         <Modal
           isOpen={isPayModalOpen}
           onClose={() => setIsPayModalOpen(false)}
-          title={
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <span>Record Supplier Bill Settlement</span>
-            </div>
-          }
-          subtitle={`Vendor: ${selectedSupplier.name} (Current Payable: ${formatCurrency(selectedSupplier.current_payable)})`}
+          icon={<DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+          title="Record Bill Settlement"
+          subtitle={`Vendor: ${selectedSupplier.name} (Payable: ${formatCurrency(selectedSupplier.current_payable)})`}
           maxWidth="md"
           footer={
             <>
@@ -462,7 +434,7 @@ export default function SuppliersPage() {
         >
           <form onSubmit={handlePaySupplier} className="space-y-4">
             <Input
-              label="Settlement Payment Amount (SAR) *"
+              label="Settlement Payment Amount (SAR)"
               type="number"
               step="0.01"
               required
@@ -472,7 +444,8 @@ export default function SuppliersPage() {
             />
 
             <Select
-              label="Payment Outflow Method *"
+              label="Payment Outflow Method"
+              required
               value={payMethodId}
               onChange={(e) => setPayMethodId(parseInt(e.target.value))}
             >

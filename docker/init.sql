@@ -227,10 +227,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     name VARCHAR(150) NOT NULL,
     company_name VARCHAR(150),
     vat_number VARCHAR(50),
-    email VARCHAR(100),
     phone VARCHAR(20),
-    address TEXT,
-    opening_balance DECIMAL(15,4) NOT NULL DEFAULT 0.0000,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -392,6 +389,7 @@ CREATE TABLE IF NOT EXISTS sale_payments (
 -- 7. INVOICING & ZATCA COMPLIANCE
 CREATE TABLE IF NOT EXISTS invoices (
     id SERIAL PRIMARY KEY,
+    invoice_counter BIGSERIAL NOT NULL,
     sale_id INT UNIQUE NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
     invoice_no VARCHAR(50) UNIQUE NOT NULL,
     uuid UUID NOT NULL DEFAULT uuid_generate_v4(),
@@ -523,6 +521,20 @@ CREATE TABLE IF NOT EXISTS sales_return_items (
     restocked BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS sales_return_refunds (
+    id SERIAL PRIMARY KEY,
+    sales_return_id INT NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+    destination VARCHAR(30) NOT NULL DEFAULT 'cash',
+    payment_method_id INT REFERENCES payment_methods(id) ON DELETE RESTRICT,
+    cash_session_id INT REFERENCES cash_sessions(id) ON DELETE SET NULL,
+    amount DECIMAL(15,4) NOT NULL,
+    original_terminal_reference VARCHAR(255),
+    created_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sales_return_refunds_session ON sales_return_refunds(cash_session_id);
+
 CREATE TABLE IF NOT EXISTS purchase_returns (
     id SERIAL PRIMARY KEY,
     reference_no VARCHAR(50) UNIQUE NOT NULL,
@@ -624,7 +636,7 @@ CREATE TABLE IF NOT EXISTS held_sale_items (
 -- 14. AUDIT TRAIL, SETTINGS & BACKUP METADATA
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGSERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(id),
+    user_id INT REFERENCES users(id),
     action VARCHAR(50) NOT NULL,
     entity_table VARCHAR(50) NOT NULL,
     entity_id INT NOT NULL,
@@ -637,6 +649,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_table, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_logs_no_update_delete') THEN
+        CREATE OR REPLACE FUNCTION prevent_audit_log_mutation()
+        RETURNS TRIGGER AS $fn$
+        BEGIN
+            RAISE EXCEPTION 'audit_logs are append-only and cannot be modified or deleted';
+        END;
+        $fn$ LANGUAGE plpgsql;
+
+        CREATE TRIGGER trg_audit_logs_no_update_delete
+            BEFORE UPDATE OR DELETE ON audit_logs
+            FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS settings (
     setting_key VARCHAR(100) PRIMARY KEY,
@@ -726,8 +754,8 @@ ON CONFLICT (id) DO NOTHING;
 -- 5. Default Users (Manager Only)
 -- Default Manager: username 'admin', PIN '12345', password 'admin123'
 INSERT INTO users (id, role, username, email, password_hash, full_name, phone, pin_code, is_active) VALUES
-(1, 'manager', 'admin', 'manager@alnoorshop.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '12345', TRUE)
-ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
+(1, 'manager', 'admin', 'admin@shopmanagement.com', '$2b$10$M2nH3FzA144Zi1/O0LErb.5evVVJj11reUN1yFO2aARRwQLCKFZtu', 'Shamim Hossen (Manager)', '+966501234567', '$2b$10$zT413Tpuxg5/JiedBrTjIeXcozz.HYkcBLjVOaiuflK7czSOJ9wVO', TRUE)
+ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash, pin_code = EXCLUDED.pin_code;
 
 -- 6. Default Walk-in Customer
 INSERT INTO customers (id, name, phone, opening_balance) VALUES
@@ -737,16 +765,16 @@ ON CONFLICT (id) DO NOTHING;
 -- 7. Default System Settings (100% UI Configurable)
 -- 1. Shop Profile
 INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public) VALUES
-('shop_name_en', 'shop', 'AL-NOOR SUPERMARKET & HYPERMARKET', 'Shop English Name', true),
-('shop_name_ar', 'shop', 'AL-NOOR RETAIL POS', 'Shop Secondary / POS Name', true),
+('shop_name_en', 'shop', 'SHOP MANAGEMENT SYSTEM', 'Shop English Name', true),
+('shop_name_ar', 'shop', 'SHOP MANAGEMENT SYSTEM', 'Shop Secondary / POS Name', true),
 ('shop_cr_number', 'shop', '1010123456', 'Commercial Registration Number', true),
 ('shop_vat_number', 'shop', '300123456700003', 'VAT / Tax Registration Number', true),
 ('shop_phone', 'shop', '+966 11 456 7890', 'Shop Contact Phone', true),
-('shop_email', 'shop', 'info@alnoorshop.com', 'Shop Email Address', true),
+('shop_email', 'shop', 'info@shopmanagement.com', 'Shop Email Address', true),
 ('shop_address', 'shop', 'King Fahd Road, Riyadh, Saudi Arabia', 'Shop Physical Address', true),
 ('shop_closing_hour', 'shop', '00:00', 'Daily Shop Closing Hour (e.g. 00:00 for 12 AM)', true),
 ('shop_logo_path', 'shop', '', 'Shop Brand Logo URL or Path', true),
-('receipt_header', 'shop', 'Welcome to Al-Noor Supermarket', 'Receipt Top Header Message', true),
+('receipt_header', 'shop', 'Welcome to Shop Management System', 'Receipt Top Header Message', true),
 ('receipt_footer', 'shop', 'Thank you for shopping with us! Return within 7 days with invoice.', 'Receipt Bottom Note', true)
 ON CONFLICT (setting_key) DO NOTHING;
 
@@ -779,14 +807,14 @@ ON CONFLICT (setting_key) DO NOTHING;
 
 -- 5. POS & Hardware Peripheral Behavior
 INSERT INTO settings (setting_key, setting_group, setting_value, description, is_public) VALUES
-('scale_barcode_prefix', 'hardware', '20,21,28,29', 'Comma-separated weighing scale prefixes', true),
-('scale_barcode_format', 'hardware', 'EAN13_WEIGHT_5_DIGIT', 'Scale Barcode Encoding Spec', true),
 ('direct_escpos_print', 'hardware', 'false', 'Enable direct raw network/USB thermal printing', true),
 ('escpos_printer_ip', 'hardware', '192.168.1.200', 'Raw ESC/POS Printer IP Address', false),
 ('cash_drawer_auto_kick', 'hardware', 'true', 'Auto-pulse drawer kick on cash sale', true),
 ('barcode_audio_beep', 'hardware', 'true', 'Play audio beep on successful barcode scan', true),
 ('allow_negative_stock', 'pos', 'false', 'Allow selling below zero stock', false),
-('quick_tender_presets', 'pos', '50,100,200,500', 'Quick cash payment preset values', true)
+('pos_default_payment_method', 'pos', 'card', 'Default POS Payment Method (card, cash, split)', true),
+('quick_tender_presets', 'pos', '50,100,200,500', 'Quick cash payment preset values', true),
+('return_policy_days', 'pos', '7', 'Return policy validity deadline in days', true)
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- Reset Sequences to ensure serial IDs start after seeded records

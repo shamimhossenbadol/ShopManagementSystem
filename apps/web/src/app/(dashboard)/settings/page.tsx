@@ -289,7 +289,7 @@ export default function SettingsCustomizerPage() {
                 type="email"
                 value={formData.shop_email || ''}
                 onChange={(e) => handleInputChange('shop_email', e.target.value)}
-                placeholder="contact@alnoor-market.sa"
+                placeholder="contact@shopmanagement.com"
               />
 
               <Input
@@ -298,6 +298,18 @@ export default function SettingsCustomizerPage() {
                 onChange={(e) => handleInputChange('shop_closing_hour', e.target.value)}
                 placeholder="00:00"
                 helperText="Default 00:00 (12:00 AM). Daily business day records, dashboard metrics, and cash drawer summaries cycle at this time."
+              />
+
+              <Input
+                label="Return Policy Deadline (Days) *"
+                type="number"
+                min="1"
+                step="1"
+                required
+                value={formData.return_policy_days || '7'}
+                onChange={(e) => handleInputChange('return_policy_days', e.target.value)}
+                placeholder="7"
+                helperText="Store customer return deadline window in days. Sales older than this cannot be returned."
               />
             </div>
 
@@ -313,7 +325,7 @@ export default function SettingsCustomizerPage() {
               label="Thermal Receipt Footer Message"
               value={formData.receipt_footer_message || ''}
               onChange={(e) => handleInputChange('receipt_footer_message', e.target.value)}
-              placeholder="Thank you for shopping at Al-Noor Supermarket! Returns accepted within 7 days with original receipt."
+              placeholder="Thank you for shopping with us! Returns accepted within 7 days with original receipt."
               rows={2}
             />
           </div>

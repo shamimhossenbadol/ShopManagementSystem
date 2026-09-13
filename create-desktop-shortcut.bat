@@ -36,11 +36,11 @@ REM --- 2. Determine App / Shop Name dynamically ---
 set "APP_NAME=%~1"
 if /i "%APP_NAME%"=="nowait" set "APP_NAME="
 if "%APP_NAME%"=="" (
-    for /f "usebackq delims=" %%N in (`powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost/api/v1/settings/public' -TimeoutSec 2; if ($r.data.shop_name_en) { $r.data.shop_name_en.Trim() } else { 'Sell & Inventory' } } catch { 'Sell & Inventory' }"`) do (
+    for /f "usebackq delims=" %%N in (`powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost/api/v1/settings/public' -TimeoutSec 2; if ($r.data.shop_name_en) { $r.data.shop_name_en.Trim() } else { 'Shop Management System' } } catch { 'Shop Management System' }"`) do (
         set "APP_NAME=%%N"
     )
 )
-if "%APP_NAME%"=="" set "APP_NAME=Sell & Inventory"
+if "%APP_NAME%"=="" set "APP_NAME=Shop Management System"
 
 REM --- 3. Determine paths & icons ---
 set "SCRIPT_DIR=%~dp0"

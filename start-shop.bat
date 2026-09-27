@@ -73,7 +73,6 @@ if not exist "data\postgres_live" mkdir "data\postgres_live"
 if not exist "data\postgres_recovery" mkdir "data\postgres_recovery"
 if not exist "data\uploads\products" mkdir "data\uploads\products"
 if not exist "data\logs\api" mkdir "data\logs\api"
-if not exist "data\logs\nginx" mkdir "data\logs\nginx"
 if not exist "backups" mkdir "backups"
 echo [OK] Persistent directories ready.
 echo.
@@ -126,8 +125,8 @@ REM --- Show status ---
 echo ======================================================================
 echo [SUCCESS] Retail POS ^& Management is running in %MODE_LABEL%!
 echo.
-echo    POS Terminal ^& Dashboard:  http://localhost
-echo    Backend API Health:         http://localhost/health
+echo    POS Terminal ^& Dashboard:  http://localhost:3000
+echo    Backend API Health:         http://localhost:3000/api/v1/health
 echo.
 echo    Data persistence:
 echo      PostgreSQL DB:  .\data\postgres_live\
@@ -141,13 +140,13 @@ echo.
 REM --- Open App in Standalone Window ---
 echo [APP] Opening standalone application window...
 if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
-    start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
+    start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:3000 --window-size=1440,900
 ) else if exist "C:\Program Files\Microsoft\Edge\Application\msedge.exe" (
-    start "" "C:\Program Files\Microsoft\Edge\Application\msedge.exe" --app=http://localhost --window-size=1440,900
+    start "" "C:\Program Files\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:3000 --window-size=1440,900
 ) else if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
-    start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=http://localhost --window-size=1440,900
+    start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=http://localhost:3000 --window-size=1440,900
 ) else (
-    start "" "http://localhost"
+    start "" "http://localhost:3000"
 )
 echo.
 echo Press any key to close this launcher (services will keep running in background)...

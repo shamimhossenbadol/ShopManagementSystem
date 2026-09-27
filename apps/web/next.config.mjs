@@ -11,6 +11,16 @@ const nextConfig = {
         source: '/api/v1/:path*',
         destination: `${apiBase}/api/v1/:path*`,
       },
+      // Health check proxy (direct to Fastify)
+      {
+        source: '/health',
+        destination: `${apiBase}/health`,
+      },
+      // Uploaded files proxy (product images served by Fastify)
+      {
+        source: '/uploads/:path*',
+        destination: `${apiBase}/uploads/:path*`,
+      },
       // Backward compatibility rewrites for /dashboard/routes to /routes
       {
         source: '/dashboard/products',

@@ -36,7 +36,7 @@ REM --- 2. Determine App / Shop Name dynamically ---
 set "APP_NAME=%~1"
 if /i "%APP_NAME%"=="nowait" set "APP_NAME="
 if "%APP_NAME%"=="" (
-    for /f "usebackq delims=" %%N in (`powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost/api/v1/settings/public' -TimeoutSec 2; if ($r.data.shop_name_en) { $r.data.shop_name_en.Trim() } else { 'Shop Management System' } } catch { 'Shop Management System' }"`) do (
+    for /f "usebackq delims=" %%N in (`powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'http://localhost:3000/api/v1/settings/public' -TimeoutSec 2; if ($r.data.shop_name_en) { $r.data.shop_name_en.Trim() } else { 'Shop Management System' } } catch { 'Shop Management System' }"`) do (
         set "APP_NAME=%%N"
     )
 )
@@ -46,7 +46,7 @@ REM --- 3. Determine paths & icons ---
 set "SCRIPT_DIR=%~dp0"
 set "ICON_FILE=%SCRIPT_DIR%icon.ico"
 if not exist "%ICON_FILE%" set "ICON_FILE=%SCRIPT_DIR%apps\web\public\icon.ico"
-set "TARGET_URL=http://localhost"
+set "TARGET_URL=http://localhost:3000"
 set "APP_ARGS=--app=%TARGET_URL% --window-size=1440,900"
 
 set "DESKTOP_DIR=%USERPROFILE%\Desktop"
